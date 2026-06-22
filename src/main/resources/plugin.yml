@@ -1,0 +1,20 @@
+name: LoveWebAdmin
+version: '${version}'
+
+main: me.lovelace.loveWebAdmin.LoveWebAdmin
+api-version: '1.21.11'
+load: POSTWORLD
+description: Веб-панель администрирования для Love* серверов
+authors: [ Lovelace ]
+softdepend: [ LuckPerms ]
+
+commands:
+  lwa:
+    description: LoveWebAdmin управление
+    usage: /lwa <info|reload|resetowner>
+    permission: lovewebadmin.admin
+
+permissions:
+  lovewebadmin.admin:
+    description: Доступ к команде /lwa
+    default: op

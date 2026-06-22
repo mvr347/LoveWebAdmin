@@ -1,0 +1,18 @@
+web:
+  port: 8080
+  session-lifetime-minutes: 60
+
+# Первый кто открывает веб-панель становится Управляющим (owner)
+# После установки owner — эта настройка игнорируется
+owner-setup: true
+
+logs:
+  # Сколько последних записей серверных логов держать в БД
+  keep-count: 5000
+
+luckperms:
+  # Синхронизировать роль веб-панели с LP группой
+  sync-enabled: true
+  # Маппинг: role-name -> luckperms-group-name
+  # Управляющий всегда синхронизируется с группой "owner"
+  owner-lp-group: "owner"
