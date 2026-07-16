@@ -4,6 +4,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import me.lovelace.loveWebAdmin.LoveWebAdmin;
 import me.lovelace.loveWebAdmin.managers.AdminManager;
+import me.lovelace.loveWebAdmin.managers.LoginAttemptTracker;
 import me.lovelace.loveWebAdmin.models.WebRole;
 import me.lovelace.loveWebAdmin.models.WebSession;
 
@@ -66,7 +67,11 @@ public class ApiAuthHandler extends ApiHandlerSupport {
             sendError(resp, 400, "Не указан ник");
             return;
         }
-        plugin.getAdminManager().setupOwner(username);
+        // Финальная проверка от гонки запросов выполняется атомарно внутри AdminManager.setupOwner
+        if (!plugin.getAdminManager().setupOwner(username)) {
+            sendError(resp, 400, "Управляющий уже назначен");
+            return;
+        }
         sendSuccess(resp, Map.of("username", username));
     }
 
@@ -79,11 +84,30 @@ public class ApiAuthHandler extends ApiHandlerSupport {
             return;
         }
 
+        String ip = req.getRemoteAddr();
+        String ipKey = "ip:" + ip;
+        String userKey = "user:" + username.toLowerCase();
+        LoginAttemptTracker attemptTracker = plugin.getLoginAttemptTracker();
+
+        long lockedSeconds = attemptTracker.getLockedRemainingSeconds(ipKey, userKey);
+        if (lockedSeconds > 0) {
+            long minutes = Math.max(1, (lockedSeconds + 59) / 60);
+            sendError(resp, 429, "Слишком много неудачных попыток входа. Повторите через " + minutes + " мин.");
+            return;
+        }
+
         AdminManager.LoginResult result = plugin.getAdminManager().login(username, password);
         switch (result.status()) {
-            case NOT_FOUND, INVALID_CREDENTIALS -> sendError(resp, 401, "Неверный ник или пароль");
+            case NOT_FOUND, INVALID_CREDENTIALS -> {
+                attemptTracker.recordFailure(ipKey, userKey);
+                plugin.getLogManager().logWebAction(username, "Неудачная попытка входа (IP: " + ip + ")");
+                sendError(resp, 401, "Неверный ник или пароль");
+            }
             case NEED_SET_PASSWORD -> sendSuccess(resp, Map.of("status", "NEED_SET_PASSWORD"));
-            case SUCCESS -> sendLoginSuccess(resp, result);
+            case SUCCESS -> {
+                attemptTracker.recordSuccess(ipKey, userKey);
+                sendLoginSuccess(resp, result);
+            }
         }
     }
 

@@ -16,3 +16,30 @@ luckperms:
   # Маппинг: role-name -> luckperms-group-name
   # Управляющий всегда синхронизируется с группой "owner"
   owner-lp-group: "owner"
+
+security:
+  login:
+    # Сколько неудачных попыток входа (по IP или по нику) допускается в течение окна ниже
+    max-attempts: 5
+    # На сколько минут блокировать вход после превышения max-attempts
+    lockout-minutes: 15
+  cors:
+    # Список разрешённых origin'ов для CORS запросов к API (например "https://panel.example.com")
+    # По умолчанию пусто — CORS заголовки не отправляются (доступ только same-origin)
+    # Никогда не используйте "*" — это небезопасно вместе с заголовком Authorization
+    allowed-origins: []
+  # Команды, запрещённые к выполнению через веб-панель, даже если у роли есть EXECUTE_COMMANDS
+  command-blacklist:
+    - stop
+    - restart
+    - end
+    - op
+    - deop
+    - ban
+    - ban-ip
+    - pardon
+    - pardon-ip
+    - whitelist
+    - plugman
+    - pl
+    - reload
