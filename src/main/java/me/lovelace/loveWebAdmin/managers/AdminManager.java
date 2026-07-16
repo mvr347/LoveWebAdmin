@@ -24,13 +24,23 @@ public class AdminManager {
         return plugin.getDatabaseManager().hasOwner();
     }
 
-    public void setupOwner(String username) {
+    /**
+     * Атомарно проверяет отсутствие владельца и создаёт его. synchronized гарантирует, что при
+     * двух одновременных запросах /api/auth/setup-owner владелец будет создан только один раз.
+     *
+     * @return true если владелец был создан этим вызовом, false если он уже существовал
+     */
+    public synchronized boolean setupOwner(String username) {
+        if (plugin.getDatabaseManager().hasOwner()) {
+            return false;
+        }
         plugin.getDatabaseManager().bootstrapOwner(username);
         if (plugin.getConfig().getBoolean("luckperms.sync-enabled", true)) {
             String ownerLpGroup = plugin.getConfig().getString("luckperms.owner-lp-group", "owner");
             plugin.getLuckPermsManager().assignGroup(username, ownerLpGroup);
         }
         plugin.getCommandLogListener().refreshCache();
+        return true;
     }
 
     public LoginResult login(String username, String password) {

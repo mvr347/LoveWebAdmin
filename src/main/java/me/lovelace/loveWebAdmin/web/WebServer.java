@@ -36,7 +36,7 @@ public class WebServer {
 
             ServletContextHandler context = new ServletContextHandler(ServletContextHandler.NO_SESSIONS);
             context.setContextPath("/");
-            context.addFilter(new FilterHolder(new CorsFilter()), "/*", EnumSet.of(DispatcherType.REQUEST));
+            context.addFilter(new FilterHolder(new CorsFilter(plugin)), "/*", EnumSet.of(DispatcherType.REQUEST));
 
             ServletHolder authHolder = new ServletHolder(new ApiAuthHandler(plugin));
             context.addServlet(authHolder, "/api/auth/*");

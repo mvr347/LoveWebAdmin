@@ -7,6 +7,8 @@ import me.lovelace.loveWebAdmin.models.Permission;
 import me.lovelace.loveWebAdmin.models.WebSession;
 
 import java.io.IOException;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
@@ -33,6 +35,12 @@ public class ApiCommandHandler extends ApiHandlerSupport {
             return;
         }
 
+        if (isBlacklisted(command)) {
+            plugin.getLogManager().logWebAction(session.adminUsername(), "Попытка выполнить запрещённую команду: /" + command);
+            sendError(resp, 403, "Эта команда запрещена к выполнению через веб-панель");
+            return;
+        }
+
         try {
             boolean dispatched = plugin.getServer().getScheduler()
                 .callSyncMethod(plugin, () ->
@@ -50,5 +58,26 @@ public class ApiCommandHandler extends ApiHandlerSupport {
             plugin.getLogger().warning("Ошибка выполнения команды: " + e.getMessage());
             sendError(resp, 500, "Внутренняя ошибка сервера");
         }
+    }
+
+    private boolean isBlacklisted(String command) {
+        String trimmed = command.trim();
+        if (trimmed.startsWith("/")) {
+            trimmed = trimmed.substring(1);
+        }
+        int spaceIdx = trimmed.indexOf(' ');
+        String label = (spaceIdx == -1 ? trimmed : trimmed.substring(0, spaceIdx)).toLowerCase(Locale.ROOT);
+        int colonIdx = label.indexOf(':');
+        if (colonIdx != -1) {
+            label = label.substring(colonIdx + 1);
+        }
+
+        List<String> blacklist = plugin.getConfig().getStringList("security.command-blacklist");
+        for (String blocked : blacklist) {
+            if (blocked != null && blocked.equalsIgnoreCase(label)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

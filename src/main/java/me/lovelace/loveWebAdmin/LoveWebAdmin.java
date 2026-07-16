@@ -5,6 +5,7 @@ import me.lovelace.loveWebAdmin.database.DatabaseManager;
 import me.lovelace.loveWebAdmin.listeners.CommandLogListener;
 import me.lovelace.loveWebAdmin.managers.AdminManager;
 import me.lovelace.loveWebAdmin.managers.LogManager;
+import me.lovelace.loveWebAdmin.managers.LoginAttemptTracker;
 import me.lovelace.loveWebAdmin.managers.LuckPermsManager;
 import me.lovelace.loveWebAdmin.managers.RoleManager;
 import me.lovelace.loveWebAdmin.web.SessionManager;
@@ -18,6 +19,7 @@ public final class LoveWebAdmin extends JavaPlugin {
     private LogManager logManager;
     private RoleManager roleManager;
     private AdminManager adminManager;
+    private LoginAttemptTracker loginAttemptTracker;
     private LuckPermsManager luckPermsManager;
     private SessionManager sessionManager;
     private CommandLogListener commandLogListener;
@@ -37,6 +39,7 @@ public final class LoveWebAdmin extends JavaPlugin {
 
         this.roleManager = new RoleManager(this);
         this.adminManager = new AdminManager(this);
+        this.loginAttemptTracker = new LoginAttemptTracker(this);
         this.luckPermsManager = new LuckPermsManager(this);
 
         this.sessionManager = new SessionManager(this);
@@ -86,6 +89,10 @@ public final class LoveWebAdmin extends JavaPlugin {
 
     public AdminManager getAdminManager() {
         return adminManager;
+    }
+
+    public LoginAttemptTracker getLoginAttemptTracker() {
+        return loginAttemptTracker;
     }
 
     public LuckPermsManager getLuckPermsManager() {
