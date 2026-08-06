@@ -157,7 +157,8 @@ public class AdminManager {
     }
 
     /**
-     * /lwa resetowner confirm — удаляет всех Управляющих, чтобы можно было назначить нового.
+     * /lovewebadmin resetowner confirm (алиас: /lwa resetowner confirm) — удаляет всех
+     * Управляющих, чтобы можно было назначить нового.
      */
     public void resetOwners() {
         plugin.getDatabaseManager().getAllRoles().stream()
