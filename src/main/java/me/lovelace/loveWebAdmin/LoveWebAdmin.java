@@ -1,6 +1,6 @@
 package me.lovelace.loveWebAdmin;
 
-import me.lovelace.loveWebAdmin.commands.LwaCommand;
+import me.lovelace.loveWebAdmin.commands.LoveWebAdminCommand;
 import me.lovelace.loveWebAdmin.database.DatabaseManager;
 import me.lovelace.loveWebAdmin.listeners.CommandLogListener;
 import me.lovelace.loveWebAdmin.managers.AdminManager;
@@ -49,10 +49,12 @@ public final class LoveWebAdmin extends JavaPlugin {
         this.commandLogListener = new CommandLogListener(this);
         getServer().getPluginManager().registerEvents(commandLogListener, this);
 
-        LwaCommand lwaCommand = new LwaCommand(this);
-        var lwaPluginCommand = getCommand("lwa");
-        if (lwaPluginCommand != null) {
-            lwaPluginCommand.setExecutor(lwaCommand);
+        // /lwa остаётся рабочим алиасом (см. plugin.yml) для тех, кто набирает его по привычке.
+        LoveWebAdminCommand loveWebAdminCommand = new LoveWebAdminCommand(this);
+        var loveWebAdminPluginCommand = getCommand("lovewebadmin");
+        if (loveWebAdminPluginCommand != null) {
+            loveWebAdminPluginCommand.setExecutor(loveWebAdminCommand);
+            loveWebAdminPluginCommand.setTabCompleter(loveWebAdminCommand);
         }
 
         int port = getConfig().getInt("web.port", 8080);

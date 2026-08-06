@@ -9,12 +9,13 @@ authors: [ Lovelace ]
 softdepend: [ LuckPerms ]
 
 commands:
-  lwa:
+  lovewebadmin:
     description: LoveWebAdmin управление
-    usage: /lwa <info|reload|resetowner>
+    usage: /lovewebadmin <info|reload|resetowner>
+    aliases: [ lwa ]
     permission: lovewebadmin.admin
 
 permissions:
   lovewebadmin.admin:
-    description: Доступ к команде /lwa
+    description: Доступ к команде /lovewebadmin (алиас /lwa)
     default: op
