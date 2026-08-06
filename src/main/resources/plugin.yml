@@ -2,7 +2,7 @@ name: LoveWebAdmin
 version: '${version}'
 
 main: me.lovelace.loveWebAdmin.LoveWebAdmin
-api-version: '1.21.11'
+api-version: '26.2'
 load: POSTWORLD
 description: Веб-панель администрирования для Love* серверов
 authors: [ Lovelace ]
