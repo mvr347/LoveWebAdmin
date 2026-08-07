@@ -11,6 +11,7 @@ import me.lovelace.loveWebAdmin.managers.RoleManager;
 import me.lovelace.loveWebAdmin.web.SessionManager;
 import me.lovelace.loveWebAdmin.web.WebServer;
 import org.bukkit.Bukkit;
+import org.bukkit.event.HandlerList;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public final class LoveWebAdmin extends JavaPlugin {
@@ -66,6 +67,7 @@ public final class LoveWebAdmin extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        HandlerList.unregisterAll(this);
         if (webServer != null) webServer.stop();
         if (sessionManager != null) sessionManager.stopCleanupTask();
         if (logManager != null) logManager.stopCapture();
