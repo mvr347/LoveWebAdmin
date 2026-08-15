@@ -58,11 +58,21 @@ public class AdminManager {
         return completeLogin(admin);
     }
 
+    /**
+     * Устанавливает пароль ТОЛЬКО в рамках первичной настройки аккаунта (когда у админа ещё
+     * нет пароля — statusом NEED_SET_PASSWORD при /login). Без этой проверки любой
+     * неаутентифицированный запрос к /api/auth/set-password мог бы перезаписать пароль ЛЮБОГО
+     * существующего администратора (включая Управляющего) и получить рабочую сессию —
+     * захват аккаунта без знания текущего пароля.
+     */
     public LoginResult setPassword(String username, String newPassword) {
         Optional<WebAdmin> adminOpt = plugin.getDatabaseManager().getAdminByUsername(username);
         if (adminOpt.isEmpty()) return new LoginResult(LoginStatus.NOT_FOUND, null, null);
 
         WebAdmin admin = adminOpt.get();
+        if (admin.passwordHash() != null) {
+            return new LoginResult(LoginStatus.NOT_FOUND, null, null);
+        }
         plugin.getDatabaseManager().setAdminPassword(admin.id(), PasswordUtils.hash(newPassword));
 
         return completeLogin(admin);

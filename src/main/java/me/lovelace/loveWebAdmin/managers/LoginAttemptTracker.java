@@ -1,21 +1,49 @@
 package me.lovelace.loveWebAdmin.managers;
 
+import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import me.lovelace.loveWebAdmin.LoveWebAdmin;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Отслеживает неудачные попытки входа (по IP и/или по нику) и блокирует вход
  * после превышения security.login.max-attempts в течение security.login.lockout-minutes.
+ *
+ * <p>Записи удаляются при успешном входе, но злоумышленник может присылать неудачные
+ * попытки с постоянно новыми никами (userKey каждый раз новый), поэтому без периодической
+ * очистки attemptsByKey рос бы неограниченно — это DoS через утечку памяти. startCleanupTask()
+ * убирает записи, чья окно+блокировка давно истекли.</p>
  */
 public class LoginAttemptTracker {
 
     private final LoveWebAdmin plugin;
     private final Map<String, Attempts> attemptsByKey = new ConcurrentHashMap<>();
+    private ScheduledTask cleanupTask;
 
     public LoginAttemptTracker(LoveWebAdmin plugin) {
         this.plugin = plugin;
+    }
+
+    public void startCleanupTask() {
+        cleanupTask = plugin.getServer().getAsyncScheduler().runAtFixedRate(plugin, task -> {
+            long now = System.currentTimeMillis();
+            long window = lockoutMillis();
+            attemptsByKey.entrySet().removeIf(entry -> {
+                Attempts attempts = entry.getValue();
+                boolean lockoutExpired = attempts.lockedUntil <= now;
+                boolean windowExpired = now - attempts.windowStart > window;
+                return lockoutExpired && windowExpired;
+            });
+        }, 10, 10, TimeUnit.MINUTES);
+    }
+
+    public void stopCleanupTask() {
+        if (cleanupTask != null) {
+            cleanupTask.cancel();
+            cleanupTask = null;
+        }
     }
 
     private int maxAttempts() {

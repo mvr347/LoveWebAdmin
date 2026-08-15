@@ -7,6 +7,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 
 /**
  * Отдаёт HTML/JS/CSS из classpath (src/main/resources/web/), запакованные в jar.
@@ -18,6 +19,14 @@ public class StaticHandler extends HttpServlet {
         String path = req.getRequestURI();
         if (path == null || path.isEmpty() || path.equals("/")) {
             path = "/index.html";
+        }
+
+        // Defense-in-depth: не позволяем "../" в пути выбраться за пределы web/ (например, если
+        // классы когда-либо будут грузиться из распакованной директории, а не только из jar).
+        String decoded = java.net.URLDecoder.decode(path, StandardCharsets.UTF_8);
+        if (decoded.contains("..")) {
+            resp.sendError(HttpServletResponse.SC_BAD_REQUEST);
+            return;
         }
 
         String resourcePath = "web" + path;
