@@ -41,6 +41,7 @@ public final class LoveWebAdmin extends JavaPlugin {
         this.roleManager = new RoleManager(this);
         this.adminManager = new AdminManager(this);
         this.loginAttemptTracker = new LoginAttemptTracker(this);
+        this.loginAttemptTracker.startCleanupTask();
         this.luckPermsManager = new LuckPermsManager(this);
 
         this.sessionManager = new SessionManager(this);
@@ -70,6 +71,7 @@ public final class LoveWebAdmin extends JavaPlugin {
         HandlerList.unregisterAll(this);
         if (webServer != null) webServer.stop();
         if (sessionManager != null) sessionManager.stopCleanupTask();
+        if (loginAttemptTracker != null) loginAttemptTracker.stopCleanupTask();
         if (logManager != null) logManager.stopCapture();
         if (databaseManager != null) databaseManager.close();
         getLogger().info("LoveWebAdmin остановлен.");

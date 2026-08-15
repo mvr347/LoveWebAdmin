@@ -1,5 +1,6 @@
 package me.lovelace.loveWebAdmin.web.handlers;
 
+import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -22,6 +23,30 @@ public abstract class ApiHandlerSupport extends HttpServlet {
 
     protected ApiHandlerSupport(LoveWebAdmin plugin) {
         this.plugin = plugin;
+    }
+
+    /**
+     * Ловит некорректный ввод (битый JSON тела запроса через {@link JsonUtils#parseObject},
+     * нечисловые path-параметры вроде id и т.п.), который иначе всплывал бы как
+     * необработанное исключение до контейнера — тот отдаёт свою страницу ошибки по умолчанию
+     * (potentially раскрывая stacktrace) вместо аккуратного JSON 400/500 и не логировался бы
+     * через plugin.getLogger(). Не меняет поведение при корректных запросах — проверки прав/сессии
+     * внутри doGet/doPost/... выполняются как раньше, до разбора тела.
+     */
+    @Override
+    protected void service(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+        try {
+            super.service(req, resp);
+        } catch (IllegalArgumentException e) {
+            if (!resp.isCommitted()) {
+                sendError(resp, 400, "Некорректный запрос");
+            }
+        } catch (RuntimeException e) {
+            plugin.getLogger().warning("Необработанная ошибка при обработке запроса " + req.getRequestURI() + ": " + e);
+            if (!resp.isCommitted()) {
+                sendError(resp, 500, "Внутренняя ошибка сервера");
+            }
+        }
     }
 
     protected Optional<WebSession> authenticate(HttpServletRequest req) {
