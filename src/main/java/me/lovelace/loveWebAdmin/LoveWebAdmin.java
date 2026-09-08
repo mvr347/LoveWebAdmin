@@ -2,6 +2,7 @@ package me.lovelace.loveWebAdmin;
 
 import me.lovelace.loveWebAdmin.commands.LoveWebAdminCommand;
 import me.lovelace.loveWebAdmin.database.DatabaseManager;
+import me.lovelace.loveWebAdmin.integration.VesuvioBridge;
 import me.lovelace.loveWebAdmin.listeners.CommandLogListener;
 import me.lovelace.loveWebAdmin.managers.AdminManager;
 import me.lovelace.loveWebAdmin.managers.LogManager;
@@ -25,6 +26,7 @@ public final class LoveWebAdmin extends JavaPlugin {
     private SessionManager sessionManager;
     private CommandLogListener commandLogListener;
     private WebServer webServer;
+    private VesuvioBridge vesuvioBridge;
     private long startTimeMillis;
 
     @Override
@@ -50,6 +52,9 @@ public final class LoveWebAdmin extends JavaPlugin {
 
         this.commandLogListener = new CommandLogListener(this);
         getServer().getPluginManager().registerEvents(commandLogListener, this);
+
+        // Reflection-only bridge - see VesuvioBridge for why this isn't a compile dependency.
+        this.vesuvioBridge = new VesuvioBridge();
 
         // /lwa остаётся рабочим алиасом (см. plugin.yml) для тех, кто набирает его по привычке.
         LoveWebAdminCommand loveWebAdminCommand = new LoveWebAdminCommand(this);
@@ -111,5 +116,9 @@ public final class LoveWebAdmin extends JavaPlugin {
 
     public CommandLogListener getCommandLogListener() {
         return commandLogListener;
+    }
+
+    public VesuvioBridge getVesuvioBridge() {
+        return vesuvioBridge;
     }
 }

@@ -12,13 +12,15 @@
         { key: 'server-logs', label: '📜 Серверные логи', perm: 'VIEW_SERVER_LOGS' },
         { key: 'web-logs', label: '🔐 Логи панели', perm: 'VIEW_WEB_LOGS' },
         { key: 'console', label: '⌨️ Консоль', perm: 'EXECUTE_COMMANDS' },
+        { key: 'vesuvio', label: '🛡️ Vesuvio', perm: 'VIEW_VESUVIO' },
         { key: 'admins', label: '👥 Администраторы', perm: 'MANAGE_ADMINS' },
         { key: 'roles', label: '🎭 Роли', perm: 'MANAGE_ROLES' },
     ];
 
     const ALL_PERMISSIONS = [
         'VIEW_SERVER_LOGS', 'VIEW_WEB_LOGS', 'VIEW_STATS', 'EXECUTE_COMMANDS',
-        'MANAGE_ADMINS', 'MANAGE_ROLES', 'MANAGE_PASSWORDS'
+        'MANAGE_ADMINS', 'MANAGE_ROLES', 'MANAGE_PASSWORDS',
+        'VIEW_VESUVIO', 'VIEW_VESUVIO_ADVANCED', 'MANAGE_VESUVIO'
     ];
 
     const PERMISSION_LABELS = {
@@ -29,6 +31,9 @@
         MANAGE_ADMINS: 'Управление администраторами',
         MANAGE_ROLES: 'Управление ролями',
         MANAGE_PASSWORDS: 'Сброс паролей',
+        VIEW_VESUVIO: 'Vesuvio: подозреваемые и наказания',
+        VIEW_VESUVIO_ADVANCED: 'Vesuvio: расширенная телеметрия',
+        MANAGE_VESUVIO: 'Vesuvio: управление (сброс VL, подозрения)',
     };
 
     function esc(s) {
@@ -40,6 +45,12 @@
     function fmtTime(ts) {
         const d = new Date(ts * 1000);
         return d.toLocaleString('ru-RU');
+    }
+
+    // Vesuvio timestamps are System.currentTimeMillis() (milliseconds), unlike this panel's own
+    // logs which store seconds - keep them separate rather than guessing units.
+    function fmtTimeMs(ts) {
+        return new Date(ts).toLocaleString('ru-RU');
     }
 
     async function api(method, path, body) {
@@ -254,6 +265,7 @@
             case 'server-logs': renderLogsSection('server'); break;
             case 'web-logs': renderLogsSection('web'); break;
             case 'console': renderConsoleSection(); break;
+            case 'vesuvio': renderVesuvioSection(); break;
             case 'admins': renderAdminsSection(); break;
             case 'roles': renderRolesSection(); break;
         }
@@ -458,6 +470,232 @@
         document.getElementById('cmd-run').addEventListener('click', runCommand);
         document.getElementById('cmd-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') runCommand(); });
         renderHistory();
+    }
+
+    // ---------- Vesuvio AntiCheat ----------
+
+    function vesuvioRiskClass(v) {
+        if (v >= 75) return 'tps-red';
+        if (v >= 40) return 'tps-yellow';
+        return 'tps-green';
+    }
+
+    async function renderVesuvioSection() {
+        const main = document.getElementById('main-content');
+        main.innerHTML = '<h2>🛡️ Vesuvio AntiCheat</h2><div id="vesuvio-body">Загрузка...</div>';
+        const bodyEl = document.getElementById('vesuvio-body');
+
+        let status;
+        try {
+            status = await api('GET', '/api/vesuvio/status');
+        } catch (e) {
+            bodyEl.innerHTML = `<p class="error">${esc(e.message)}</p>`;
+            return;
+        }
+        if (!status.available) {
+            bodyEl.innerHTML = '<p>Vesuvio не установлен или ещё не загружен на сервере.</p>';
+            return;
+        }
+
+        const advanced = hasPerm('VIEW_VESUVIO_ADVANCED');
+        const manage = hasPerm('MANAGE_VESUVIO');
+        const suspectCols = manage ? 7 : 6;
+
+        bodyEl.innerHTML = `
+            ${advanced ? '<div class="cards" id="vs-engine-cards"></div>' : ''}
+            <h3>Подозреваемые</h3>
+            <div class="table-wrap"><table>
+                <thead><tr>
+                    <th>Игрок</th><th>Статус</th><th>VL</th><th>Риск</th><th>Доверие</th><th>Клиент</th>
+                    ${manage ? '<th>Действия</th>' : ''}
+                </tr></thead>
+                <tbody id="vs-suspects-tbody"><tr><td colspan="${suspectCols}">Загрузка...</td></tr></tbody>
+            </table></div>
+
+            <h3 style="margin-top:22px">Последние наказания</h3>
+            <div class="table-wrap"><table>
+                <thead><tr><th>Время</th><th>Игрок</th><th>Действие</th><th>Причина</th></tr></thead>
+                <tbody id="vs-punishments-tbody"><tr><td colspan="4">Загрузка...</td></tr></tbody>
+            </table></div>
+
+            ${advanced ? `
+            <h3 style="margin-top:22px">Лог флагов <span class="tag">расширенно</span></h3>
+            <div class="table-wrap"><table>
+                <thead><tr><th>Время</th><th>Игрок</th><th>Проверка</th><th>VL</th><th>Увер.</th><th>Объяснение</th></tr></thead>
+                <tbody id="vs-violations-tbody"><tr><td colspan="6">Загрузка...</td></tr></tbody>
+            </table></div>` : ''}
+        `;
+
+        function renderSuspectRow(s) {
+            const clickable = advanced ? ' class="vs-clickable"' : '';
+            return `<tr${clickable} data-uuid="${esc(s.uuid)}">
+                <td>${esc(s.name)}</td>
+                <td>${esc(s.status)}</td>
+                <td>${s.vl.toFixed(1)}</td>
+                <td class="${vesuvioRiskClass(s.risk)}">${s.risk.toFixed(1)}</td>
+                <td>${s.trust.toFixed(1)}</td>
+                <td>${esc(s.brand)}</td>
+                ${manage ? `<td class="actions-cell">
+                    <button class="icon-btn" data-vs-reset="${esc(s.uuid)}" title="Сбросить VL">↺</button>
+                    ${s.manualSuspect
+                        ? `<button class="icon-btn" data-vs-unsuspect="${esc(s.uuid)}" title="Снять подозрение">✔</button>`
+                        : `<button class="icon-btn danger" data-vs-suspect="${esc(s.uuid)}" title="Пометить подозреваемым">⚠</button>`}
+                </td>` : ''}
+            </tr>`;
+        }
+
+        async function refreshSuspects() {
+            try {
+                const suspects = await api('GET', '/api/vesuvio/suspects');
+                document.getElementById('vs-suspects-tbody').innerHTML = suspects.length
+                    ? suspects.map(renderSuspectRow).join('')
+                    : `<tr><td colspan="${suspectCols}">Нет подозреваемых</td></tr>`;
+                wireSuspectRowActions(suspects);
+            } catch (e) {
+                document.getElementById('vs-suspects-tbody').innerHTML =
+                    `<tr><td colspan="${suspectCols}" class="error">${esc(e.message)}</td></tr>`;
+            }
+        }
+
+        function wireSuspectRowActions(suspects) {
+            if (advanced) {
+                document.querySelectorAll('#vs-suspects-tbody tr[data-uuid]').forEach(row => {
+                    row.addEventListener('click', (e) => {
+                        if (e.target.closest('button')) return;
+                        openVesuvioPlayerModal(row.dataset.uuid);
+                    });
+                });
+            }
+            if (manage) {
+                document.querySelectorAll('[data-vs-reset]').forEach(btn => {
+                    btn.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        try {
+                            await api('POST', `/api/vesuvio/player/${btn.dataset.vsReset}/reset-vl`);
+                            refreshSuspects();
+                        } catch (err) { alert(err.message); }
+                    });
+                });
+                document.querySelectorAll('[data-vs-suspect]').forEach(btn => {
+                    btn.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        try {
+                            await api('POST', `/api/vesuvio/player/${btn.dataset.vsSuspect}/suspect`, { suspect: true });
+                            refreshSuspects();
+                        } catch (err) { alert(err.message); }
+                    });
+                });
+                document.querySelectorAll('[data-vs-unsuspect]').forEach(btn => {
+                    btn.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        try {
+                            await api('POST', `/api/vesuvio/player/${btn.dataset.vsUnsuspect}/suspect`, { suspect: false });
+                            refreshSuspects();
+                        } catch (err) { alert(err.message); }
+                    });
+                });
+            }
+        }
+
+        async function refreshPunishments() {
+            try {
+                const rows = await api('GET', '/api/vesuvio/punishments?limit=50');
+                document.getElementById('vs-punishments-tbody').innerHTML = rows.length
+                    ? rows.map(p => `<tr>
+                        <td>${fmtTimeMs(p.timestamp)}</td>
+                        <td>${esc(p.name)}</td>
+                        <td>${esc(p.action)}</td>
+                        <td>${esc(p.reason)}</td>
+                    </tr>`).join('')
+                    : '<tr><td colspan="4">Наказаний ещё не было</td></tr>';
+            } catch (e) {
+                document.getElementById('vs-punishments-tbody').innerHTML = `<tr><td colspan="4" class="error">${esc(e.message)}</td></tr>`;
+            }
+        }
+
+        async function refreshAdvanced() {
+            if (!advanced) return;
+            try {
+                const engine = await api('GET', '/api/vesuvio/engine');
+                document.getElementById('vs-engine-cards').innerHTML = `
+                    <div class="stat-card"><div class="label">Онлайн под наблюдением</div><div class="value">${engine.onlineTrackedPlayers}</div></div>
+                    <div class="stat-card"><div class="label">Подозреваемых</div><div class="value">${engine.suspectsCount}</div></div>
+                    <div class="stat-card"><div class="label">ONNX модели</div><div class="value" style="font-size:14px">Клик: ${engine.clickModelLoaded ? '✅' : '❌'} / Прицел: ${engine.aimModelLoaded ? '✅' : '❌'}</div></div>
+                    <div class="stat-card"><div class="label">Инференсов ONNX</div><div class="value">${engine.onnxTotalInferences}</div></div>
+                    <div class="stat-card"><div class="label">Датасет самообучения</div><div class="value">${engine.datasetSize}</div></div>
+                    <div class="stat-card"><div class="label">Обучено сэмплов</div><div class="value">${engine.classifierTrainedSamples}</div></div>
+                    <div class="stat-card"><div class="label">Всего флагов</div><div class="value">${engine.totalFlagsLogged}</div></div>
+                    <div class="stat-card"><div class="label">Автосбор датасета</div><div class="value" style="font-size:14px">${engine.autoCollectionEnabled ? 'Включён' : 'Выключен'}</div></div>
+                `;
+            } catch (e) {
+                document.getElementById('vs-engine-cards').innerHTML = `<p class="error">${esc(e.message)}</p>`;
+            }
+
+            try {
+                const violations = await api('GET', '/api/vesuvio/violations?limit=100');
+                document.getElementById('vs-violations-tbody').innerHTML = violations.length
+                    ? violations.map(v => `<tr>
+                        <td>${fmtTimeMs(v.timestamp)}</td>
+                        <td>${esc(v.name)}</td>
+                        <td>${esc(v.checkName)}</td>
+                        <td>${v.vl.toFixed(1)}</td>
+                        <td>${(v.confidence * 100).toFixed(0)}%</td>
+                        <td>${esc(v.explanation)}</td>
+                    </tr>`).join('')
+                    : '<tr><td colspan="6">Флагов ещё не было</td></tr>';
+            } catch (e) {
+                document.getElementById('vs-violations-tbody').innerHTML = `<tr><td colspan="6" class="error">${esc(e.message)}</td></tr>`;
+            }
+        }
+
+        async function refreshAll() {
+            await Promise.all([refreshSuspects(), refreshPunishments(), refreshAdvanced()]);
+        }
+
+        await refreshAll();
+        pollers.vesuvio = setInterval(refreshAll, 5000);
+    }
+
+    async function openVesuvioPlayerModal(uuid) {
+        openModal('<h3>Профиль игрока</h3><p>Загрузка...</p>', () => {});
+        try {
+            const d = await api('GET', `/api/vesuvio/player/${uuid}`);
+            if (!d) {
+                openModal(`<h3>Профиль игрока</h3><p>Игрок сейчас не отслеживается (не в сети).</p><div class="actions"><button id="vs-modal-close">Закрыть</button></div>`, () => {
+                    document.getElementById('vs-modal-close').addEventListener('click', closeModal);
+                });
+                return;
+            }
+            openModal(`
+                <h3>🛡️ ${esc(d.name)}</h3>
+                <div class="field"><label>VL / Риск / Доверие / Sensitivity</label>
+                    <div>${d.vl.toFixed(1)} / ${d.risk.toFixed(1)} / ${d.trust.toFixed(1)} / ${d.sensitivity.toFixed(2)}x</div>
+                </div>
+                <div class="field"><label>Клиент / Последний чек</label>
+                    <div>${esc(d.brand)} / ${esc(d.lastTriggeredCheck)}</div>
+                </div>
+                <div class="field"><label>CPS / StdDev / DupRatio / Entropy</label>
+                    <div>${d.cps.toFixed(1)} / ${d.stdDevMs.toFixed(1)}ms / ${(d.dupRatio * 100).toFixed(0)}% / ${d.entropy.toFixed(2)}</div>
+                </div>
+                <div class="field"><label>ONNX / Self-Learn вероятность</label>
+                    <div>${(d.mlProbability * 100).toFixed(1)}% / ${(d.selfLearnProbability * 100).toFixed(1)}%</div>
+                </div>
+                <div class="field"><label>AirTicks / ΔY / OnGround / В бою</label>
+                    <div>${d.airTicks} / ${d.lastDeltaY.toFixed(2)} / ${d.onGround ? 'да' : 'нет'} / ${d.inCombat ? 'да' : 'нет'}</div>
+                </div>
+                <div class="field"><label>Буферы клика / прицела / GCD streak / Perfect-aim streak</label>
+                    <div>${d.clickBufferCount}/64 / ${d.aimBufferCount}/64 / ${d.gcdSuspiciousStreak} / ${d.perfectAimStreak}</div>
+                </div>
+                <div class="field"><label>Ручное подозрение</label><div>${d.manualSuspect ? 'да' : 'нет'}</div></div>
+                <div class="actions"><button id="vs-modal-close">Закрыть</button></div>
+            `, () => {
+                document.getElementById('vs-modal-close').addEventListener('click', closeModal);
+            });
+        } catch (e) {
+            openModal(`<h3>Профиль игрока</h3><p class="error">${esc(e.message)}</p><div class="actions"><button id="vs-modal-close">Закрыть</button></div>`, () => {
+                document.getElementById('vs-modal-close').addEventListener('click', closeModal);
+            });
+        }
     }
 
     // ---------- Admins ----------

@@ -12,5 +12,13 @@ public enum Permission {
     // Управление (только Управляющий или кастомные роли с этим правом)
     MANAGE_ADMINS,
     MANAGE_ROLES,
-    MANAGE_PASSWORDS
+    MANAGE_PASSWORDS,
+
+    // Vesuvio AntiCheat: базовый обзор — только подозреваемые и лог наказаний.
+    VIEW_VESUVIO,
+    // Vesuvio AntiCheat: расширенный обзор — вся телеметрия, движок, датасет самообучения,
+    // подробный профиль игрока (CPS/StdDev/ML/self-learn и т.д.).
+    VIEW_VESUVIO_ADVANCED,
+    // Vesuvio AntiCheat: управляющие действия — сброс VL, пометка/снятие подозрения.
+    MANAGE_VESUVIO
 }

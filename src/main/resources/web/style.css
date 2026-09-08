@@ -170,6 +170,10 @@ tr.log-new { animation: fadeIn .4s ease; }
 .actions-cell { display: flex; gap: 6px; }
 .icon-btn { padding: 6px 8px; font-size: 14px; }
 
+/* ---------- Vesuvio ---------- */
+.vs-clickable { cursor: pointer; }
+.vs-clickable:hover td { background: var(--card-alt); }
+
 @media (max-width: 800px) {
     .sidebar { position: fixed; left: -240px; top: 0; height: 100%; z-index: 40; transition: left .2s; }
     .sidebar.open { left: 0; }
