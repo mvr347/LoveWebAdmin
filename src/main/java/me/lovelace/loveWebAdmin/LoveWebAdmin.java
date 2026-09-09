@@ -65,10 +65,21 @@ public final class LoveWebAdmin extends JavaPlugin {
         }
 
         int port = getConfig().getInt("web.port", 8080);
-        this.webServer = new WebServer(this, port);
+        String host = getConfig().getString("web.host", "0.0.0.0");
+        if (!"127.0.0.1".equals(host) && !"localhost".equals(host)) {
+            getLogger().warning("=============================================================================");
+            getLogger().warning("[LoveWebAdmin] web.host = \"" + host + "\" - веб-панель доступна с ЛЮБОГО IP,");
+            getLogger().warning("[LoveWebAdmin] который может достучаться до этого порта (" + port + "), включая");
+            getLogger().warning("[LoveWebAdmin] игроков на сервере, зная только его адрес. Если панель не должна");
+            getLogger().warning("[LoveWebAdmin] быть доступна публично, поставьте web.host: \"127.0.0.1\" в config.yml");
+            getLogger().warning("[LoveWebAdmin] и используйте reverse proxy/VPN для доступа снаружи, либо закройте");
+            getLogger().warning("[LoveWebAdmin] порт " + port + " файрволом хостинга для всех кроме нужных IP.");
+            getLogger().warning("=============================================================================");
+        }
+        this.webServer = new WebServer(this, port, host);
         Bukkit.getAsyncScheduler().runNow(this, task -> webServer.start());
 
-        getLogger().info("LoveWebAdmin запущен на порту " + port);
+        getLogger().info("LoveWebAdmin запущен на " + host + ":" + port);
     }
 
     @Override

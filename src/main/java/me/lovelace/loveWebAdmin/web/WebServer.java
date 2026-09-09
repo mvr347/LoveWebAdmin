@@ -11,6 +11,7 @@ import me.lovelace.loveWebAdmin.web.handlers.ApiStatsHandler;
 import me.lovelace.loveWebAdmin.web.handlers.ApiVesuvioHandler;
 import me.lovelace.loveWebAdmin.web.handlers.StaticHandler;
 import org.eclipse.jetty.server.Server;
+import org.eclipse.jetty.server.ServerConnector;
 import org.eclipse.jetty.servlet.FilterHolder;
 import org.eclipse.jetty.servlet.ServletContextHandler;
 import org.eclipse.jetty.servlet.ServletHolder;
@@ -24,16 +25,22 @@ public class WebServer {
 
     private final LoveWebAdmin plugin;
     private final int port;
+    private final String host;
     private Server server;
 
-    public WebServer(LoveWebAdmin plugin, int port) {
+    public WebServer(LoveWebAdmin plugin, int port, String host) {
         this.plugin = plugin;
         this.port = port;
+        this.host = host;
     }
 
     public void start() {
         try {
-            server = new Server(port);
+            server = new Server();
+            ServerConnector connector = new ServerConnector(server);
+            connector.setPort(port);
+            connector.setHost(host);
+            server.addConnector(connector);
 
             ServletContextHandler context = new ServletContextHandler(ServletContextHandler.NO_SESSIONS);
             context.setContextPath("/");
@@ -53,7 +60,7 @@ public class WebServer {
 
             server.setHandler(context);
             server.start();
-            plugin.getLogger().info("Веб-сервер запущен на порту " + port);
+            plugin.getLogger().info("Веб-сервер запущен на " + host + ":" + port);
         } catch (Exception e) {
             plugin.getLogger().severe("Не удалось запустить веб-сервер: " + e.getMessage());
         }
