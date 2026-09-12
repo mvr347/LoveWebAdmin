@@ -6,7 +6,7 @@ api-version: '26.2'
 load: POSTWORLD
 description: Веб-панель администрирования для Love* серверов
 authors: [ Lovelace ]
-softdepend: [ LuckPerms, Vesuvio ]
+softdepend: [ LuckPerms, Vesuvio, LoveCore ]
 
 commands:
   lovewebadmin:
