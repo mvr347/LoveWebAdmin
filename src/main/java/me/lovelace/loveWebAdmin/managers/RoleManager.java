@@ -33,12 +33,24 @@ public class RoleManager {
     }
 
     public boolean updateRole(int id, String lpGroup, Set<Permission> permissions) {
+        return updateRole(id, null, lpGroup, permissions);
+    }
+
+    public boolean updateRole(int id, String name, String lpGroup, Set<Permission> permissions) {
         Optional<WebRole> existing = plugin.getDatabaseManager().getRoleById(id);
         if (existing.isEmpty() || existing.get().isOwner()) return false;
 
+        String roleName = (name != null && !name.isBlank()) ? name.trim() : existing.get().name();
+
+        // Проверка на дублирование имени с другой ролью
+        Optional<WebRole> byName = plugin.getDatabaseManager().getRoleByName(roleName);
+        if (byName.isPresent() && byName.get().id() != id) {
+            return false;
+        }
+
         boolean lpGroupChanged = !Objects.equals(existing.get().lpGroup(), lpGroup);
 
-        WebRole updated = new WebRole(id, existing.get().name(), lpGroup, permissions, false);
+        WebRole updated = new WebRole(id, roleName, lpGroup, permissions, false);
         plugin.getDatabaseManager().saveRole(updated);
 
         if (lpGroupChanged && lpGroup != null && !lpGroup.isBlank()) {

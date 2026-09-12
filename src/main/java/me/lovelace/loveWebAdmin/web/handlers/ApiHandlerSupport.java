@@ -50,15 +50,60 @@ public abstract class ApiHandlerSupport extends HttpServlet {
     }
 
     protected Optional<WebSession> authenticate(HttpServletRequest req) {
+        // 1. Проверяем заголовок X-API-Key
+        String apiKey = req.getHeader("X-API-Key");
+        if (apiKey != null && !apiKey.isBlank()) {
+            if (plugin.getApiKeyManager() != null) {
+                var opt = plugin.getApiKeyManager().validateKey(apiKey.trim());
+                if (opt.isPresent()) {
+                    return Optional.of(createApiKeySession(opt.get(), req));
+                }
+            }
+        }
+
+        // 2. Проверяем заголовок Authorization
         String header = req.getHeader("Authorization");
-        if (header == null || !header.startsWith("Bearer ")) return Optional.empty();
-        String token = header.substring("Bearer ".length()).trim();
-        return plugin.getSessionManager().validate(token);
+        if (header == null) return Optional.empty();
+
+        if (header.startsWith("Bearer ")) {
+            String token = header.substring("Bearer ".length()).trim();
+            if (token.startsWith("lwa_live_") && plugin.getApiKeyManager() != null) {
+                var opt = plugin.getApiKeyManager().validateKey(token);
+                if (opt.isPresent()) {
+                    return Optional.of(createApiKeySession(opt.get(), req));
+                }
+            }
+            return plugin.getSessionManager().validate(token);
+        }
+        return Optional.empty();
+    }
+
+    private WebSession createApiKeySession(me.lovelace.loveWebAdmin.models.ApiKeyRecord apiKey, HttpServletRequest req) {
+        long now = System.currentTimeMillis() / 1000L;
+        String ip = req.getRemoteAddr();
+        String ua = req.getHeader("User-Agent");
+        return new WebSession(
+            apiKey.keyHash(),
+            -999, // Специальный маркер сессии API ключа
+            apiKey.name() + " [API Key]",
+            -999,
+            now + 86400,
+            ip,
+            ua != null ? ua : "API Client",
+            now,
+            now
+        );
     }
 
     protected boolean hasPermission(WebSession session, Permission permission) {
+        if (session.adminId() == -999) {
+            if (plugin.getApiKeyManager() != null) {
+                return plugin.getApiKeyManager().hasPermission(session.token(), permission);
+            }
+            return false;
+        }
         return plugin.getDatabaseManager().getRoleById(session.roleId())
-            .map(role -> role.permissions().contains(permission))
+            .map(role -> role.isOwner() || role.permissions().contains(permission))
             .orElse(false);
     }
 
