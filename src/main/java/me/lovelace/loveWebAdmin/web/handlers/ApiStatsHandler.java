@@ -55,8 +55,33 @@ public class ApiStatsHandler extends ApiHandlerSupport {
             players.add(p);
         }
 
+        double mspt = 0.0;
+        try {
+            mspt = Math.round(plugin.getServer().getAverageTickTime() * 10.0) / 10.0;
+        } catch (Throwable ignored) {
+            // fallback
+            if (!tpsList.isEmpty() && (double) tpsList.get(0) > 0) {
+                mspt = Math.round((1000.0 / Math.min(20.0, (double) tpsList.get(0))) * 10.0) / 10.0;
+            }
+        }
+
+        Runtime rt = Runtime.getRuntime();
+        long totalMem = rt.totalMemory() / (1024 * 1024);
+        long freeMem = rt.freeMemory() / (1024 * 1024);
+        long maxMem = rt.maxMemory() / (1024 * 1024);
+        long usedMem = totalMem - freeMem;
+
+        Map<String, Object> memory = new LinkedHashMap<>();
+        memory.put("usedMb", usedMem);
+        memory.put("totalMb", totalMem);
+        memory.put("maxMb", maxMem);
+        memory.put("freeMb", freeMem);
+        memory.put("percent", maxMem > 0 ? (int) Math.round((usedMem * 100.0) / maxMem) : 0);
+
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("tps", tpsList);
+        result.put("mspt", mspt);
+        result.put("memory", memory);
         result.put("onlinePlayers", plugin.getServer().getOnlinePlayers().size());
         result.put("maxPlayers", plugin.getServer().getMaxPlayers());
         result.put("players", players);

@@ -43,16 +43,7 @@ public class ApiLogsHandler extends ApiHandlerSupport {
             sendError(resp, 404, "Не найдено");
             return;
         }
-        Optional<WebSession> sessionOpt = requireSession(req, resp);
-        if (sessionOpt.isEmpty()) return;
-
-        Map<String, Object> body = readJsonBody(req);
-        String section = stringOrNull(body.get("section"));
-        if (section == null || section.isBlank()) {
-            sendError(resp, 400, "Не указан раздел");
-            return;
-        }
-        plugin.getLogManager().logWebAction(sessionOpt.get().adminUsername(), "Открыл раздел: " + section);
+        // Навигация по разделам больше не загрязняет веб-аудит лог по требованию пользователя
         sendSuccess(resp, null);
     }
 
@@ -81,10 +72,17 @@ public class ApiLogsHandler extends ApiHandlerSupport {
     private List<Map<String, Object>> toLogList(List<LogEntry> entries) {
         List<Map<String, Object>> result = new ArrayList<>();
         for (LogEntry entry : entries) {
+            String action = entry.action();
+            if (action != null && (action.startsWith("Открыл раздел:") || action.startsWith("Открыл раздел "))) {
+                continue; // Исключаем просмотры разделов из вывода веб-аудита
+            }
+            if (action != null && action.contains("(IP: ")) {
+                action = action.replaceAll("\\s*\\(IP:\\s*[^)]+\\)", "");
+            }
             Map<String, Object> map = new LinkedHashMap<>();
             map.put("id", entry.id());
             map.put("actor", entry.actor());
-            map.put("action", entry.action());
+            map.put("action", action);
             map.put("timestamp", entry.timestamp());
             result.add(map);
         }

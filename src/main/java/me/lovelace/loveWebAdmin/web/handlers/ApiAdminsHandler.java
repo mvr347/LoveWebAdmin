@@ -16,11 +16,15 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * GET    /api/admins
- * POST   /api/admins
- * DELETE /api/admins/{id}
- * DELETE /api/admins/{id}/password
- * PUT    /api/admins/{id}/role
+ * Управление администраторами и утверждение заявок:
+ * GET    /api/admins         — список активных администраторов
+ * GET    /api/admins/pending — список заявок на регистрацию
+ * POST   /api/admins         — создание администратора
+ * POST   /api/admins/{id}/approve — утверждение заявки с назначением роли
+ * POST   /api/admins/{id}/reject  — отклонение заявки
+ * DELETE /api/admins/{id}    — удаление администратора
+ * DELETE /api/admins/{id}/password — сброс пароля
+ * PUT    /api/admins/{id}/role — изменение роли
  */
 public class ApiAdminsHandler extends ApiHandlerSupport {
 
@@ -33,6 +37,16 @@ public class ApiAdminsHandler extends ApiHandlerSupport {
         Optional<WebSession> sessionOpt = requirePermission(req, resp, Permission.MANAGE_ADMINS);
         if (sessionOpt.isEmpty()) return;
 
+        String pathInfo = req.getPathInfo();
+        if ("/pending".equals(pathInfo)) {
+            List<Map<String, Object>> pending = new ArrayList<>();
+            for (WebAdmin admin : plugin.getDatabaseManager().getPendingAdmins()) {
+                pending.add(toAdminMap(admin));
+            }
+            sendSuccess(resp, pending);
+            return;
+        }
+
         List<Map<String, Object>> admins = new ArrayList<>();
         for (WebAdmin admin : plugin.getDatabaseManager().getAllAdmins()) {
             admins.add(toAdminMap(admin));
@@ -44,6 +58,16 @@ public class ApiAdminsHandler extends ApiHandlerSupport {
     protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws IOException {
         Optional<WebSession> sessionOpt = requirePermission(req, resp, Permission.MANAGE_ADMINS);
         if (sessionOpt.isEmpty()) return;
+
+        String pathInfo = req.getPathInfo();
+        if (pathInfo != null && pathInfo.contains("/approve")) {
+            handleApprove(req, resp, sessionOpt.get());
+            return;
+        }
+        if (pathInfo != null && pathInfo.contains("/reject")) {
+            handleReject(req, resp, sessionOpt.get());
+            return;
+        }
 
         Map<String, Object> body = readJsonBody(req);
         String username = stringOrNull(body.get("username"));
@@ -59,6 +83,43 @@ public class ApiAdminsHandler extends ApiHandlerSupport {
             case OK -> sendSuccess(resp, null);
             case ALREADY_EXISTS -> sendError(resp, 400, "Такой администратор уже существует");
             case ROLE_NOT_FOUND -> sendError(resp, 400, "Роль не найдена");
+        }
+    }
+
+    private void handleApprove(HttpServletRequest req, HttpServletResponse resp, WebSession session) throws IOException {
+        String pathInfo = req.getPathInfo();
+        String idStr = pathInfo.replace("/approve", "").replace("/", "");
+        try {
+            int targetId = Integer.parseInt(idStr);
+            Map<String, Object> body = readJsonBody(req);
+            int roleId = 1;
+            if (body.get("roleId") != null) {
+                roleId = (int) Double.parseDouble(String.valueOf(body.get("roleId")));
+            }
+            boolean ok = plugin.getAdminManager().approvePendingAdmin(session.adminUsername(), targetId, roleId);
+            if (ok) {
+                sendSuccess(resp, Map.of("message", "Заявка утверждена"));
+            } else {
+                sendError(resp, 400, "Не удалось утвердить заявку");
+            }
+        } catch (NumberFormatException e) {
+            sendError(resp, 400, "Некорректный ID");
+        }
+    }
+
+    private void handleReject(HttpServletRequest req, HttpServletResponse resp, WebSession session) throws IOException {
+        String pathInfo = req.getPathInfo();
+        String idStr = pathInfo.replace("/reject", "").replace("/", "");
+        try {
+            int targetId = Integer.parseInt(idStr);
+            boolean ok = plugin.getAdminManager().rejectPendingAdmin(session.adminUsername(), targetId);
+            if (ok) {
+                sendSuccess(resp, Map.of("message", "Заявка отклонена"));
+            } else {
+                sendError(resp, 400, "Не удалось отклонить заявку");
+            }
+        } catch (NumberFormatException e) {
+            sendError(resp, 400, "Некорректный ID");
         }
     }
 
@@ -132,6 +193,12 @@ public class ApiAdminsHandler extends ApiHandlerSupport {
 
         boolean ok = plugin.getAdminManager().updateAdminRole(sessionOpt.get().adminUsername(), targetId, roleId);
         if (ok) {
+            if (body.get("expiresAt") != null) {
+                try {
+                    long exp = (long) Double.parseDouble(String.valueOf(body.get("expiresAt")));
+                    plugin.getDatabaseManager().setAdminRoleExpiry(targetId, exp);
+                } catch (Exception ignored) {}
+            }
             sendSuccess(resp, null);
         } else {
             sendError(resp, 400, "Не удалось изменить роль");
@@ -144,9 +211,12 @@ public class ApiAdminsHandler extends ApiHandlerSupport {
         map.put("username", admin.username());
         map.put("roleId", admin.roleId());
         plugin.getDatabaseManager().getRoleById(admin.roleId()).ifPresent(role -> map.put("roleName", role.name()));
+        map.put("roleExpiresAt", plugin.getDatabaseManager().getAdminRoleExpiry(admin.id()));
         map.put("createdAt", admin.createdAt());
         map.put("lastLoginAt", admin.lastLoginAt());
         map.put("hasPassword", admin.passwordHash() != null);
+        map.put("status", admin.status());
+        map.put("totpEnabled", admin.totpEnabled());
         return map;
     }
 

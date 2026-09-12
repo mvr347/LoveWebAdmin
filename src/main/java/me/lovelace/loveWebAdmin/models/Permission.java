@@ -14,16 +14,42 @@ public enum Permission {
     MANAGE_ROLES,
     MANAGE_PASSWORDS,
 
-    // Vesuvio AntiCheat: базовый обзор — только подозреваемые и лог наказаний.
+    // Баны и апелляции
+    VIEW_BANS,
+    MANAGE_BANS,
+    VIEW_APPEALS,
+    MANAGE_APPEALS,
+
+    // Профили игроков и аналитика
+    VIEW_PLAYERS,
+    MANAGE_PLAYERS,
+    VIEW_ANALYTICS,
+
+    // LoveAuth
+    MANAGE_LOVEAUTH,
+
+    // Vesuvio AntiCheat (Античит): базовый обзор — только подозреваемые и лог наказаний.
     VIEW_VESUVIO,
-    // Vesuvio AntiCheat: расширенный обзор — вся телеметрия, движок, датасет самообучения,
+    // Vesuvio AntiCheat (Античит): расширенный обзор — вся телеметрия, движок, датасет самообучения,
     // подробный профиль игрока (CPS/StdDev/ML/self-learn и т.д.).
     VIEW_VESUVIO_ADVANCED,
-    // Vesuvio AntiCheat: управляющие действия — сброс VL, пометка/снятие подозрения.
+    // Vesuvio AntiCheat (Античит): управляющие действия — сброс VL, пометка/снятие подозрения.
     MANAGE_VESUVIO,
 
-    // Тикеты (апелляции/поддержка/жалобы): просмотр списка и переписки.
-    VIEW_TICKETS,
-    // Тикеты: ответить в переписке, закрыть/переоткрыть.
-    MANAGE_TICKETS
+    // Режим ЧС («Красная кнопка» / Emergency Lockdown)
+    MANAGE_LOCKDOWN,
+
+    // Аудит действий персонала и KPI
+    VIEW_STAFF_AUDIT,
+
+    // Экономика LoveCore (LoveEconomy)
+    VIEW_ECONOMY,
+    MANAGE_ECONOMY,
+
+    // Репорты и жалобы игроков
+    VIEW_REPORTS,
+    MANAGE_REPORTS,
+
+    // API и Вебхуки
+    MANAGE_API
 }

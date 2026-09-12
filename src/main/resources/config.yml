@@ -48,3 +48,13 @@ security:
     - plugman
     - pl
     - reload
+  webhooks:
+    enabled: false
+    discord:
+      enabled: false
+      webhook-url: ""
+    telegram:
+      enabled: false
+      bot-token: ""
+      chat-id: ""
+

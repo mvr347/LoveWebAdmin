@@ -45,9 +45,17 @@ public class SessionManager {
     }
 
     public WebSession createSession(WebAdmin admin, WebRole role) {
+        return createSession(admin, role, null, null);
+    }
+
+    public WebSession createSession(WebAdmin admin, WebRole role, String ip, String userAgent) {
         long lifetimeMinutes = plugin.getConfig().getLong("web.session-lifetime-minutes", 60);
-        long expiresAt = System.currentTimeMillis() / 1000 + lifetimeMinutes * 60;
-        WebSession session = new WebSession(UUID.randomUUID().toString(), admin.id(), admin.username(), role.id(), expiresAt);
+        long now = System.currentTimeMillis() / 1000;
+        long expiresAt = now + lifetimeMinutes * 60;
+        WebSession session = new WebSession(
+            UUID.randomUUID().toString(), admin.id(), admin.username(), role.id(), expiresAt,
+            ip, userAgent, now, now
+        );
 
         cache.put(session.token(), session);
         plugin.getDatabaseManager().saveSession(session);
@@ -57,20 +65,33 @@ public class SessionManager {
     public Optional<WebSession> validate(String token) {
         if (token == null) return Optional.empty();
 
-        WebSession cached = cache.get(token);
-        if (cached != null) {
-            if (cached.expiresAt() < System.currentTimeMillis() / 1000) {
+        WebSession session = cache.get(token);
+        long now = System.currentTimeMillis() / 1000;
+
+        if (session != null) {
+            if (session.expiresAt() < now) {
                 invalidate(token);
                 return Optional.empty();
             }
-            return Optional.of(cached);
+            // Обновляем активность раз в 2 минуты для экономии I/O
+            if (now - session.lastUsedAt() > 120) {
+                WebSession updated = new WebSession(
+                    session.token(), session.adminId(), session.adminUsername(),
+                    session.roleId(), session.expiresAt(), session.ip(), session.userAgent(),
+                    session.createdAt(), now
+                );
+                cache.put(token, updated);
+                plugin.getDatabaseManager().updateSessionLastUsed(token, now);
+                return Optional.of(updated);
+            }
+            return Optional.of(session);
         }
 
         Optional<WebSession> fromDb = plugin.getDatabaseManager().getSession(token);
         if (fromDb.isEmpty()) return Optional.empty();
 
-        WebSession session = fromDb.get();
-        if (session.expiresAt() < System.currentTimeMillis() / 1000) {
+        session = fromDb.get();
+        if (session.expiresAt() < now) {
             invalidate(token);
             return Optional.empty();
         }
@@ -86,5 +107,15 @@ public class SessionManager {
 
     public void invalidateSessionsForAdmin(int adminId) {
         cache.values().removeIf(session -> session.adminId() == adminId);
+        plugin.getDatabaseManager().deleteSessionsForAdmin(adminId);
+    }
+
+    public java.util.List<WebSession> getSessionsForAdmin(int adminId) {
+        return plugin.getDatabaseManager().getSessionsForAdmin(adminId);
+    }
+
+    public void invalidateOtherSessions(int adminId, String currentToken) {
+        cache.values().removeIf(session -> session.adminId() == adminId && !session.token().equals(currentToken));
+        plugin.getDatabaseManager().deleteOtherSessions(adminId, currentToken);
     }
 }

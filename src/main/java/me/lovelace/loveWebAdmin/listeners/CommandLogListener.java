@@ -38,9 +38,22 @@ public class CommandLogListener implements Listener {
     @EventHandler
     public void onPlayerCommand(PlayerCommandPreprocessEvent event) {
         String playerName = event.getPlayer().getName();
+        String message = event.getMessage();
+        if (message != null && message.startsWith("/")) {
+            String cmdOnly = message.substring(1);
+            plugin.getServer().getAsyncScheduler().runNow(plugin, task -> {
+                plugin.getDatabaseManager().recordCommandExecution(cmdOnly);
+            });
+        }
+
         if (!adminUsernamesCache.contains(playerName.toLowerCase())) return;
 
         String command = event.getMessage().substring(1);
         plugin.getLogManager().logWebAction(playerName, "Выполнил команду в игре: /" + command);
+        if (plugin.getStaffAuditManager() != null) {
+            plugin.getServer().getAsyncScheduler().runNow(plugin, task -> {
+                plugin.getStaffAuditManager().processStaffCommand(playerName, command);
+            });
+        }
     }
 }

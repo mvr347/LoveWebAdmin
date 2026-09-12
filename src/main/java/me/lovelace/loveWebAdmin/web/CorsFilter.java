@@ -43,6 +43,8 @@ public class CorsFilter implements Filter {
         // Security headers
         httpResponse.setHeader("X-Frame-Options", "DENY");
         httpResponse.setHeader("X-Content-Type-Options", "nosniff");
+        httpResponse.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+        httpResponse.setHeader("Permissions-Policy", "geolocation=(), camera=(), microphone=(), payment=()");
         httpResponse.setHeader("Content-Security-Policy",
             "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
             "font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'");
