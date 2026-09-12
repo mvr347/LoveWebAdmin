@@ -87,6 +87,10 @@
             <id>luckperms</id>
             <url>https://oss.sonatype.org/content/repositories/snapshots/</url>
         </repository>
+        <repository>
+            <id>jitpack.io</id>
+            <url>https://jitpack.io</url>
+        </repository>
     </repositories>
 
     <dependencies>
@@ -94,6 +98,13 @@
             <groupId>io.papermc.paper</groupId>
             <artifactId>paper-api</artifactId>
             <version>26.2.build.100-stable</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>dev.lovelace</groupId>
+            <artifactId>lovecore-api</artifactId>
+            <version>1.0.0</version>
             <scope>provided</scope>
         </dependency>
 

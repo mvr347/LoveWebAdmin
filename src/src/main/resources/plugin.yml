@@ -1,0 +1,46 @@
+name: LoveWebAdmin
+version: '${version}'
+
+main: me.lovelace.loveWebAdmin.LoveWebAdmin
+api-version: '26.2'
+load: POSTWORLD
+description: Веб-панель администрирования для Love* серверов
+authors: [ Lovelace ]
+softdepend: [ LuckPerms, Vesuvio ]
+
+commands:
+  lovewebadmin:
+    description: LoveWebAdmin управление
+    usage: /lovewebadmin <info|reload|resetowner>
+    aliases: [ lwa ]
+    permission: lovewebadmin.admin
+  бан:
+    description: Создание черновика бана для передачи в WebAdmin
+    usage: /бан <игрок>
+    aliases: [ ban, webban, lban ]
+    permission: lovewebadmin.ban
+  report:
+    description: Подача жалобы на игрока
+    usage: /репорт <никнейм>
+    aliases: [ репорт, жалоба ]
+    permission: lovewebadmin.report
+  разбан:
+    description: Снятие бана с игрока на сервере и в WebAdmin
+    usage: /разбан <игрок>
+    aliases: [ unban, webunban, lunban, pardon ]
+    permission: lovewebadmin.unban
+
+permissions:
+  lovewebadmin.admin:
+    description: Доступ к команде /lovewebadmin (алиас /lwa)
+    default: op
+  lovewebadmin.ban:
+    description: Доступ к созданию банов через /бан
+    default: op
+  lovewebadmin.unban:
+    description: Доступ к разбану игроков через /разбан (алиасы /unban, /pardon)
+    default: op
+  lovewebadmin.report:
+    description: Доступ к отправке жалоб через /репорт
+    default: true
+
