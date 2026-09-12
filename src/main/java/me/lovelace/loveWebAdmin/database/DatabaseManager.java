@@ -1,8 +1,13 @@
 package me.lovelace.loveWebAdmin.database;
 
 import me.lovelace.loveWebAdmin.LoveWebAdmin;
+import dev.lovelace.lovecore.api.tickets.MessageSource;
+import dev.lovelace.lovecore.api.tickets.TicketStatus;
+import dev.lovelace.lovecore.api.tickets.TicketType;
 import me.lovelace.loveWebAdmin.models.LogEntry;
 import me.lovelace.loveWebAdmin.models.Permission;
+import me.lovelace.loveWebAdmin.models.Ticket;
+import me.lovelace.loveWebAdmin.models.TicketMessage;
 import me.lovelace.loveWebAdmin.models.WebAdmin;
 import me.lovelace.loveWebAdmin.models.WebRole;
 import me.lovelace.loveWebAdmin.models.WebSession;
@@ -21,6 +26,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * Все методы вызываются только из async контекста.
@@ -84,6 +90,32 @@ public class DatabaseManager {
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         message TEXT NOT NULL,
                         timestamp INTEGER DEFAULT (strftime('%s', 'now'))
+                    )
+                    """);
+                statement.execute("""
+                    CREATE TABLE IF NOT EXISTS tickets (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        type TEXT NOT NULL,
+                        status TEXT NOT NULL DEFAULT 'OPEN',
+                        player_uuid TEXT NOT NULL,
+                        player_name TEXT NOT NULL,
+                        subject TEXT NOT NULL,
+                        target_uuid TEXT,
+                        target_name TEXT,
+                        discord_channel_id TEXT,
+                        created_at INTEGER DEFAULT (strftime('%s', 'now')),
+                        closed_at INTEGER DEFAULT 0
+                    )
+                    """);
+                statement.execute("""
+                    CREATE TABLE IF NOT EXISTS ticket_messages (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        ticket_id INTEGER NOT NULL,
+                        author_name TEXT NOT NULL,
+                        body TEXT NOT NULL,
+                        source TEXT NOT NULL,
+                        created_at INTEGER DEFAULT (strftime('%s', 'now')),
+                        FOREIGN KEY (ticket_id) REFERENCES tickets(id)
                     )
                     """);
             }
@@ -546,5 +578,148 @@ public class DatabaseManager {
         } catch (SQLException e) {
             plugin.getLogger().warning("Ошибка обрезки серверных логов: " + e.getMessage());
         }
+    }
+
+    // ---------- Тикеты (апелляции/поддержка/жалобы) ----------
+
+    public synchronized long insertTicket(TicketType type, UUID playerUuid, String playerName, String subject,
+                                           UUID targetUuid, String targetName) {
+        String sql = """
+            INSERT INTO tickets (type, status, player_uuid, player_name, subject, target_uuid, target_name)
+            VALUES (?, 'OPEN', ?, ?, ?, ?, ?)
+            """;
+        try (PreparedStatement ps = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+            ps.setString(1, type.name());
+            ps.setString(2, playerUuid.toString());
+            ps.setString(3, playerName);
+            ps.setString(4, subject);
+            ps.setString(5, targetUuid == null ? null : targetUuid.toString());
+            ps.setString(6, targetName);
+            ps.executeUpdate();
+            try (ResultSet keys = ps.getGeneratedKeys()) {
+                if (keys.next()) return keys.getLong(1);
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().warning("Ошибка создания тикета: " + e.getMessage());
+        }
+        return 0L;
+    }
+
+    public synchronized void insertTicketMessage(long ticketId, String authorName, String body, MessageSource source) {
+        String sql = "INSERT INTO ticket_messages (ticket_id, author_name, body, source) VALUES (?, ?, ?, ?)";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setLong(1, ticketId);
+            ps.setString(2, authorName);
+            ps.setString(3, body);
+            ps.setString(4, source.name());
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            plugin.getLogger().warning("Ошибка добавления сообщения в тикет: " + e.getMessage());
+        }
+    }
+
+    public synchronized void setTicketDiscordChannel(long ticketId, String discordChannelId) {
+        String sql = "UPDATE tickets SET discord_channel_id = ? WHERE id = ?";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setString(1, discordChannelId);
+            ps.setLong(2, ticketId);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            plugin.getLogger().warning("Ошибка привязки Discord-канала к тикету: " + e.getMessage());
+        }
+    }
+
+    public synchronized void closeTicket(long ticketId) {
+        String sql = "UPDATE tickets SET status = 'CLOSED', closed_at = strftime('%s', 'now') WHERE id = ?";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setLong(1, ticketId);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            plugin.getLogger().warning("Ошибка закрытия тикета: " + e.getMessage());
+        }
+    }
+
+    public synchronized void reopenTicket(long ticketId) {
+        String sql = "UPDATE tickets SET status = 'OPEN', closed_at = 0 WHERE id = ?";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setLong(1, ticketId);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            plugin.getLogger().warning("Ошибка переоткрытия тикета: " + e.getMessage());
+        }
+    }
+
+    public synchronized Optional<Ticket> getTicket(long id) {
+        String sql = "SELECT * FROM tickets WHERE id = ?";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setLong(1, id);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) return Optional.of(mapTicket(rs));
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().warning("Ошибка получения тикета: " + e.getMessage());
+        }
+        return Optional.empty();
+    }
+
+    /** statusFilter — "OPEN"/"CLOSED", либо null/пусто для всех тикетов. */
+    public synchronized List<Ticket> getAllTickets(String statusFilter) {
+        List<Ticket> tickets = new ArrayList<>();
+        String sql = (statusFilter == null || statusFilter.isBlank())
+                ? "SELECT * FROM tickets ORDER BY id DESC"
+                : "SELECT * FROM tickets WHERE status = ? ORDER BY id DESC";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            if (statusFilter != null && !statusFilter.isBlank()) {
+                ps.setString(1, statusFilter);
+            }
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    tickets.add(mapTicket(rs));
+                }
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().warning("Ошибка получения списка тикетов: " + e.getMessage());
+        }
+        return tickets;
+    }
+
+    public synchronized List<TicketMessage> getTicketMessages(long ticketId) {
+        List<TicketMessage> messages = new ArrayList<>();
+        String sql = "SELECT * FROM ticket_messages WHERE ticket_id = ? ORDER BY id ASC";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setLong(1, ticketId);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    messages.add(new TicketMessage(
+                        rs.getLong("id"),
+                        rs.getLong("ticket_id"),
+                        rs.getString("author_name"),
+                        rs.getString("body"),
+                        MessageSource.valueOf(rs.getString("source")),
+                        rs.getLong("created_at")
+                    ));
+                }
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().warning("Ошибка получения сообщений тикета: " + e.getMessage());
+        }
+        return messages;
+    }
+
+    private Ticket mapTicket(ResultSet rs) throws SQLException {
+        String targetUuidRaw = rs.getString("target_uuid");
+        return new Ticket(
+            rs.getLong("id"),
+            TicketType.valueOf(rs.getString("type")),
+            TicketStatus.valueOf(rs.getString("status")),
+            UUID.fromString(rs.getString("player_uuid")),
+            rs.getString("player_name"),
+            rs.getString("subject"),
+            targetUuidRaw == null ? null : UUID.fromString(targetUuidRaw),
+            rs.getString("target_name"),
+            rs.getString("discord_channel_id"),
+            rs.getLong("created_at"),
+            rs.getLong("closed_at")
+        );
     }
 }

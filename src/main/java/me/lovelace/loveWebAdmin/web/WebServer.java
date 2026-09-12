@@ -8,6 +8,7 @@ import me.lovelace.loveWebAdmin.web.handlers.ApiCommandHandler;
 import me.lovelace.loveWebAdmin.web.handlers.ApiLogsHandler;
 import me.lovelace.loveWebAdmin.web.handlers.ApiRolesHandler;
 import me.lovelace.loveWebAdmin.web.handlers.ApiStatsHandler;
+import me.lovelace.loveWebAdmin.web.handlers.ApiTicketsHandler;
 import me.lovelace.loveWebAdmin.web.handlers.ApiVesuvioHandler;
 import me.lovelace.loveWebAdmin.web.handlers.StaticHandler;
 import org.eclipse.jetty.server.Server;
@@ -56,6 +57,7 @@ public class WebServer {
             context.addServlet(new ServletHolder(new ApiAdminsHandler(plugin)), "/api/admins/*");
             context.addServlet(new ServletHolder(new ApiRolesHandler(plugin)), "/api/roles/*");
             context.addServlet(new ServletHolder(new ApiVesuvioHandler(plugin)), "/api/vesuvio/*");
+            context.addServlet(new ServletHolder(new ApiTicketsHandler(plugin)), "/api/tickets/*");
             context.addServlet(new ServletHolder(new StaticHandler()), "/*");
 
             server.setHandler(context);

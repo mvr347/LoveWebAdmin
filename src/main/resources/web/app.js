@@ -15,12 +15,14 @@
         { key: 'vesuvio', label: '🛡️ Vesuvio', perm: 'VIEW_VESUVIO' },
         { key: 'admins', label: '👥 Администраторы', perm: 'MANAGE_ADMINS' },
         { key: 'roles', label: '🎭 Роли', perm: 'MANAGE_ROLES' },
+        { key: 'tickets', label: '🎫 Тикеты', perm: 'VIEW_TICKETS' },
     ];
 
     const ALL_PERMISSIONS = [
         'VIEW_SERVER_LOGS', 'VIEW_WEB_LOGS', 'VIEW_STATS', 'EXECUTE_COMMANDS',
         'MANAGE_ADMINS', 'MANAGE_ROLES', 'MANAGE_PASSWORDS',
-        'VIEW_VESUVIO', 'VIEW_VESUVIO_ADVANCED', 'MANAGE_VESUVIO'
+        'VIEW_VESUVIO', 'VIEW_VESUVIO_ADVANCED', 'MANAGE_VESUVIO',
+        'VIEW_TICKETS', 'MANAGE_TICKETS'
     ];
 
     const PERMISSION_LABELS = {
@@ -34,7 +36,12 @@
         VIEW_VESUVIO: 'Vesuvio: подозреваемые и наказания',
         VIEW_VESUVIO_ADVANCED: 'Vesuvio: расширенная телеметрия',
         MANAGE_VESUVIO: 'Vesuvio: управление (сброс VL, подозрения)',
+        VIEW_TICKETS: 'Тикеты: просмотр апелляций/обращений',
+        MANAGE_TICKETS: 'Тикеты: ответ, закрытие/переоткрытие',
     };
+
+    const TICKET_TYPE_LABELS = { APPEAL: 'Апелляция', SUPPORT: 'Поддержка', REPORT: 'Жалоба' };
+    const TICKET_SOURCE_LABELS = { PANEL: 'Панель', DISCORD: 'Discord', SYSTEM: 'Система' };
 
     function esc(s) {
         const div = document.createElement('div');
@@ -91,6 +98,10 @@
     // ---------- Boot ----------
 
     async function boot() {
+        if (location.hash === '#appeal') {
+            renderAppealForm();
+            return;
+        }
         if (!token) {
             await renderAuthGate();
             return;
@@ -152,7 +163,14 @@
                 <div class="field"><label>Пароль</label><input id="li-password" type="password"></div>
                 <p class="error" id="li-error"></p>
                 <button class="primary" id="li-submit">Войти</button>
+                <p class="sub" style="margin-top:16px"><a href="#appeal" id="li-appeal-link">Подать апелляцию на бан</a></p>
             </div></div>`;
+
+        document.getElementById('li-appeal-link').addEventListener('click', (e) => {
+            e.preventDefault();
+            location.hash = 'appeal';
+            renderAppealForm();
+        });
 
         const submit = async () => {
             const username = document.getElementById('li-username').value.trim();
@@ -268,6 +286,7 @@
             case 'vesuvio': renderVesuvioSection(); break;
             case 'admins': renderAdminsSection(); break;
             case 'roles': renderRolesSection(); break;
+            case 'tickets': renderTicketsSection(); break;
         }
     }
 
@@ -869,6 +888,188 @@
                     document.getElementById('r-error').textContent = e.message;
                 }
             });
+        });
+    }
+
+    // ---------- Public appeal form (no auth) ----------
+
+    function renderAppealForm() {
+        app.innerHTML = `
+            <div class="auth-screen"><div class="auth-card">
+                <h1>Апелляция на бан</h1>
+                <p class="sub">Опишите, почему вы считаете бан ошибочным. Обращение увидят администраторы
+                    в панели и (если ваш Discord привязан к аккаунту) в отдельном канале.</p>
+                <div class="field"><label>Ник в Minecraft</label><input id="ap-username" type="text" placeholder="Steve"></div>
+                <div class="field"><label>Причина апелляции</label><textarea id="ap-subject" rows="5" placeholder="Опишите ситуацию подробно..."></textarea></div>
+                <p class="error" id="ap-error"></p>
+                <p class="sub" id="ap-success" style="display:none;color:var(--green)"></p>
+                <button class="primary" id="ap-submit">Отправить апелляцию</button>
+                <p class="sub" style="margin-top:16px"><a href="#" id="ap-back-link">← Назад ко входу</a></p>
+            </div></div>`;
+
+        document.getElementById('ap-back-link').addEventListener('click', (e) => {
+            e.preventDefault();
+            location.hash = '';
+            renderAuthGate();
+        });
+
+        document.getElementById('ap-submit').addEventListener('click', async () => {
+            const playerName = document.getElementById('ap-username').value.trim();
+            const subject = document.getElementById('ap-subject').value.trim();
+            const errorEl = document.getElementById('ap-error');
+            const successEl = document.getElementById('ap-success');
+            errorEl.textContent = '';
+            successEl.style.display = 'none';
+            if (!playerName) { errorEl.textContent = 'Введите ник в Minecraft'; return; }
+            if (!subject) { errorEl.textContent = 'Опишите причину апелляции'; return; }
+            try {
+                const ticket = await api('POST', '/api/tickets/public', { playerName, subject });
+                document.getElementById('ap-username').value = '';
+                document.getElementById('ap-subject').value = '';
+                successEl.textContent = `Апелляция отправлена (№${ticket.id}). Администрация свяжется с вами.`;
+                successEl.style.display = 'block';
+            } catch (e) {
+                errorEl.textContent = e.message;
+            }
+        });
+    }
+
+    // ---------- Tickets (appeals/support/report) ----------
+
+    function ticketStatusClass(status) {
+        return status === 'OPEN' ? 'tps-green' : 'tps-red';
+    }
+
+    async function renderTicketsSection() {
+        const main = document.getElementById('main-content');
+        const manage = hasPerm('MANAGE_TICKETS');
+        const state = { status: 'OPEN' };
+
+        main.innerHTML = `
+            <h2>🎫 Тикеты</h2>
+            <div class="toolbar">
+                <button id="tk-filter-open" class="active">Открытые</button>
+                <button id="tk-filter-closed">Закрытые</button>
+                <button id="tk-filter-all">Все</button>
+                <div class="spacer"></div>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>№</th><th>Тип</th><th>Игрок</th><th>Тема</th><th>Статус</th><th>Создан</th></tr></thead>
+                    <tbody id="tk-tbody"><tr><td colspan="6">Загрузка...</td></tr></tbody>
+                </table>
+            </div>`;
+
+        async function load() {
+            try {
+                const statusParam = state.status === 'ALL' ? '' : `?status=${state.status}`;
+                const tickets = await api('GET', `/api/tickets${statusParam}`);
+                document.getElementById('tk-tbody').innerHTML = tickets.length ? tickets.map(t => `
+                    <tr class="vs-clickable" data-id="${t.id}">
+                        <td>#${t.id}</td>
+                        <td>${esc(TICKET_TYPE_LABELS[t.type] || t.type)}</td>
+                        <td>${esc(t.playerName)}</td>
+                        <td>${esc((t.subject || '').slice(0, 60))}${(t.subject || '').length > 60 ? '…' : ''}</td>
+                        <td class="${ticketStatusClass(t.status)}">${t.status === 'OPEN' ? 'Открыт' : 'Закрыт'}</td>
+                        <td>${fmtTime(t.createdAt)}</td>
+                    </tr>`).join('') : '<tr><td colspan="6">Нет тикетов</td></tr>';
+
+                document.querySelectorAll('#tk-tbody tr[data-id]').forEach(row => {
+                    row.addEventListener('click', () => openTicketModal(parseInt(row.dataset.id, 10), manage, load));
+                });
+            } catch (e) {
+                document.getElementById('tk-tbody').innerHTML = `<tr><td colspan="6" class="error">${esc(e.message)}</td></tr>`;
+            }
+        }
+
+        function setFilter(status, btnId) {
+            state.status = status;
+            ['tk-filter-open', 'tk-filter-closed', 'tk-filter-all'].forEach(id =>
+                document.getElementById(id).classList.toggle('active', id === btnId));
+            load();
+        }
+
+        document.getElementById('tk-filter-open').addEventListener('click', () => setFilter('OPEN', 'tk-filter-open'));
+        document.getElementById('tk-filter-closed').addEventListener('click', () => setFilter('CLOSED', 'tk-filter-closed'));
+        document.getElementById('tk-filter-all').addEventListener('click', () => setFilter('ALL', 'tk-filter-all'));
+
+        await load();
+        pollers.tickets = setInterval(load, 10000);
+    }
+
+    async function openTicketModal(id, manage, onChanged) {
+        openModal('<h3>Тикет</h3><p>Загрузка...</p>', () => {});
+        let ticket;
+        try {
+            ticket = await api('GET', `/api/tickets/${id}`);
+        } catch (e) {
+            openModal(`<h3>Тикет</h3><p class="error">${esc(e.message)}</p><div class="actions"><button id="tk-modal-close">Закрыть</button></div>`, () => {
+                document.getElementById('tk-modal-close').addEventListener('click', closeModal);
+            });
+            return;
+        }
+
+        const messagesHtml = ticket.messages.map(m => `
+            <div class="line">
+                <span class="cmd">${esc(m.authorName)} <span class="tag">${esc(TICKET_SOURCE_LABELS[m.source] || m.source)}</span></span>
+                — ${esc(m.body)}
+                <div style="font-size:11px;color:var(--text-dim)">${fmtTime(m.createdAt)}</div>
+            </div>`).join('') || '<div class="line">Сообщений пока нет</div>';
+
+        openModal(`
+            <h3>🎫 Тикет #${ticket.id} — ${esc(TICKET_TYPE_LABELS[ticket.type] || ticket.type)}</h3>
+            <div class="field"><label>Игрок</label><div>${esc(ticket.playerName)}</div></div>
+            ${ticket.targetName ? `<div class="field"><label>На кого жалоба</label><div>${esc(ticket.targetName)}</div></div>` : ''}
+            <div class="field"><label>Статус</label><div class="${ticketStatusClass(ticket.status)}">${ticket.status === 'OPEN' ? 'Открыт' : 'Закрыт'}</div></div>
+            <div class="field"><label>Переписка</label><div class="console-history" style="max-height:260px">${messagesHtml}</div></div>
+            ${manage && ticket.status === 'OPEN' ? `
+                <div class="field"><label>Ответить</label><textarea id="tk-reply" rows="3"></textarea></div>
+                <p class="error" id="tk-error"></p>
+            ` : ''}
+            <div class="actions">
+                <button id="tk-modal-close">Закрыть окно</button>
+                ${manage && ticket.status === 'OPEN' ? '<button class="primary" id="tk-reply-submit">Отправить ответ</button><button class="danger" id="tk-close-ticket">Закрыть тикет</button>' : ''}
+                ${manage && ticket.status === 'CLOSED' ? '<button class="primary" id="tk-reopen-ticket">Переоткрыть</button>' : ''}
+            </div>
+        `, () => {
+            document.getElementById('tk-modal-close').addEventListener('click', closeModal);
+            const replyBtn = document.getElementById('tk-reply-submit');
+            if (replyBtn) {
+                replyBtn.addEventListener('click', async () => {
+                    const message = document.getElementById('tk-reply').value.trim();
+                    const errorEl = document.getElementById('tk-error');
+                    if (!message) { errorEl.textContent = 'Введите сообщение'; return; }
+                    try {
+                        await api('POST', `/api/tickets/${id}/reply`, { message });
+                        closeModal();
+                        onChanged();
+                        openTicketModal(id, manage, onChanged);
+                    } catch (e) {
+                        errorEl.textContent = e.message;
+                    }
+                });
+            }
+            const closeBtn = document.getElementById('tk-close-ticket');
+            if (closeBtn) {
+                closeBtn.addEventListener('click', async () => {
+                    if (!confirm('Закрыть этот тикет?')) return;
+                    try {
+                        await api('POST', `/api/tickets/${id}/close`);
+                        closeModal();
+                        onChanged();
+                    } catch (e) { alert(e.message); }
+                });
+            }
+            const reopenBtn = document.getElementById('tk-reopen-ticket');
+            if (reopenBtn) {
+                reopenBtn.addEventListener('click', async () => {
+                    try {
+                        await api('POST', `/api/tickets/${id}/reopen`);
+                        closeModal();
+                        onChanged();
+                    } catch (e) { alert(e.message); }
+                });
+            }
         });
     }
 

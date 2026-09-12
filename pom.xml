@@ -87,6 +87,10 @@
             <id>luckperms</id>
             <url>https://oss.sonatype.org/content/repositories/snapshots/</url>
         </repository>
+        <repository>
+            <id>jitpack.io</id>
+            <url>https://jitpack.io</url>
+        </repository>
     </repositories>
 
     <dependencies>
@@ -101,6 +105,19 @@
             <groupId>net.luckperms</groupId>
             <artifactId>api</artifactId>
             <version>5.4</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!--
+            LoveCore отсутствует в публичных репозиториях Maven — используем JitPack,
+            собирающий jar прямо из GitHub по хэшу коммита (как это уже делают LoveBehaivor,
+            LoveClans и другие плагины экосистемы). scope=provided: LoveCore — отдельный плагин,
+            присутствующий на сервере как зависимость (softdepend), а не шейдится внутрь jar'а.
+        -->
+        <dependency>
+            <groupId>com.github.mvr347.LoveCore</groupId>
+            <artifactId>lovecore-api</artifactId>
+            <version>0841ad0</version>
             <scope>provided</scope>
         </dependency>
 

@@ -3,16 +3,19 @@ package me.lovelace.loveWebAdmin;
 import me.lovelace.loveWebAdmin.commands.LoveWebAdminCommand;
 import me.lovelace.loveWebAdmin.database.DatabaseManager;
 import me.lovelace.loveWebAdmin.integration.VesuvioBridge;
+import me.lovelace.loveWebAdmin.integration.WebAdminTicketOracle;
 import me.lovelace.loveWebAdmin.listeners.CommandLogListener;
 import me.lovelace.loveWebAdmin.managers.AdminManager;
 import me.lovelace.loveWebAdmin.managers.LogManager;
 import me.lovelace.loveWebAdmin.managers.LoginAttemptTracker;
 import me.lovelace.loveWebAdmin.managers.LuckPermsManager;
 import me.lovelace.loveWebAdmin.managers.RoleManager;
+import me.lovelace.loveWebAdmin.managers.TicketManager;
 import me.lovelace.loveWebAdmin.web.SessionManager;
 import me.lovelace.loveWebAdmin.web.WebServer;
 import org.bukkit.Bukkit;
 import org.bukkit.event.HandlerList;
+import org.bukkit.plugin.ServicePriority;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public final class LoveWebAdmin extends JavaPlugin {
@@ -27,6 +30,7 @@ public final class LoveWebAdmin extends JavaPlugin {
     private CommandLogListener commandLogListener;
     private WebServer webServer;
     private VesuvioBridge vesuvioBridge;
+    private TicketManager ticketManager;
     private long startTimeMillis;
 
     @Override
@@ -55,6 +59,20 @@ public final class LoveWebAdmin extends JavaPlugin {
 
         // Reflection-only bridge - see VesuvioBridge for why this isn't a compile dependency.
         this.vesuvioBridge = new VesuvioBridge();
+
+        this.ticketManager = new TicketManager(this);
+        if (getServer().getPluginManager().getPlugin("LoveCore") != null) {
+            try {
+                getServer().getServicesManager().register(
+                        dev.lovelace.lovecore.api.tickets.TicketOracle.class,
+                        new WebAdminTicketOracle(ticketManager),
+                        this,
+                        ServicePriority.Normal);
+                getLogger().info("LoveCore integration: TicketOracle registered.");
+            } catch (Throwable t) {
+                getLogger().warning("Не удалось зарегистрировать TicketOracle в LoveCore: " + t.getMessage());
+            }
+        }
 
         // /lwa остаётся рабочим алиасом (см. plugin.yml) для тех, кто набирает его по привычке.
         LoveWebAdminCommand loveWebAdminCommand = new LoveWebAdminCommand(this);
@@ -131,5 +149,9 @@ public final class LoveWebAdmin extends JavaPlugin {
 
     public VesuvioBridge getVesuvioBridge() {
         return vesuvioBridge;
+    }
+
+    public TicketManager getTicketManager() {
+        return ticketManager;
     }
 }

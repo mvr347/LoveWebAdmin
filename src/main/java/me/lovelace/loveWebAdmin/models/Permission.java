@@ -20,5 +20,10 @@ public enum Permission {
     // подробный профиль игрока (CPS/StdDev/ML/self-learn и т.д.).
     VIEW_VESUVIO_ADVANCED,
     // Vesuvio AntiCheat: управляющие действия — сброс VL, пометка/снятие подозрения.
-    MANAGE_VESUVIO
+    MANAGE_VESUVIO,
+
+    // Тикеты (апелляции/поддержка/жалобы): просмотр списка и переписки.
+    VIEW_TICKETS,
+    // Тикеты: ответить в переписке, закрыть/переоткрыть.
+    MANAGE_TICKETS
 }
