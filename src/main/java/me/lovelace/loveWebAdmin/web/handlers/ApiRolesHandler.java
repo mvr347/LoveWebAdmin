@@ -87,15 +87,16 @@ public class ApiRolesHandler extends ApiHandlerSupport {
         }
 
         Map<String, Object> body = readJsonBody(req);
+        String name = stringOrNull(body.get("name"));
         String lpGroup = stringOrNull(body.get("lpGroup"));
         Set<Permission> permissions = parsePermissions(body.get("permissions"));
 
-        boolean ok = plugin.getRoleManager().updateRole(roleId, lpGroup, permissions);
+        boolean ok = plugin.getRoleManager().updateRole(roleId, name, lpGroup, permissions);
         if (!ok) {
-            sendError(resp, 400, "Не удалось обновить роль");
+            sendError(resp, 400, "Не удалось обновить роль (возможно, такое имя уже занято)");
             return;
         }
-        plugin.getLogManager().logWebAction(sessionOpt.get().adminUsername(), "Изменил права роли " + existing.get().name());
+        plugin.getLogManager().logWebAction(sessionOpt.get().adminUsername(), "Изменил параметры роли " + existing.get().name());
         sendSuccess(resp, null);
     }
 

@@ -109,6 +109,38 @@ public final class JsonUtils {
         throw new IllegalArgumentException("JSON root is not an object");
     }
 
+    @SuppressWarnings("unchecked")
+    public static List<Object> parseList(String json) {
+        if (json == null || json.isBlank()) return List.of();
+        try {
+            Object parsed = parse(json);
+            if (parsed instanceof List<?> list) {
+                return (List<Object>) list;
+            }
+        } catch (Exception ignored) {}
+        return List.of();
+    }
+
+    @SuppressWarnings("unchecked")
+    public static <T> List<T> fromJsonList(String json, Class<T> clazz) {
+        if (json == null || json.isBlank()) return List.of();
+        try {
+            Object parsed = parse(json);
+            if (parsed instanceof List<?> list) {
+                List<T> result = new ArrayList<>();
+                for (Object o : list) {
+                    if (clazz.isInstance(o)) {
+                        result.add((T) o);
+                    } else if (o != null) {
+                        result.add((T) o.toString());
+                    }
+                }
+                return result;
+            }
+        } catch (Exception ignored) {}
+        return List.of();
+    }
+
     public static Object parse(String json) {
         Parser parser = new Parser(json);
         Object value = parser.parseValue();

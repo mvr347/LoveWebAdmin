@@ -7,23 +7,26 @@ import me.lovelace.loveWebAdmin.integration.VesuvioBridge;
 import me.lovelace.loveWebAdmin.models.Permission;
 import me.lovelace.loveWebAdmin.models.WebSession;
 import me.lovelace.loveWebAdmin.utils.JsonUtils;
+import org.bukkit.Bukkit;
+import org.bukkit.OfflinePlayer;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Vesuvio AntiCheat tab.
+ * Античит (Vesuvio):
  *
- * GET  /api/vesuvio/status              — доступность плагина (любая авторизованная сессия)
- * GET  /api/vesuvio/suspects            — базовый: подозреваемые                      [VIEW_VESUVIO]
- * GET  /api/vesuvio/punishments?limit=  — базовый: лог наказаний                      [VIEW_VESUVIO]
- * GET  /api/vesuvio/violations?limit=   — расширенный: сырой лог флагов               [VIEW_VESUVIO_ADVANCED]
- * GET  /api/vesuvio/engine              — расширенный: статус движка/датасета/моделей [VIEW_VESUVIO_ADVANCED]
- * GET  /api/vesuvio/player/{uuid}       — расширенный: полный профиль игрока          [VIEW_VESUVIO_ADVANCED]
- * POST /api/vesuvio/player/{uuid}/reset-vl               — сброс VL                   [MANAGE_VESUVIO]
- * POST /api/vesuvio/player/{uuid}/suspect { suspect }    — пометить/снять подозрение  [MANAGE_VESUVIO]
+ * GET  /api/vesuvio/status              — доступность плагина (любая сессия)
+ * GET  /api/vesuvio/suspects?player=    — подозреваемые с опциональным фильтром       [VIEW_VESUVIO]
+ * GET  /api/vesuvio/punishments?player=&limit= — лог наказаний с фильтром             [VIEW_VESUVIO]
+ * GET  /api/vesuvio/violations?player=&limit=  — сырой лог флагов с фильтром          [VIEW_VESUVIO_ADVANCED]
+ * GET  /api/vesuvio/engine              — статус движка/датасета                     [VIEW_VESUVIO_ADVANCED]
+ * GET  /api/vesuvio/player/{nameOrUuid} — детальный профиль античита                 [VIEW_VESUVIO_ADVANCED]
+ * POST /api/vesuvio/player/{uuid}/reset-vl            — сброс VL                     [MANAGE_VESUVIO]
+ * POST /api/vesuvio/player/{uuid}/suspect { suspect } — пометка/снятие подозрения    [MANAGE_VESUVIO]
  */
 public class ApiVesuvioHandler extends ApiHandlerSupport {
 
@@ -39,35 +42,59 @@ public class ApiVesuvioHandler extends ApiHandlerSupport {
         String pathInfo = req.getPathInfo();
         if (pathInfo == null) pathInfo = "";
 
-        if ("/status".equals(pathInfo)) {
+        if (pathInfo.isEmpty() || "/".equals(pathInfo) || "/status".equals(pathInfo)) {
             handleStatus(req, resp);
             return;
         }
+
+        String playerFilter = req.getParameter("player");
+        final String filterLower = (playerFilter != null && !playerFilter.isBlank()) ? playerFilter.trim().toLowerCase() : null;
+
         if ("/suspects".equals(pathInfo)) {
-            handleBasic(req, resp, () -> bridge.call("getSuspects"));
+            handleBasic(req, resp, () -> {
+                Object result = bridge.call("getSuspects");
+                if (filterLower != null && result instanceof List<?> list) {
+                    return list.stream().filter(item -> matchesPlayer(item, filterLower)).toList();
+                }
+                return result;
+            });
             return;
         }
+
         if ("/punishments".equals(pathInfo)) {
             int limit = parseIntOrDefault(req.getParameter("limit"), 100);
-            handleBasic(req, resp, () -> bridge.call("getRecentPunishments", new Class<?>[]{int.class}, limit));
+            handleBasic(req, resp, () -> {
+                Object result = bridge.call("getRecentPunishments", new Class<?>[]{int.class}, limit);
+                if (filterLower != null && result instanceof List<?> list) {
+                    return list.stream().filter(item -> matchesPlayer(item, filterLower)).toList();
+                }
+                return result;
+            });
             return;
         }
+
         if ("/violations".equals(pathInfo)) {
             int limit = parseIntOrDefault(req.getParameter("limit"), 200);
-            handleAdvanced(req, resp, () -> bridge.call("getRecentViolations", new Class<?>[]{int.class}, limit));
+            handleAdvanced(req, resp, () -> {
+                Object result = bridge.call("getRecentViolations", new Class<?>[]{int.class}, limit);
+                if (filterLower != null && result instanceof List<?> list) {
+                    return list.stream().filter(item -> matchesPlayer(item, filterLower)).toList();
+                }
+                return result;
+            });
             return;
         }
+
         if ("/engine".equals(pathInfo)) {
             handleAdvanced(req, resp, () -> bridge.call("getEngineStatus"));
             return;
         }
+
         if (pathInfo.startsWith("/player/")) {
-            String uuidStr = pathInfo.substring("/player/".length());
-            UUID uuid;
-            try {
-                uuid = UUID.fromString(uuidStr);
-            } catch (IllegalArgumentException e) {
-                sendError(resp, 400, "Некорректный UUID");
+            String identifier = pathInfo.substring("/player/".length()).trim();
+            UUID uuid = resolveUuid(identifier);
+            if (uuid == null) {
+                sendError(resp, 400, "Игрок не найден или некорректный UUID");
                 return;
             }
             final UUID finalUuid = uuid;
@@ -76,6 +103,31 @@ public class ApiVesuvioHandler extends ApiHandlerSupport {
         }
 
         sendError(resp, 404, "Не найдено");
+    }
+
+    private boolean matchesPlayer(Object item, String queryLower) {
+        if (item instanceof Map<?, ?> map) {
+            Object name = map.get("name");
+            if (name != null && String.valueOf(name).toLowerCase().contains(queryLower)) return true;
+            Object uuid = map.get("uuid");
+            if (uuid != null && String.valueOf(uuid).toLowerCase().contains(queryLower)) return true;
+        }
+        return false;
+    }
+
+    private UUID resolveUuid(String input) {
+        try {
+            return UUID.fromString(input);
+        } catch (IllegalArgumentException ignored) {}
+
+        var online = Bukkit.getPlayerExact(input);
+        if (online != null) return online.getUniqueId();
+
+        OfflinePlayer offline = Bukkit.getOfflinePlayer(input);
+        if (offline.hasPlayedBefore() || offline.getName() != null) {
+            return offline.getUniqueId();
+        }
+        return null;
     }
 
     @Override
@@ -92,14 +144,12 @@ public class ApiVesuvioHandler extends ApiHandlerSupport {
             sendError(resp, 404, "Не найдено");
             return;
         }
-        String uuidStr = rest.substring(0, slash);
+        String identifier = rest.substring(0, slash);
         String action = rest.substring(slash + 1);
 
-        UUID uuid;
-        try {
-            uuid = UUID.fromString(uuidStr);
-        } catch (IllegalArgumentException e) {
-            sendError(resp, 400, "Некорректный UUID");
+        UUID uuid = resolveUuid(identifier);
+        if (uuid == null) {
+            sendError(resp, 400, "Некорректный UUID или игрок не найден");
             return;
         }
 
@@ -111,7 +161,7 @@ public class ApiVesuvioHandler extends ApiHandlerSupport {
             switch (action) {
                 case "reset-vl" -> {
                     bridge.call("resetViolationLevel", new Class<?>[]{UUID.class}, uuid);
-                    plugin.getLogManager().logWebAction(session.adminUsername(), "Vesuvio: сброс VL игроку " + uuid);
+                    plugin.getLogManager().logWebAction(session.adminUsername(), "Античит: сброс VL игроку " + uuid);
                     sendSuccess(resp, null);
                 }
                 case "suspect" -> {
@@ -119,7 +169,7 @@ public class ApiVesuvioHandler extends ApiHandlerSupport {
                     boolean suspect = Boolean.TRUE.equals(body.get("suspect"));
                     bridge.call("setManualSuspect", new Class<?>[]{UUID.class, boolean.class}, uuid, suspect);
                     plugin.getLogManager().logWebAction(session.adminUsername(),
-                            "Vesuvio: " + (suspect ? "пометил подозреваемым " : "снял подозрение с ") + uuid);
+                            "Античит: " + (suspect ? "пометил подозреваемым " : "снял подозрение с ") + uuid);
                     sendSuccess(resp, null);
                 }
                 default -> sendError(resp, 404, "Не найдено");
