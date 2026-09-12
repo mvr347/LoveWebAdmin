@@ -37,6 +37,9 @@ public class WebServer {
     public void start() {
         try {
             server = new Server();
+            // Без этого Server.stop() рвёт селекторы, пока у них ещё есть in-flight select(),
+            // и в лог сыплются безобидные, но пугающие "ClosedSelectorException" от ManagedSelector.
+            server.setStopTimeout(5000);
             ServerConnector connector = new ServerConnector(server);
             connector.setPort(port);
             connector.setHost(host);
