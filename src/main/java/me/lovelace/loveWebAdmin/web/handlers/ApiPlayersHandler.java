@@ -229,6 +229,12 @@ public class ApiPlayersHandler extends ApiHandlerSupport {
                     }
                 }
                 case "clear_inventory" -> {
+                    var roleOpt = plugin.getDatabaseManager().getRoleById(session.roleId());
+                    boolean isHighRole = roleOpt.isPresent() && (roleOpt.get().isOwner() || "Управляющий".equalsIgnoreCase(roleOpt.get().name()));
+                    if (!isHighRole) {
+                        sendError(resp, 403, "Очистка инвентаря разрешена только для высших ролей (Управляющий)");
+                        return;
+                    }
                     boolean cleared = plugin.getPlayerInventoryManager().clearInventory(player, session.adminUsername()).get();
                     if (cleared) {
                         sendSuccess(resp, Map.of("message", "Инвентарь игрока очищен"));

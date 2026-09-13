@@ -80,22 +80,26 @@ public class LoveAuthBridge {
                             ? (CompletableFuture<List<String>>) altsMethod.invoke(db, lastIp)
                             : CompletableFuture.completedFuture(new ArrayList<>());
 
-                    regFuture.thenCombine(altsFuture, (isRegistered, alts) -> {
-                        Map<String, Object> map = new LinkedHashMap<>();
-                        map.put("available", true);
-                        map.put("found", true);
-                        map.put("uuid", uuid.toString());
-                        map.put("username", username);
-                        map.put("lastIp", lastIp != null ? lastIp : "—");
-                        map.put("hasDiscord", hasDiscord);
-                        map.put("isRegistered", isRegistered);
-                        map.put("isLocked", isLocked);
-                        map.put("alts", alts != null ? alts : List.of());
-                        return map;
-                    }).thenAccept(future::complete).exceptionally(err -> {
-                        future.completeExceptionally(err);
-                        return null;
-                    });
+                    CompletableFuture<Boolean> ipBlockFuture = isIpBlocked(lastIp);
+
+                    regFuture.thenCombine(altsFuture, (isRegistered, alts) -> Map.entry(isRegistered, alts))
+                            .thenCombine(ipBlockFuture, (entry, isIpBlocked) -> {
+                                Map<String, Object> map = new LinkedHashMap<>();
+                                map.put("available", true);
+                                map.put("found", true);
+                                map.put("uuid", uuid.toString());
+                                map.put("username", username);
+                                map.put("lastIp", lastIp != null ? lastIp : "—");
+                                map.put("hasDiscord", hasDiscord);
+                                map.put("isRegistered", entry.getKey());
+                                map.put("isLocked", isLocked);
+                                map.put("isIpBlocked", isIpBlocked);
+                                map.put("alts", entry.getValue() != null ? entry.getValue() : List.of());
+                                return map;
+                            }).thenAccept(future::complete).exceptionally(err -> {
+                                future.completeExceptionally(err);
+                                return null;
+                            });
 
                 } catch (Exception e) {
                     future.completeExceptionally(e);
@@ -110,6 +114,34 @@ public class LoveAuthBridge {
         }
 
         return future;
+    }
+
+    /**
+     * Проверяет, заблокирован ли данный IP адрес в LoveAuth.
+     */
+    public CompletableFuture<Boolean> isIpBlocked(String ip) {
+        if (!isAvailable() || ip == null || ip.isBlank() || ip.equals("—")) {
+            return CompletableFuture.completedFuture(false);
+        }
+        try {
+            Plugin loveAuth = getPlugin();
+            Method getDbMethod = loveAuth.getClass().getMethod("getDatabaseManager");
+            Object db = getDbMethod.invoke(loveAuth);
+            Method getIpBlockMethod = db.getClass().getMethod("getIpBlock", String.class);
+            @SuppressWarnings("unchecked")
+            CompletableFuture<Optional<?>> blockFuture = (CompletableFuture<Optional<?>>) getIpBlockMethod.invoke(db, ip.trim());
+            return blockFuture.thenApply(opt -> {
+                if (opt.isEmpty()) return false;
+                Object rec = opt.get();
+                Object blockedUntil = invokeGetter(rec.getClass(), rec, "blockedUntil", "getBlockedUntil");
+                if (blockedUntil instanceof Number n) {
+                    return n.longValue() > (System.currentTimeMillis() / 1000L);
+                }
+                return false;
+            }).exceptionally(e -> false);
+        } catch (Exception e) {
+            return CompletableFuture.completedFuture(false);
+        }
     }
 
     /**
@@ -139,11 +171,7 @@ public class LoveAuthBridge {
                 return null;
             });
         } catch (Exception e) {
-            // Fallback: выполнение через консольную команду если доступно
-            Bukkit.getScheduler().runTask(Bukkit.getPluginManager().getPlugin("LoveWebAdmin"), () -> {
-                boolean ok = Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "ladmin changepassword " + playerName + " " + newPassword);
-                future.complete(ok);
-            });
+            future.complete(false);
         }
         return future;
     }
@@ -159,7 +187,7 @@ public class LoveAuthBridge {
         }
 
         Bukkit.getScheduler().runTask(Bukkit.getPluginManager().getPlugin("LoveWebAdmin"), () -> {
-            boolean ok = Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "ladmin delete " + playerName);
+            boolean ok = Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "loveauthadmin delete " + playerName);
             future.complete(ok);
         });
         return future;
@@ -176,7 +204,7 @@ public class LoveAuthBridge {
         }
 
         Bukkit.getScheduler().runTask(Bukkit.getPluginManager().getPlugin("LoveWebAdmin"), () -> {
-            boolean ok = Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "ladmin unlock " + playerName);
+            boolean ok = Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "loveauthadmin unlock " + playerName);
             future.complete(ok);
         });
         return future;
@@ -187,13 +215,13 @@ public class LoveAuthBridge {
      */
     public CompletableFuture<Boolean> unblockIp(String ip) {
         CompletableFuture<Boolean> future = new CompletableFuture<>();
-        if (!isAvailable()) {
+        if (!isAvailable() || ip == null || ip.isBlank() || ip.equals("—")) {
             future.complete(false);
             return future;
         }
 
         Bukkit.getScheduler().runTask(Bukkit.getPluginManager().getPlugin("LoveWebAdmin"), () -> {
-            boolean ok = Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "ladmin unblockip " + ip);
+            boolean ok = Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "loveauthadmin unblockip " + ip.trim());
             future.complete(ok);
         });
         return future;
@@ -210,7 +238,7 @@ public class LoveAuthBridge {
         }
 
         Bukkit.getScheduler().runTask(Bukkit.getPluginManager().getPlugin("LoveWebAdmin"), () -> {
-            boolean ok = Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "ladmin session reset " + playerName);
+            boolean ok = Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "loveauthadmin session reset " + playerName);
             Player p = Bukkit.getPlayerExact(playerName);
             if (p != null && p.isOnline()) {
                 p.kickPlayer("§cВаша сессия авторизации была сброшена администратором.");

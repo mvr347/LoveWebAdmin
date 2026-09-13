@@ -33,7 +33,7 @@
         { id: 'punishments', label: 'Наказания', icon: '🛡️', num: 3, perm: 'VIEW_BANS', modAllowed: true },
         { id: 'anticheat', label: 'Античит', icon: '⚡', num: 4, perm: 'VIEW_VESUVIO', modAllowed: true },
         { id: 'server', label: 'Сервер', icon: '▦', num: 5, perm: 'VIEW_PLAYERS', modAllowed: true },
-        { id: 'auth', label: 'Аутентификация', icon: '⚿', num: 6, perm: 'MANAGE_ADMINS', modAllowed: false },
+        { id: 'auth', label: 'Авторизация', icon: '⚿', num: 6, perm: 'MANAGE_LOVEAUTH', modAllowed: false },
         { id: 'admins', label: 'Администраторы и роли', icon: '👥', num: 7, perm: 'MANAGE_ADMINS', modAllowed: false },
         { id: 'database', label: 'База данных', icon: '◉', num: 8, perm: 'VIEW_ANALYTICS', modAllowed: true }
     ];
@@ -46,14 +46,14 @@
         'VIEW_SERVER_LOGS', 'VIEW_WEB_LOGS', 'EXECUTE_COMMANDS',
         'MANAGE_LOVEAUTH', 'MANAGE_ADMINS', 'MANAGE_ROLES', 'MANAGE_PASSWORDS',
         'MANAGE_LOCKDOWN', 'VIEW_STAFF_AUDIT', 'VIEW_ECONOMY', 'MANAGE_ECONOMY',
-        'MANAGE_API'
+        'MANAGE_API', 'VIEW_SERVER_INTERNALS'
     ];
 
     const PERMISSION_LABELS = {
         VIEW_STATS: 'Просмотр метрик сервера (TPS, MSPT, память, онлайн)',
         VIEW_ANALYTICS: 'Просмотр аналитики базы данных и активности',
         VIEW_PLAYERS: 'Просмотр списков и профилей игроков',
-        MANAGE_PLAYERS: 'Управление игроками (кик, лечение, спавн, инвентарь)',
+        MANAGE_PLAYERS: 'Управление игроками (кик, очистка инвентаря)',
         VIEW_BANS: 'Просмотр списка банов',
         MANAGE_BANS: 'Выдача и управление банами',
         VIEW_APPEALS: 'Просмотр апелляций банов и тикетов Discord',
@@ -66,15 +66,16 @@
         VIEW_SERVER_LOGS: 'Просмотр журнала событий сервера',
         VIEW_WEB_LOGS: 'Просмотр аудита действий веб-панели',
         EXECUTE_COMMANDS: 'Консоль: выполнение команд сервера',
-        MANAGE_LOVEAUTH: 'Управление аккаунтами LoveAuth',
+        MANAGE_LOVEAUTH: 'Управление игровыми аккаунтами авторизации',
         MANAGE_ADMINS: 'Управление администраторами и сессиями',
         MANAGE_ROLES: 'Управление ролями и матрицей прав',
         MANAGE_PASSWORDS: 'Сброс паролей персонала',
         MANAGE_LOCKDOWN: 'Экстренный режим ЧС (изоляция сервера)',
         VIEW_STAFF_AUDIT: 'Аудит команд персонала и KPI метрики',
-        VIEW_ECONOMY: 'Просмотр оборота LoveEconomy',
+        VIEW_ECONOMY: 'Просмотр оборота экономики',
         MANAGE_ECONOMY: 'Управление балансом игроков',
-        MANAGE_API: 'Управление API ключами и вебхуками'
+        MANAGE_API: 'Управление API ключами и вебхуками',
+        VIEW_SERVER_INTERNALS: 'Просмотр технических параметров сервера (СУБД, хеши, брутфорс-фильтр)'
     };
 
     // ---------- Helpers ----------
@@ -138,8 +139,7 @@
     function hasPerm(perm) {
         if (!me) return false;
         if (me.isOwner) return true;
-        if (me.role === 'Администратор' || me.role === 'Управляющий') return true;
-        return me.permissions && me.permissions.includes(perm);
+        return Boolean(me.permissions && me.permissions.includes(perm));
     }
 
     function isSectionVisible(section) {
@@ -623,13 +623,13 @@
                             html += `<div style="padding:6px 12px; font-size:11px; font-weight:700; color:var(--text-dim); text-transform:uppercase;">Игроки (${players.length})</div>`;
                             players.slice(0, 6).forEach(p => {
                                 html += `
-                                    <div class="search-result-item" onclick="window.viewPlayerProfile('${esc(p.name)}'); window.closeCurrentModal();">
+                                    <div class="search-result-item" onclick="window.viewPlayerProfile('${esc(p.name)}');">
                                         <img src="https://mc-heads.net/avatar/${encodeURIComponent(p.name)}/24" class="player-avatar-sm" alt="">
                                         <div style="flex:1;">
                                             <div style="font-weight:700; color:#fff;">${esc(p.name)}</div>
                                             <div style="font-size:11px; color:var(--text-muted);">${p.isOnline ? '<span style="color:var(--green)">● В сети</span>' : 'Оффлайн'} • Наиграно: ${fmtDuration(p.totalPlaytimeSeconds || 0)}</div>
                                         </div>
-                                        <button type="button" class="secondary btn-sm" onclick="event.stopPropagation(); window.viewPlayerProfile('${esc(p.name)}'); window.closeCurrentModal();">ДОСЬЕ</button>
+                                        <button type="button" class="secondary btn-sm" onclick="event.stopPropagation(); window.viewPlayerProfile('${esc(p.name)}');">ДОСЬЕ</button>
                                     </div>`;
                             });
                         }
@@ -638,7 +638,7 @@
                             html += `<div style="padding:10px 12px 6px; font-size:11px; font-weight:700; color:var(--text-dim); text-transform:uppercase;">Баны (${matchingBans.length})</div>`;
                             matchingBans.forEach(b => {
                                 html += `
-                                    <div class="search-result-item" onclick="window.navigateTo('bans'); window.closeCurrentModal();">
+                                    <div class="search-result-item" onclick="window.closeCurrentModal(); window.navigateTo('punishments');">
                                         <span style="color:var(--red); font-weight:700;">⚑</span>
                                         <div style="flex:1;">
                                             <div style="font-weight:700; color:#fff;">${esc(b.targetName)} <span class="badge red">${esc(b.ruleReason)}</span></div>
@@ -741,14 +741,24 @@
                     colorLight: '#ffffff',
                     correctLevel: (typeof QRCode.CorrectLevel !== 'undefined' ? QRCode.CorrectLevel.M : 0)
                 });
-                // qrcode.js создаёт и <canvas>, и <img> (с display:none).
-                // Убеждаемся, что виден только один элемент и нет дублирования.
-                const canvas = containerEl.querySelector('canvas');
-                const img = containerEl.querySelector('img');
-                if (canvas && img) {
-                    img.style.display = 'none';
-                    img.setAttribute('style', 'display:none !important');
-                }
+                // qrcode.js: гарантируем корректное отображение img или canvas
+                setTimeout(() => {
+                    const canvas = containerEl.querySelector('canvas');
+                    const img = containerEl.querySelector('img');
+                    if (img && img.src && img.src.length > 50) {
+                        img.style.display = 'block';
+                        img.style.width = '180px';
+                        img.style.height = '180px';
+                        img.style.margin = '0 auto';
+                        if (canvas) canvas.style.display = 'none';
+                    } else if (canvas) {
+                        canvas.style.display = 'block';
+                        canvas.style.width = '180px';
+                        canvas.style.height = '180px';
+                        canvas.style.margin = '0 auto';
+                        if (img) img.style.display = 'none';
+                    }
+                }, 50);
                 return;
             }
         } catch (e) {
@@ -756,9 +766,9 @@
         }
 
         containerEl.innerHTML = `
-            <div style="color:#111; font-size:11px; text-align:center; padding:20px 8px; font-weight:600; line-height:1.4;">
-                Не удалось отобразить QR-код.<br>
-                <span style="color:#7c3aed;">Используйте ручной ввод секретного ключа ниже.</span>
+            <div style="color:#111; font-size:12px; text-align:center; padding:24px 10px; font-weight:600; line-height:1.5;">
+                <div style="font-size:24px; margin-bottom:6px;">🔑</div>
+                Используйте вкладку <b>«Секретный код»</b><br>для ввода ключа в Authenticator.
             </div>`;
     }
 
@@ -1061,19 +1071,27 @@
                         </div>
                     </div>
 
-                    <div class="sub" style="margin-bottom:12px;">Отсканируйте QR-код в <b>Google Authenticator</b> или <b>Aegis</b>:</div>
-
-                    <div class="totp-qr-wrapper">
-                        <div class="totp-qr-box" id="cand-qrcode-box"></div>
-                        <a href="${esc(otpUrl)}" class="totp-copy-btn" style="text-decoration:none; margin-top:2px;">
-                            ⚡ Открыть в приложении Authenticator
-                        </a>
+                    <div class="totp-method-toggle">
+                        <button type="button" class="totp-toggle-btn active" id="cand-toggle-qr">📱 QR-код</button>
+                        <button type="button" class="totp-toggle-btn" id="cand-toggle-code">🔑 Секретный код</button>
                     </div>
 
-                    <div style="font-size:11px; color:var(--text-dim); margin-bottom:6px;">Или введите секретный ключ вручную:</div>
-                    <div class="totp-secret-box">
-                        <span class="totp-secret-code" title="${esc(totpSecret)}">${esc(totpSecret)}</span>
-                        <button type="button" class="totp-copy-btn" id="btn-copy-cand-secret">📋 Скопировать</button>
+                    <div id="cand-pane-qr" class="totp-method-pane">
+                        <div class="sub" style="margin-bottom:12px;">Отсканируйте QR-код в <b>Google Authenticator</b> или <b>Aegis</b>:</div>
+                        <div class="totp-qr-wrapper">
+                            <div class="totp-qr-box" id="cand-qrcode-box"></div>
+                            <a href="${esc(otpUrl)}" class="totp-copy-btn" style="text-decoration:none; margin-top:2px;">
+                                ⚡ Открыть в приложении Authenticator
+                            </a>
+                        </div>
+                    </div>
+
+                    <div id="cand-pane-code" class="totp-method-pane" style="display:none;">
+                        <div class="sub" style="margin-bottom:12px;">Введите ключ вручную в приложении Authenticator:</div>
+                        <div class="totp-secret-box" style="margin-bottom:16px;">
+                            <span class="totp-secret-code" title="${esc(totpSecret)}">${esc(totpSecret)}</span>
+                            <button type="button" class="totp-copy-btn" id="btn-copy-cand-secret">📋 Скопировать</button>
+                        </div>
                     </div>
 
                     <form id="cand-2fa-form">
@@ -1092,6 +1110,23 @@
 
         renderTotpQrCode(document.getElementById('cand-qrcode-box'), otpUrl);
         setupSecretCopy('btn-copy-cand-secret', totpSecret);
+
+        const candTabQr = document.getElementById('cand-toggle-qr');
+        const candTabCode = document.getElementById('cand-toggle-code');
+        const candPaneQr = document.getElementById('cand-pane-qr');
+        const candPaneCode = document.getElementById('cand-pane-code');
+        candTabQr?.addEventListener('click', () => {
+            candTabQr.classList.add('active');
+            candTabCode?.classList.remove('active');
+            if (candPaneQr) candPaneQr.style.display = 'block';
+            if (candPaneCode) candPaneCode.style.display = 'none';
+        });
+        candTabCode?.addEventListener('click', () => {
+            candTabCode.classList.add('active');
+            candTabQr?.classList.remove('active');
+            if (candPaneCode) candPaneCode.style.display = 'block';
+            if (candPaneQr) candPaneQr.style.display = 'none';
+        });
 
         document.getElementById('btn-cand-back')?.addEventListener('click', () => {
             renderCandidateRegistration();
@@ -1348,19 +1383,27 @@
                         </div>
                     </div>
 
-                    <div class="sub" style="margin-bottom:12px;">Отсканируйте QR-код в <b>Google Authenticator</b> или <b>Aegis</b>:</div>
-
-                    <div class="totp-qr-wrapper">
-                        <div class="totp-qr-box" id="ob-qrcode-box"></div>
-                        <a href="${esc(otpUrl)}" class="totp-copy-btn" style="text-decoration:none; margin-top:2px;">
-                            ⚡ Открыть в приложении Authenticator
-                        </a>
+                    <div class="totp-method-toggle">
+                        <button type="button" class="totp-toggle-btn active" id="ob-toggle-qr">📱 QR-код</button>
+                        <button type="button" class="totp-toggle-btn" id="ob-toggle-code">🔑 Секретный код</button>
                     </div>
 
-                    <div style="font-size:11px; color:var(--text-dim); margin-bottom:6px;">Или введите секретный ключ вручную:</div>
-                    <div class="totp-secret-box">
-                        <span class="totp-secret-code" title="${esc(totpSecret)}">${esc(totpSecret)}</span>
-                        <button type="button" class="totp-copy-btn" id="btn-copy-ob-secret">📋 Скопировать</button>
+                    <div id="ob-pane-qr" class="totp-method-pane">
+                        <div class="sub" style="margin-bottom:12px;">Отсканируйте QR-код в <b>Google Authenticator</b> или <b>Aegis</b>:</div>
+                        <div class="totp-qr-wrapper">
+                            <div class="totp-qr-box" id="ob-qrcode-box"></div>
+                            <a href="${esc(otpUrl)}" class="totp-copy-btn" style="text-decoration:none; margin-top:2px;">
+                                ⚡ Открыть в приложении Authenticator
+                            </a>
+                        </div>
+                    </div>
+
+                    <div id="ob-pane-code" class="totp-method-pane" style="display:none;">
+                        <div class="sub" style="margin-bottom:12px;">Введите ключ вручную в приложении Authenticator:</div>
+                        <div class="totp-secret-box" style="margin-bottom:16px;">
+                            <span class="totp-secret-code" title="${esc(totpSecret)}">${esc(totpSecret)}</span>
+                            <button type="button" class="totp-copy-btn" id="btn-copy-ob-secret">📋 Скопировать</button>
+                        </div>
                     </div>
 
                     <form id="ob-2fa-form">
@@ -1379,6 +1422,23 @@
 
         renderTotpQrCode(document.getElementById('ob-qrcode-box'), otpUrl);
         setupSecretCopy('btn-copy-ob-secret', totpSecret);
+
+        const obTabQr = document.getElementById('ob-toggle-qr');
+        const obTabCode = document.getElementById('ob-toggle-code');
+        const obPaneQr = document.getElementById('ob-pane-qr');
+        const obPaneCode = document.getElementById('ob-pane-code');
+        obTabQr?.addEventListener('click', () => {
+            obTabQr.classList.add('active');
+            obTabCode?.classList.remove('active');
+            if (obPaneQr) obPaneQr.style.display = 'block';
+            if (obPaneCode) obPaneCode.style.display = 'none';
+        });
+        obTabCode?.addEventListener('click', () => {
+            obTabCode.classList.add('active');
+            obTabQr?.classList.remove('active');
+            if (obPaneCode) obPaneCode.style.display = 'block';
+            if (obPaneQr) obPaneQr.style.display = 'none';
+        });
 
         document.getElementById('btn-ob-back')?.addEventListener('click', () => {
             renderMasterOnboarding();
@@ -1786,7 +1846,7 @@
                 return `
                     <div class="tile tile-lg" id="tile-vesuvio_flags">
                         <div class="tile-header">
-                            <span class="tile-title">⚡ ПОСЛЕДНИЕ СРАБАТЫВАНИЯ АНТИЧИТА (VESUVIO)</span>
+                            <span class="tile-title">⚡ ПОСЛЕДНИЕ СРАБАТЫВАНИЯ АНТИЧИТА</span>
                             <button type="button" class="secondary btn-sm" onclick="window.navigateTo('anticheat')">ВСЕ ФЛАГИ →</button>
                         </div>
                         <div class="tile-body" id="tile-body-vesuvio_flags" style="padding:10px 18px;">Загрузка потока...</div>
@@ -1922,7 +1982,7 @@
                     }).join('');
                 }
             } catch (e) {
-                if (body) body.innerHTML = `<div style="color:var(--text-dim); text-align:center; padding:16px;">Vesuvio недоступен или оффлайн</div>`;
+                if (body) body.innerHTML = `<div style="color:var(--text-dim); text-align:center; padding:16px;">Античит недоступен или отключен</div>`;
             }
         }
 
@@ -2077,7 +2137,7 @@
         const allTileKeys = [
             { key: 'server_stats', title: 'Статистика сервера (TPS, MSPT, память, онлайн)' },
             { key: 'quick_actions', title: 'Быстрые действия (Бан, Кик, Спавн, Заморозка)' },
-            { key: 'vesuvio_flags', title: 'Последние срабатывания античита (Vesuvio)' },
+            { key: 'vesuvio_flags', title: 'Последние срабатывания античита' },
             { key: 'attention', title: '«Требует внимания» (подозрительные игроки)' },
             { key: 'punishments_stats', title: 'Статистика наказаний (сегодня / неделя)' },
             { key: 'online_players', title: 'Онлайн-игроки с быстрыми действиями' },
@@ -2434,7 +2494,7 @@
                     <pre style="background:#090614; padding:12px; border-radius:6px; font-size:12px; color:var(--accent-light); border:1px solid var(--border); overflow-x:auto;">${esc(JSON.stringify(item.raw, null, 2))}</pre>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="primary" onclick="window.viewPlayerProfile('${esc(item.actor)}'); window.closeCurrentModal();">КАРТОЧКА ИГРОКА</button>
+                    <button type="button" class="primary" onclick="window.viewPlayerProfile('${esc(item.actor)}');">КАРТОЧКА ИГРОКА</button>
                     <button type="button" class="secondary" data-modal-close="true">ЗАКРЫТЬ</button>
                 </div>
             `);
@@ -2519,7 +2579,7 @@
             appealTemplatesCache = {
                 form: { header: 'ФОРМА ПОДАЧИ АПЕЛЛЯЦИИ', fields: ['1. Ваш никнейм: {targetName}', '2. Кем выдано: {creatorName}', '3. Причина: {ruleReason}', '4. Ваши комментарии:'], footer: 'Срок рассмотрения: до 24 часов.' },
                 verdicts: [
-                    { id: 'v_approved_error', name: 'Одобрено (Ошибочный бан)', type: 'APPROVE', template: '✅ **АПЕЛЛЯЦИЯ ОДОБРЕНА**\n\nУважаемый **{targetName}**!\nБлокировка **#{id}** была пересмотрена. В ходе повторной проверки доказательств была установлена ошибка.\nБлокировка полностью снята, аккаунт разбанен. Приносим извинения за неудобства.\n\n*Администрация LoveServer*' },
+                    { id: 'v_approved_error', name: 'Одобрено (Ошибочный бан)', type: 'APPROVE', template: '✅ **АПЕЛЛЯЦИЯ ОДОБРЕНА**\n\nУважаемый **{targetName}**!\nБлокировка **#{id}** была пересмотрена. В ходе повторной проверки доказательств была установлена ошибка.\nБлокировка полностью снята, аккаунт разбанен. Приносим извинения за неудобства.\n\n*Администрация сервера*' },
                     { id: 'v_approved_amnesty', name: 'Одобрено (Амнистия)', type: 'APPROVE', template: '✅ **АПЕЛЛЯЦИЯ ОДОБРЕНА (АМНИСТИЯ)**\n\nУважаемый **{targetName}**!\nАдминистрация приняла решение удовлетворить вашу просьбу об амнистии по блокировке **#{id}** ({ruleReason}).\nБан снят. Пожалуйста, соблюдайте правила проекта во избежание повторного бессрочного бана.' },
                     { id: 'v_rejected_cheats', name: 'Отклонено (Читы доказаны)', type: 'REJECT', template: '❌ **АПЕЛЛЯЦИЯ ОТКЛОНЕНА**\n\nУважаемый **{targetName}**!\nВаша апелляция по бану **#{id}** рассмотрена.\nФакт использования запрещённого ПО ({ruleReason}) подтверждён видеозаписью и телеметрией античита.\nБлокировка остаётся в силе и является **бессрочной**.' },
                     { id: 'v_rejected_expired', name: 'Отклонено (Истёк срок)', type: 'REJECT', template: '❌ **АПЕЛЛЯЦИЯ ОТКЛОНЕНА (ИСТЁК СРОК)**\n\nУважаемый **{targetName}**!\nСрок подачи апелляции на блокировку от {createdAt} истёк.\nАпелляция не подлежит дальнейшему рассмотрению.' },
@@ -3039,7 +3099,7 @@
                             </div>
                             <p style="font-size:13px; color:var(--text-secondary); margin:6px 0 0 0; line-height:1.5;">
                                 На сервере приём апелляций осуществляется через Discord-бота в канале <b>#тикеты-апелляций</b>. 
-                                Ниже представлен интерактивный генератор официальных вердиктов администрации с поддержкой снятия бана в 1 клик и заготовками Discord-методов.
+                                Ниже представлена очередь апелляций и тикетов с поддержкой двусторонней переписки и принятия решений.
                             </p>
                         </div>
                         <div>
@@ -3085,7 +3145,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                                 <span class="badge yellow" id="live-appeals-count-badge" style="font-size:11px;">0</span>
                             </h3>
                             <div style="font-size:12px; color:var(--text-muted); margin-top:2px;">
-                                Все апелляции автоматически создают приватные тикеты Discord через LoveCore и поддерживают двусторонний чат
+                                Все апелляции автоматически создают приватные тикеты Discord через системный мост и поддерживают двусторонний чат
                             </div>
                         </div>
                         <div style="display:flex; gap:8px;">
@@ -3103,203 +3163,12 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                         <div style="text-align:center; padding:20px; color:var(--text-muted);">Загрузка апелляций...</div>
                     </div>
                 </div>
-
-                <!-- Interactive Verdicts Generator Block -->
-                <div style="background:var(--card-bg); border:1px solid var(--border); border-radius:var(--radius-md); padding:18px;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
-                        <div>
-                            <h3 style="margin:0; font-size:15px; color:#fff;">ИНТЕРАКТИВНЫЙ ГЕНЕРАТОР ВЕРДИКТОВ (DISCORD)</h3>
-                            <div style="font-size:12px; color:var(--text-muted);">Формирование официального решения по жалобе/бану с готовым форматированием для Discord</div>
-                        </div>
-                    </div>
-
-                    <!-- Target Ban / Player Picker Bar -->
-                    <div style="background:rgba(255, 255, 255, 0.02); border:1px solid var(--border); border-radius:var(--radius-md); padding:12px 16px; margin-bottom:18px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px;">
-                        <div style="display:flex; align-items:center; gap:12px;">
-                            <img id="verdict-player-avatar" src="https://mc-heads.net/avatar/Steve/36" style="width:36px; height:36px; border-radius:4px;" alt="">
-                            <div>
-                                <div style="font-size:11px; font-weight:700; color:var(--text-dim); text-transform:uppercase;">Выбранный нарушитель:</div>
-                                <div style="font-size:14px; font-weight:800; color:#fff;" id="verdict-player-name-display">Загрузка данных...</div>
-                            </div>
-                        </div>
-                        <div style="min-width:280px; flex:1; max-width:420px;">
-                            <select id="verdict-ban-picker" style="font-size:12.5px; padding:7px 12px; width:100%;">
-                                <option value="0">Загрузка списка блокировок...</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <!-- Verdict Template Chips -->
-                    <div style="font-size:11.5px; font-weight:700; color:var(--text-dim); text-transform:uppercase; margin-bottom:10px;">
-                        Выберите заготовку вердикта администрации:
-                    </div>
-                    <div class="appeal-verdict-chips" id="appeals-chips-container" style="margin-bottom:18px;"></div>
-
-                    <!-- Live Discord Embed Preview Box -->
-                    <div class="verdict-card" id="verdict-live-preview-box" style="margin-bottom:16px;">
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                            <div style="font-size:11px; font-weight:700; color:var(--text-dim); text-transform:uppercase;">Предпросмотр сообщения в Discord:</div>
-                            <span class="badge purple" id="preview-verdict-type-badge">ВЕРДИКТ</span>
-                        </div>
-                        <div id="verdict-formatted-preview" style="font-size:13.5px; line-height:1.6; color:#e2e8f0; white-space:pre-wrap;"></div>
-                    </div>
-
-                    <!-- Raw Discord Markdown Codebox -->
-                    <div style="margin-bottom:16px;">
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                            <label style="margin-bottom:0;">Текст для копирования в Discord (Markdown):</label>
-                            <span style="font-size:11px; color:var(--text-dim);">Можно отредактировать перед отправкой</span>
-                        </div>
-                        <textarea class="appeal-code-editor" id="verdict-raw-editor" rows="6" spellcheck="false"></textarea>
-                    </div>
-
-                    <!-- Action Buttons -->
-                    <div style="display:flex; justify-content:flex-end; gap:10px; flex-wrap:wrap;">
-                        <button type="button" class="secondary" id="btn-copy-discord-verdict">📋 СКОПИРОВАТЬ ДЛЯ DISCORD</button>
-                        <button type="button" class="danger" id="btn-unban-and-copy-verdict" style="display:none;">⚡ СНЯТЬ БАН И СКОПИРОВАТЬ ВЕРДИКТ</button>
-                    </div>
-                </div>
             `;
 
             // Toggle docs box
             document.getElementById('btn-toggle-discord-docs')?.addEventListener('click', () => {
                 const box = document.getElementById('discord-bot-docs-box');
                 if (box) box.style.display = box.style.display === 'none' ? 'block' : 'none';
-            });
-
-            // Load templates and bans
-            const [tmpl, allBans] = await Promise.all([
-                getAppealTemplates(),
-                api('GET', '/api/bans/all').catch(() => [])
-            ]);
-
-            lastLoadedBans = allBans;
-            let currentBan = (targetBanId ? allBans.find(b => b.id === targetBanId) : null) || (allBans.length ? allBans[0] : null);
-            let selectedVerdictId = (tmpl.verdicts && tmpl.verdicts.length) ? tmpl.verdicts[0].id : '';
-
-            const pickerSelect = document.getElementById('verdict-ban-picker');
-            if (pickerSelect) {
-                pickerSelect.innerHTML = allBans.map(b => `
-                    <option value="${b.id}" ${currentBan && currentBan.id === b.id ? 'selected' : ''}>
-                        #${b.id} — ${esc(b.targetName)} (${esc(b.ruleReason)}) [${b.status === 'ACTIVE' ? 'АКТИВЕН' : 'СНЯТ'}]
-                    </option>
-                `).join('') + '<option value="0" ' + (!currentBan ? 'selected' : '') + '>[Без привязки / Произвольный]</option>';
-            }
-
-            // Populate Chips
-            const chipsContainer = document.getElementById('appeals-chips-container');
-            if (chipsContainer) {
-                chipsContainer.innerHTML = (tmpl.verdicts || []).map(v => {
-                    const isActive = v.id === selectedVerdictId;
-                    const typeClass = v.type ? v.type.toLowerCase() : 'info';
-                    let icon = '⚖️';
-                    if (v.type === 'APPROVE') icon = '🟢';
-                    else if (v.type === 'REJECT') icon = '🔴';
-                    else if (v.type === 'INFO') icon = '🔵';
-                    return `
-                        <button type="button" class="verdict-chip ${typeClass} ${isActive ? 'active ' + typeClass : ''}" data-verdict-id="${esc(v.id)}">
-                            <span>${icon}</span>
-                            <span>${esc(v.name)}</span>
-                        </button>
-                    `;
-                }).join('');
-            }
-
-            const updateVerdictView = () => {
-                const curVerdict = (tmpl.verdicts || []).find(v => v.id === selectedVerdictId) || (tmpl.verdicts ? tmpl.verdicts[0] : null);
-                const avatarEl = document.getElementById('verdict-player-avatar');
-                const nameDisplay = document.getElementById('verdict-player-name-display');
-                const previewBadge = document.getElementById('preview-verdict-type-badge');
-                const previewEl = document.getElementById('verdict-formatted-preview');
-                const editorEl = document.getElementById('verdict-raw-editor');
-                const unbanBtn = document.getElementById('btn-unban-and-copy-verdict');
-
-                const targetName = currentBan ? currentBan.targetName : '{targetName}';
-                const banId = currentBan ? currentBan.id : '{id}';
-                const creatorName = currentBan ? currentBan.creatorName : '{creatorName}';
-                const ruleReason = currentBan ? currentBan.ruleReason : '{ruleReason}';
-                const createdAt = currentBan ? fmtTime(currentBan.createdAt) : '{createdAt}';
-
-                if (avatarEl) avatarEl.src = `https://mc-heads.net/avatar/${encodeURIComponent(currentBan ? currentBan.targetName : 'Steve')}/36`;
-                if (nameDisplay) {
-                    nameDisplay.innerHTML = currentBan 
-                        ? `${esc(currentBan.targetName)} <span style="font-size:12px; color:var(--accent-light);">[Бан #${currentBan.id}]</span>` 
-                        : 'Произвольный нарушитель (без привязки)';
-                }
-
-                if (!curVerdict) return;
-
-                if (previewBadge) {
-                    previewBadge.className = `badge ${curVerdict.type === 'APPROVE' ? 'green' : (curVerdict.type === 'REJECT' ? 'red' : 'purple')}`;
-                    previewBadge.textContent = curVerdict.name;
-                }
-
-                // Format raw text
-                const formatted = (curVerdict.template || '')
-                    .replace(/{targetName}/g, targetName)
-                    .replace(/#{id}/g, '#' + banId)
-                    .replace(/{id}/g, banId)
-                    .replace(/{creatorName}/g, creatorName)
-                    .replace(/{ruleReason}/g, ruleReason)
-                    .replace(/{createdAt}/g, createdAt);
-
-                if (editorEl) editorEl.value = formatted;
-                if (previewEl) previewEl.textContent = formatted;
-
-                // Show 1-click unban button if verdict is APPROVE and ban is currently ACTIVE
-                const canUnban = currentBan && currentBan.status === 'ACTIVE' && curVerdict.type === 'APPROVE' && (!isMod || me.isOwner);
-                if (unbanBtn) {
-                    unbanBtn.style.display = canUnban ? 'inline-flex' : 'none';
-                }
-            };
-
-            pickerSelect?.addEventListener('change', (e) => {
-                const val = parseInt(e.target.value, 10);
-                currentBan = allBans.find(b => b.id === val) || null;
-                updateVerdictView();
-            });
-
-            chipsContainer?.addEventListener('click', (e) => {
-                const btn = e.target.closest('.verdict-chip');
-                if (!btn) return;
-                chipsContainer.querySelectorAll('.verdict-chip').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                selectedVerdictId = btn.dataset.verdictId;
-                updateVerdictView();
-            });
-
-            document.getElementById('verdict-raw-editor')?.addEventListener('input', (e) => {
-                const previewEl = document.getElementById('verdict-formatted-preview');
-                if (previewEl) previewEl.textContent = e.target.value;
-            });
-
-            document.getElementById('btn-copy-discord-verdict')?.addEventListener('click', () => {
-                const text = document.getElementById('verdict-raw-editor')?.value || '';
-                navigator.clipboard.writeText(text);
-                showToast('Скопировано', 'Текст вердикта скопирован в буфер для отправки в Discord', 'success');
-            });
-
-            document.getElementById('btn-unban-and-copy-verdict')?.addEventListener('click', async () => {
-                if (!currentBan || currentBan.status !== 'ACTIVE') return;
-                confirmAction(
-                    'СНЯТЬ БАН И ВЫНЕСТИ ВЕРДИКТ',
-                    `Разбанить игрока ${currentBan.targetName} на сервере и скопировать готовый вердикт?`,
-                    async () => {
-                        try {
-                            await api('POST', `/api/bans/${currentBan.id}/unban`, { reason: 'Апелляция одобрена в Discord' });
-                            currentBan.status = 'UNBANNED';
-                            recordShiftAction(`Одобрил апелляцию и разбанил ${currentBan.targetName}`);
-                            const text = document.getElementById('verdict-raw-editor')?.value || '';
-                            navigator.clipboard.writeText(text);
-                            showToast('Бан снят', `Игрок ${currentBan.targetName} разбанен на сервере. Вердикт скопирован!`, 'success');
-                            updateVerdictView();
-                        } catch (e) {
-                            alert('Ошибка разбана: ' + e.message);
-                        }
-                    },
-                    'РАЗБАНИТЬ И СКОПИРОВАТЬ',
-                    false
-                );
             });
 
             async function renderLiveAppealsList() {
@@ -3348,7 +3217,6 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                                         </div>
                                         <div style="display:flex; gap:8px;">
                                             <button type="button" class="primary btn-sm" data-open-appeal-thread="${a.id}">💬 ТИКЕТ / ТРЕД</button>
-                                            <button type="button" class="secondary btn-sm" data-select-appeal-verdict="${a.banId}">⚡ В ВЕРДИКТ</button>
                                         </div>
                                     </div>
                                 `;
@@ -3358,19 +3226,6 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
 
                     listWrap.querySelectorAll('[data-open-appeal-thread]').forEach(btn => {
                         btn.addEventListener('click', () => openAppealThreadModal(parseInt(btn.dataset.openAppealThread, 10)));
-                    });
-
-                    listWrap.querySelectorAll('[data-select-appeal-verdict]').forEach(btn => {
-                        btn.addEventListener('click', () => {
-                            const bId = parseInt(btn.dataset.selectAppealVerdict, 10);
-                            const selectEl = document.getElementById('verdict-ban-picker');
-                            if (selectEl) {
-                                selectEl.value = String(bId);
-                                currentBan = allBans.find(b => b.id === bId) || null;
-                                updateVerdictView();
-                                selectEl.scrollIntoView({ behavior: 'smooth' });
-                            }
-                        });
                     });
                 } catch (e) {
                     listWrap.innerHTML = `<div style="text-align:center; padding:16px; color:var(--red);">Ошибка загрузки: ${esc(e.message)}</div>`;
@@ -3536,11 +3391,18 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                     <label>Причина бана (пункт правил)</label>
                     <select id="ban-reason-select" required>
                         <option value="">-- Выберите причину из списка --</option>
-                        ${reasons.map(r => `
-                            <option value="${esc(r.name)}" data-comment="${r.require_comment ? 'true' : 'false'}" ${defaultReason === r.name ? 'selected' : ''}>
-                                ${esc(r.name)}
-                            </option>
-                        `).join('')}
+                        ${reasons.map(r => {
+                            const isSel = defaultReason && (
+                                r.name.toLowerCase() === defaultReason.toLowerCase() ||
+                                r.name.toLowerCase().startsWith(defaultReason.toLowerCase()) ||
+                                defaultReason.toLowerCase().startsWith(r.name.toLowerCase())
+                            );
+                            return `
+                                <option value="${esc(r.name)}" data-comment="${r.require_comment ? 'true' : 'false'}" ${isSel ? 'selected' : ''}>
+                                    ${esc(r.name)}
+                                </option>
+                            `;
+                        }).join('')}
                     </select>
                 </div>
 
@@ -4757,7 +4619,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
         area.innerHTML = `
             <div class="view-header">
                 <div class="view-title-block">
-                    <h2>АНТИЧИТ (VESUVIO)</h2>
+                    <h2>АНТИЧИТ</h2>
                     <p>Прямая телеметрия, детекция запрещённых модов и поведенческий анализ</p>
                 </div>
                 <div class="view-actions">
@@ -4770,7 +4632,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
             <div class="radar-stream-header">
                 <div class="live-beacon">
                     <span class="live-beacon-dot" id="radar-beacon-dot"></span>
-                    <span id="radar-beacon-text">ЖИВОЙ ПОТОК СРАБАТЫВАНИЙ VESUVIO (LIVE 3S)</span>
+                    <span id="radar-beacon-text">ЖИВОЙ ПОТОК СРАБАТЫВАНИЙ (LIVE 3S)</span>
                 </div>
                 <div style="font-size:12px; color:var(--text-muted);">
                     Интеграция: <span class="badge green">АКТИВНА</span>
@@ -4808,7 +4670,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
             const dot = document.getElementById('radar-beacon-dot');
             const txt = document.getElementById('radar-beacon-text');
             if (dot) dot.style.animationPlayState = isStreamPaused ? 'paused' : 'running';
-            if (txt) txt.textContent = isStreamPaused ? 'ПОТОК ПРИОСТАНОВЛЕН (ПАУЗА)' : 'ЖИВОЙ ПОТОК СРАБАТЫВАНИЙ VESUVIO (LIVE 3S)';
+            if (txt) txt.textContent = isStreamPaused ? 'ПОТОК ПРИОСТАНОВЛЕН (ПАУЗА)' : 'ЖИВОЙ ПОТОК СРАБАТЫВАНИЙ (LIVE 3S)';
         });
 
         // Tab switches
@@ -4852,7 +4714,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 }
 
                 if (!filtered.length) {
-                    container.innerHTML = `<div style="text-align:center; padding:36px; color:var(--text-dim);">Новых нарушений пока нет. Сервер под защитой Vesuvio.</div>`;
+                    container.innerHTML = `<div style="text-align:center; padding:36px; color:var(--text-dim);">Новых нарушений пока нет. Сервер под защитой античита.</div>`;
                     return;
                 }
 
@@ -4879,7 +4741,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                         </div>`;
                 }).join('');
             } catch (e) {
-                container.innerHTML = `<div style="color:var(--red); padding:24px; text-align:center;">Vesuvio API временно недоступен</div>`;
+                container.innerHTML = `<div style="color:var(--red); padding:24px; text-align:center;">Модуль античита временно недоступен</div>`;
             }
         };
 
@@ -4944,7 +4806,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                         <div class="stat-card">
                             <div class="stat-label">СТАТУС ДВИЖКА</div>
                             <div class="stat-value" style="color:var(--green);">АКТИВЕН</div>
-                            <div class="stat-sub">Vesuvio Core Module</div>
+                            <div class="stat-sub">Модуль телеметрии и эвристик</div>
                         </div>
                         <div class="stat-card">
                             <div class="stat-label">АКТИВНЫХ ЧЕКОВ</div>
@@ -5210,7 +5072,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                                 <div style="font-size:16px; font-weight:700; color:var(--accent-light);">${fmtDuration(p.playtimeSeconds || 0)}</div>
                             </div>
                             <div class="stat-card" style="padding:12px;">
-                                <div class="stat-label">Баланс монет (LoveEconomy)</div>
+                                <div class="stat-label">Баланс монет (Экономика)</div>
                                 <div style="font-size:16px; font-weight:700; color:#fff;">${(p.economy && p.economy.balance) ? p.economy.balance.toLocaleString() : 0} монет</div>
                             </div>
                         </div>
@@ -5228,59 +5090,20 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                         return;
                     }
 
-                    dossierContainer.innerHTML = `
-                        <div class="quick-actions-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom:16px;">
-                            <button type="button" class="quick-action-btn" id="act-heal">
-                                <span class="qa-icon" style="color:var(--green);">❤</span>
-                                <span>ИСЦЕЛИТЬ</span>
-                            </button>
-                            <button type="button" class="quick-action-btn" id="act-feed">
-                                <span class="qa-icon" style="color:var(--yellow);">🍖</span>
-                                <span>ПОКОРМИТЬ</span>
-                            </button>
-                            <button type="button" class="quick-action-btn" id="act-spawn">
-                                <span class="qa-icon" style="color:var(--cyan);">⌖</span>
-                                <span>НА СПАВН</span>
-                            </button>
-                            <button type="button" class="quick-action-btn" id="act-freeze">
-                                <span class="qa-icon" style="color:#60a5fa;">❄</span>
-                                <span>ЗАМОРОЗКА</span>
-                            </button>
-                            <button type="button" class="quick-action-btn" id="act-vanish">
-                                <span class="qa-icon" style="color:#a855f7;">👻</span>
-                                <span>VANISH</span>
-                            </button>
-                            <button type="button" class="quick-action-btn" id="act-mute">
-                                <span class="qa-icon" style="color:#f97316;">🔇</span>
-                                <span>МУТ ЧАТА</span>
-                            </button>
-                            <button type="button" class="quick-action-btn" id="act-kill">
-                                <span class="qa-icon" style="color:var(--red);">💀</span>
-                                <span>УБИТЬ</span>
-                            </button>
-                            <button type="button" class="quick-action-btn" id="act-clear-inv">
-                                <span class="qa-icon" style="color:#eab308;">🗑</span>
-                                <span>ОЧИСТИТЬ ИНВ.</span>
-                            </button>
-                            <button type="button" class="quick-action-btn" id="act-kick">
-                                <span class="qa-icon" style="color:var(--red);">👢</span>
-                                <span>КИКНУТЬ</span>
-                            </button>
-                            <button type="button" class="quick-action-btn" onclick="window.openQuickBanModal('${esc(p.name)}')">
-                                <span class="qa-icon" style="color:var(--red);">⚑</span>
-                                <span>ЗАБАНИТЬ</span>
-                            </button>
-                        </div>
+                    const isHigherRole = me && (me.isOwner || (me.role && (me.role.toLowerCase().includes('управляющий') || me.role.toLowerCase().includes('owner'))));
 
-                        <!-- Gamemode Switcher -->
-                        <div style="background:rgba(255,255,255,0.02); border:1px solid var(--border); border-radius:var(--radius-sm); padding:12px; margin-bottom:14px;">
-                            <div style="font-size:12px; font-weight:700; color:var(--text-secondary); margin-bottom:8px;">СМЕНА РЕЖИМА ИГРЫ (GAMEMODE):</div>
-                            <div style="display:flex; gap:8px;">
-                                <button type="button" class="secondary btn-sm" id="act-gm-survival">SURVIVAL</button>
-                                <button type="button" class="secondary btn-sm" id="act-gm-creative">CREATIVE</button>
-                                <button type="button" class="secondary btn-sm" id="act-gm-adventure">ADVENTURE</button>
-                                <button type="button" class="secondary btn-sm" id="act-gm-spectator">SPECTATOR</button>
-                            </div>
+                    dossierContainer.innerHTML = `
+                        <div style="display:flex; gap:12px; margin-bottom:16px; flex-wrap:wrap;">
+                            <button type="button" class="quick-action-btn" id="act-kick" style="min-width:160px; flex:1; padding:18px;">
+                                <span class="qa-icon" style="color:var(--red); font-size:24px;">👢</span>
+                                <span style="font-weight:700;">КИКНУТЬ ИГРОКА</span>
+                            </button>
+                            ${isHigherRole ? `
+                            <button type="button" class="quick-action-btn" id="act-clear-inv" style="min-width:160px; flex:1; padding:18px;">
+                                <span class="qa-icon" style="color:#eab308; font-size:24px;">🗑</span>
+                                <span style="font-weight:700;">ОЧИСТИТЬ ИНВЕНТАРЬ</span>
+                            </button>
+                            ` : ''}
                         </div>
                     `;
 
@@ -5293,30 +5116,16 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                         }
                     };
 
-                    document.getElementById('act-heal')?.addEventListener('click', () => execPlayerAction('heal'));
-                    document.getElementById('act-feed')?.addEventListener('click', () => execPlayerAction('feed'));
-                    document.getElementById('act-spawn')?.addEventListener('click', () => execPlayerAction('teleport_spawn'));
-                    document.getElementById('act-freeze')?.addEventListener('click', () => execPlayerAction('freeze'));
-                    document.getElementById('act-vanish')?.addEventListener('click', () => execPlayerAction('vanish'));
-                    document.getElementById('act-mute')?.addEventListener('click', () => {
-                        const reason = prompt('Причина мута игрока:', 'Нарушение правил общения');
-                        if (reason) execPlayerAction('mute', { reason });
-                    });
-                    document.getElementById('act-kill')?.addEventListener('click', () => {
-                        confirmAction('УБИТЬ ИГРОКА', `Убить персонажа ${p.name}?`, () => execPlayerAction('kill'), 'УБИТЬ');
-                    });
-                    document.getElementById('act-clear-inv')?.addEventListener('click', () => {
-                        confirmAction('ОЧИСТКА ИНВЕНТАРЯ', `Полностью очистить инвентарь игрока ${p.name}?`, () => execPlayerAction('clear_inventory'), 'ОЧИСТИТЬ');
-                    });
                     document.getElementById('act-kick')?.addEventListener('click', () => {
-                        const reason = prompt('Причина кика:', 'Кикнут администратором через веб-панель');
-                        if (reason) execPlayerAction('kick', { reason });
+                        const reason = prompt(`Причина кика игрока ${p.name}:`, 'Кикнут администратором через веб-панель');
+                        if (reason !== null && reason.trim()) execPlayerAction('kick', { reason: reason.trim() });
                     });
 
-                    document.getElementById('act-gm-survival')?.addEventListener('click', () => execPlayerAction('gamemode', { gameMode: 'SURVIVAL' }));
-                    document.getElementById('act-gm-creative')?.addEventListener('click', () => execPlayerAction('gamemode', { gameMode: 'CREATIVE' }));
-                    document.getElementById('act-gm-adventure')?.addEventListener('click', () => execPlayerAction('gamemode', { gameMode: 'ADVENTURE' }));
-                    document.getElementById('act-gm-spectator')?.addEventListener('click', () => execPlayerAction('gamemode', { gameMode: 'SPECTATOR' }));
+                    if (isHigherRole) {
+                        document.getElementById('act-clear-inv')?.addEventListener('click', () => {
+                            confirmAction('ОЧИСТКА ИНВЕНТАРЯ', `Вы действительно хотите безвозвратно очистить инвентарь игрока ${p.name}?`, () => execPlayerAction('clear_inventory'), 'ОЧИСТИТЬ', true);
+                        });
+                    }
                 };
 
                 const renderNotes = () => {
@@ -5653,7 +5462,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
             <div class="view-header">
                 <div class="view-title-block">
                     <h2>АУТЕНТИФИКАЦИЯ И БЕЗОПАСНОСТЬ</h2>
-                    <p>Управление сессиями персонала веб-панели и аккаунтами безопасности игрового сервера (LoveAuth)</p>
+                    <p>Управление сессиями персонала и игровыми аккаунтами авторизации</p>
                 </div>
                 <div class="view-actions" id="auth-header-actions">
                     <!-- Dynamic actions per subtab -->
@@ -5666,7 +5475,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                     💻 ВЕБ-ПАНЕЛЬ (СЕССИИ СТАФФА)
                 </button>
                 <button type="button" class="sub-tab-btn" data-subtab="loveauth">
-                    🎮 ИГРОВОЙ СЕРВЕР (LOVEAUTH)
+                    🎮 ИГРОВОЙ СЕРВЕР (АВТОРИЗАЦИЯ)
                 </button>
             </div>
 
@@ -5818,26 +5627,28 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
             } catch (e) {}
 
             container.innerHTML = `
-                <!-- LoveAuth Status Banner -->
+                <!-- Auth Status Banner -->
                 ${isAvailable ? `
                     <div class="loveauth-banner">
                         <div style="display:flex; align-items:center; gap:14px;">
                             <span style="font-size:26px;">🛡</span>
                             <div>
                                 <div style="font-weight:700; color:#fff; font-size:15px; display:flex; align-items:center; gap:8px;">
-                                    <span>ПЛАГИН LOVEAUTH</span>
-                                    <span class="badge green">● АКТИВЕН И ПОДКЛЮЧЕН</span>
+                                    <span>СИСТЕМА АВТОРИЗАЦИИ</span>
+                                    <span class="badge green">● АКТИВНА</span>
                                 </div>
                                 <div style="font-size:12px; color:var(--text-muted); margin-top:2px;">
-                                    Управление игровыми сессиями, шифрование паролей Argon2id и двухфакторная защита
+                                    Управление игровыми сессиями, шифрованием паролей и двухфакторной защитой
                                 </div>
                             </div>
                         </div>
-                        <div style="display:flex; gap:16px; font-size:12px; color:var(--text-dim);">
+                        ${hasPerm('VIEW_SERVER_INTERNALS') ? `
+                        <div style="display:flex; gap:16px; font-size:12px; color:var(--text-dim); flex-wrap:wrap;">
                             <div>База: <b style="color:#fff;">H2 / SQL</b></div>
                             <div>Хеш: <b style="color:var(--accent-light);">Argon2id</b></div>
                             <div>Брутфорс-фильтр: <b style="color:var(--green);">Активен</b></div>
                         </div>
+                        ` : ''}
                     </div>
                 ` : `
                     <div class="loveauth-banner" style="background:rgba(239, 68, 68, 0.08); border-color:rgba(239, 68, 68, 0.25);">
@@ -5845,11 +5656,11 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                             <span style="font-size:26px;">⚠</span>
                             <div>
                                 <div style="font-weight:700; color:#fff; font-size:15px; display:flex; align-items:center; gap:8px;">
-                                    <span>ПЛАГИН LOVEAUTH</span>
-                                    <span class="badge red">● ОТКЛЮЧЕН ИЛИ НЕ НАЙДЕН</span>
+                                    <span>СИСТЕМА АВТОРИЗАЦИИ</span>
+                                    <span class="badge red">● НЕДОСТУПНА</span>
                                 </div>
                                 <div style="font-size:12px; color:var(--text-muted); margin-top:2px;">
-                                    Сервер работает без прямого хука LoveAuth. Убедитесь, что LoveAuth.jar помещен в папку /plugins.
+                                    Модуль игровой авторизации не подключен или отключен на сервере.
                                 </div>
                             </div>
                         </div>
@@ -5859,9 +5670,9 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
 
                 <!-- Account Search & Online Quick-Chips -->
                 <div class="loveauth-card" style="margin-bottom:20px;">
-                    <h3 style="font-size:14px; margin-bottom:10px; color:#fff;">ИНСПЕКЦИЯ АККАУНТА ИГРОКА (LOVEAUTH)</h3>
+                    <h3 style="font-size:14px; margin-bottom:10px; color:#fff;">ИНСПЕКЦИЯ ИГРОВОГО АККАУНТА</h3>
                     <div style="display:flex; gap:10px; margin-bottom:14px;">
-                        <input type="text" id="loveauth-search-input" placeholder="Введите точный ник игрока (например, Lovelace, Notch)..." style="flex:1;">
+                        <input type="text" id="loveauth-search-input" placeholder="Введите точный ник игрока..." style="flex:1;">
                         <button type="button" class="primary" id="btn-loveauth-search">НАЙТИ АККАУНТ</button>
                     </div>
 
@@ -5881,7 +5692,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 <div id="loveauth-player-result">
                     <div style="background:var(--card-bg); border:1px dashed var(--border); border-radius:var(--radius-md); padding:40px 20px; text-align:center; color:var(--text-dim);">
                         <div style="font-size:28px; margin-bottom:8px;">🔍</div>
-                        Введите никнейм или нажмите на игрока онлайн выше, чтобы загрузить данные авторизации LoveAuth
+                        Введите никнейм или нажмите на игрока онлайн выше, чтобы загрузить данные авторизации
                     </div>
                 </div>
             `;
@@ -5913,7 +5724,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
 
             resBox.innerHTML = `
                 <div style="background:var(--card-bg); border:1px solid var(--border); border-radius:var(--radius-md); padding:30px; text-align:center; color:var(--text-muted);">
-                    Связываемся с базой данных LoveAuth...
+                    Связываемся с базой авторизации...
                 </div>
             `;
 
@@ -5924,7 +5735,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                     resBox.innerHTML = `
                         <div class="loveauth-card" style="text-align:center; padding:32px;">
                             <div style="color:var(--yellow); font-size:24px; margin-bottom:8px;">⚠</div>
-                            <h3 style="color:#fff; margin-bottom:6px;">Игрок «${esc(name)}» не найден в базе данных LoveAuth</h3>
+                            <h3 style="color:#fff; margin-bottom:6px;">Игрок «${esc(name)}» не найден в базе авторизации</h3>
                             <p style="color:var(--text-dim); font-size:12.5px;">Возможно, игрок еще ни разу не заходил на сервер или никнейм введен с опечаткой.</p>
                         </div>
                     `;
@@ -5932,6 +5743,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 }
 
                 const isLocked = !!info.isLocked;
+                const isIpBlocked = !!info.isIpBlocked;
                 const isReg = !!info.isRegistered;
                 const hasDc = !!info.hasDiscord;
                 const alts = Array.isArray(info.alts) ? info.alts : [];
@@ -5996,7 +5808,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
 
                         <!-- Action Buttons Grid -->
                         <div style="font-size:12px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:10px;">
-                            Действия администратора LoveAuth:
+                            Действия администратора:
                         </div>
 
                         <div class="loveauth-actions-grid">
@@ -6010,14 +5822,22 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                                 <button type="button" class="primary" onclick="window.loveAuthUnlock('${esc(info.username)}')">
                                     🔓 РАЗБЛОКИРОВАТЬ АККАУНТ
                                 </button>
-                            ` : ''}
-                            ${(info.lastIp && info.lastIp !== '—') ? `
-                                <button type="button" class="secondary" onclick="window.loveAuthUnblockIp('${esc(info.lastIp)}')">
-                                    🌐 РАЗБЛОКИРОВАТЬ IP
+                            ` : `
+                                <button type="button" class="secondary" disabled style="opacity:0.5; cursor:not-allowed;" title="Аккаунт не заблокирован">
+                                    ✓ АККАУНТ ДОСТУПЕН
                                 </button>
-                            ` : ''}
+                            `}
+                            ${isIpBlocked ? `
+                                <button type="button" class="primary" onclick="window.loveAuthUnblockIp('${esc(info.lastIp)}')">
+                                    🌐 РАЗБЛОКИРОВАТЬ IP (${esc(info.lastIp)})
+                                </button>
+                            ` : `
+                                <button type="button" class="secondary" disabled style="opacity:0.5; cursor:not-allowed;" title="IP не заблокирован">
+                                    ✓ IP НЕ ЗАБЛОКИРОВАН
+                                </button>
+                            `}
                             <button type="button" class="danger" onclick="window.loveAuthDelete('${esc(info.username)}')">
-                                🗑 УДАЛИТЬ ИЗ LOVEAUTH
+                                🗑 УДАЛИТЬ АККАУНТ
                             </button>
                         </div>
                     </div>
@@ -6025,19 +5845,19 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
             } catch (e) {
                 resBox.innerHTML = `
                     <div style="color:var(--red); padding:20px; text-align:center; background:var(--card-bg); border-radius:var(--radius-md); border:1px solid var(--border);">
-                        Ошибка запроса к LoveAuth: ${esc(e.message)}
+                        Ошибка запроса к авторизации: ${esc(e.message)}
                     </div>
                 `;
             }
         };
 
-        // LoveAuth Operations Handlers
+        // Auth Operations Handlers
         window.loveAuthResetSession = (name) => {
             confirmAction('СБРОС СЕССИИ', `Завершить сессию игрока ${name} на игровом сервере? Он будет немедленно отключен.`, async () => {
                 try {
                     await api('POST', `/api/loveauth/player/${encodeURIComponent(name)}/reset-session`);
                     showToast('Сессия сброшена', `Игрок ${name} отключен от игрового сервера`, 'info');
-                    recordShiftAction(`LoveAuth: сбросил сессию игроку ${name}`);
+                    recordShiftAction(`Авторизация: сбросил сессию игроку ${name}`);
                     window.inspectLoveAuthPlayer(name);
                 } catch (e) {
                     alert('Ошибка: ' + e.message);
@@ -6048,8 +5868,8 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
         window.loveAuthChangePassword = (name) => {
             openModal(`
                 <div class="modal-header">
-                    <h3>СМЕНА ПАРОЛЯ LOVEAUTH: ${esc(name)}</h3>
-                    <button type="button" class="close-btn" onclick="window.closeCurrentModal()">✕</button>
+                    <h3>СМЕНА ПАРОЛЯ: ${esc(name)}</h3>
+                    <button type="button" class="close-btn" data-modal-close="true">✕</button>
                 </div>
                 <div class="modal-body">
                     <div class="form-group">
@@ -6057,11 +5877,11 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                         <input type="text" id="loveauth-new-pass" placeholder="Минимум 4 символа..." required autofocus>
                     </div>
                     <div style="font-size:12px; color:var(--text-muted);">
-                        Пароль будет захеширован алгоритмом Argon2id и записан в базу данных LoveAuth.
+                        Пароль будет захеширован и сохранен в базе данных авторизации.
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="secondary" onclick="window.closeCurrentModal()">ОТМЕНА</button>
+                    <button type="button" class="secondary" data-modal-close="true">ОТМЕНА</button>
                     <button type="button" class="primary" id="btn-submit-loveauth-pass">СОХРАНИТЬ ПАРОЛЬ</button>
                 </div>
             `, () => {
@@ -6074,7 +5894,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                     try {
                         await api('POST', `/api/loveauth/player/${encodeURIComponent(name)}/password`, { password: pass });
                         showToast('Пароль обновлен', `Пароль для ${name} успешно изменен`, 'success');
-                        recordShiftAction(`LoveAuth: изменил пароль ${name}`);
+                        recordShiftAction(`Авторизация: изменил пароль ${name}`);
                         closeModal();
                         window.inspectLoveAuthPlayer(name);
                     } catch (e) {
@@ -6089,7 +5909,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 try {
                     await api('POST', `/api/loveauth/player/${encodeURIComponent(name)}/unlock`);
                     showToast('Разблокирован', `Аккаунт ${name} успешно разблокирован`, 'success');
-                    recordShiftAction(`LoveAuth: разблокировал аккаунт ${name}`);
+                    recordShiftAction(`Авторизация: разблокировал аккаунт ${name}`);
                     window.inspectLoveAuthPlayer(name);
                 } catch (e) {
                     alert('Ошибка разблокировки: ' + e.message);
@@ -6102,7 +5922,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 try {
                     await api('POST', `/api/loveauth/player/system/unblock-ip`, { ip });
                     showToast('IP разблокирован', `IP адрес ${ip} разблокирован в системе`, 'success');
-                    recordShiftAction(`LoveAuth: разблокировал IP ${ip}`);
+                    recordShiftAction(`Авторизация: разблокировал IP ${ip}`);
                     if (inspectedPlayer) window.inspectLoveAuthPlayer(inspectedPlayer);
                 } catch (e) {
                     alert('Ошибка: ' + e.message);
@@ -6111,11 +5931,11 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
         };
 
         window.loveAuthDelete = (name) => {
-            confirmAction('УДАЛЕНИЕ АККАУНТА', `ВНИМАНИЕ! Вы действительно хотите безвозвратно удалить регистрацию игрока ${name} из LoveAuth?`, async () => {
+            confirmAction('УДАЛЕНИЕ АККАУНТА', `ВНИМАНИЕ! Вы действительно хотите безвозвратно удалить регистрацию игрока ${name}?`, async () => {
                 try {
                     await api('POST', `/api/loveauth/player/${encodeURIComponent(name)}/delete`);
-                    showToast('Аккаунт удален', `Регистрация ${name} удалена из LoveAuth`, 'warning');
-                    recordShiftAction(`LoveAuth: удалил аккаунт ${name}`);
+                    showToast('Аккаунт удален', `Регистрация ${name} удалена из авторизации`, 'warning');
+                    recordShiftAction(`Авторизация: удалил аккаунт ${name}`);
                     window.inspectLoveAuthPlayer(name);
                 } catch (e) {
                     alert('Ошибка удаления: ' + e.message);
@@ -6925,7 +6745,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                         <h4 style="font-size:14px; color:#fff; margin:0;">DISCORD УВЕДОМЛЕНИЯ ПЕРСОНАЛА</h4>
                     </div>
                     <div style="font-size:12px; color:var(--text-muted); margin-bottom:12px; line-height:1.5;">
-                        Получайте моментальные оповещения в личные сообщения Discord от LoveCore при поступлении новых репортов или тикетов апелляций.
+                        Получайте моментальные оповещения в личные сообщения Discord от сервера при поступлении новых репортов или тикетов апелляций.
                     </div>
                     <div class="form-group">
                         <label>Ваш Discord User ID (числовой снепшот)</label>

@@ -105,7 +105,7 @@ public class ApiEconomyHandler extends ApiHandlerSupport {
 
             Player targetPlayer = Bukkit.getPlayerExact(target);
             if (targetPlayer == null || !targetPlayer.isOnline()) {
-                sendError(resp, 400, "Игрок " + target + " должен быть онлайн для передачи/списания монет LoveEconomy");
+                sendError(resp, 400, "Игрок " + target + " должен быть онлайн для передачи/списания монет");
                 return;
             }
 
@@ -128,7 +128,7 @@ public class ApiEconomyHandler extends ApiHandlerSupport {
 
             var bridge = plugin.getLoveEconomyBridge();
             if (!bridge.isAvailable()) {
-                sendError(resp, 503, "Модуль LoveEconomy недоступен на сервере");
+                sendError(resp, 503, "Модуль экономики недоступен на сервере");
                 return;
             }
 
@@ -150,7 +150,7 @@ public class ApiEconomyHandler extends ApiHandlerSupport {
                         "message", String.format("Выдано %d %s игроку %s", amount, currency, targetPlayer.getName())
                     ));
                 } else {
-                    sendError(resp, 500, "Ошибка при выполнении операции выдачи LoveEconomy");
+                    sendError(resp, 500, "Ошибка при выполнении операции выдачи монет");
                 }
                 return;
             }

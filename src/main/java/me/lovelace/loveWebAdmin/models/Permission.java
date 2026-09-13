@@ -51,5 +51,8 @@ public enum Permission {
     MANAGE_REPORTS,
 
     // API и Вебхуки
-    MANAGE_API
+    MANAGE_API,
+
+    // Просмотр технических параметров сервера (СУБД, хеши, брутфорс-фильтр, системные сервисы)
+    VIEW_SERVER_INTERNALS
 }

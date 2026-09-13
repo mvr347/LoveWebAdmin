@@ -52,7 +52,7 @@ public class ApiLoveAuthHandler extends ApiHandlerSupport {
                 Map<String, Object> info = bridge.getPlayerAuthInfo(name).get();
                 sendSuccess(resp, info);
             } catch (Exception e) {
-                sendError(resp, 500, "Ошибка получения данных LoveAuth: " + e.getMessage());
+                sendError(resp, 500, "Ошибка получения данных авторизации: " + e.getMessage());
             }
             return;
         }
@@ -98,17 +98,17 @@ public class ApiLoveAuthHandler extends ApiHandlerSupport {
                         return;
                     }
                     boolean ok = bridge.changePassword(playerName, newPass).get();
-                    plugin.getLogManager().logWebAction(adminName, "LoveAuth: изменил пароль игроку " + playerName);
+                    plugin.getLogManager().logWebAction(adminName, "Авторизация: изменил пароль игроку " + playerName);
                     sendSuccess(resp, Map.of("success", ok, "message", "Пароль игрока обновлён"));
                 }
                 case "delete" -> {
                     boolean ok = bridge.deleteAccount(playerName).get();
-                    plugin.getLogManager().logWebAction(adminName, "LoveAuth: удалил аккаунт игрока " + playerName);
+                    plugin.getLogManager().logWebAction(adminName, "Авторизация: удалил аккаунт игрока " + playerName);
                     sendSuccess(resp, Map.of("success", ok, "message", "Аккаунт игрока удалён"));
                 }
                 case "unlock" -> {
                     boolean ok = bridge.unlockAccount(playerName).get();
-                    plugin.getLogManager().logWebAction(adminName, "LoveAuth: разблокировал аккаунт игрока " + playerName);
+                    plugin.getLogManager().logWebAction(adminName, "Авторизация: разблокировал аккаунт игрока " + playerName);
                     sendSuccess(resp, Map.of("success", ok, "message", "Аккаунт разблокирован"));
                 }
                 case "unblock-ip" -> {
@@ -119,12 +119,12 @@ public class ApiLoveAuthHandler extends ApiHandlerSupport {
                         return;
                     }
                     boolean ok = bridge.unblockIp(ip).get();
-                    plugin.getLogManager().logWebAction(adminName, "LoveAuth: разблокировал IP " + ip);
+                    plugin.getLogManager().logWebAction(adminName, "Авторизация: разблокировал IP " + ip);
                     sendSuccess(resp, Map.of("success", ok, "message", "IP разблокирован"));
                 }
                 case "reset-session" -> {
                     boolean ok = bridge.resetSession(playerName).get();
-                    plugin.getLogManager().logWebAction(adminName, "LoveAuth: сбросил сессию игроку " + playerName);
+                    plugin.getLogManager().logWebAction(adminName, "Авторизация: сбросил сессию игроку " + playerName);
                     sendSuccess(resp, Map.of("success", ok, "message", "Сессия игрока сброшена"));
                 }
                 default -> sendError(resp, 404, "Неизвестное действие: " + action);

@@ -226,8 +226,8 @@ public class ApiDeveloperHandler extends ApiHandlerSupport {
         endpoints.add(createEndpointDoc("POST", "/api/reports/{id}/accept", "Принятие жалобы и начисление репутации заявителю", "MANAGE_REPORTS", "id: ID жалобы", "{}"));
         endpoints.add(createEndpointDoc("POST", "/api/command", "Выполнение консольной команды на сервере", "EXECUTE_COMMANDS", null, "{\"command\":\"say Hello from API\"}"));
         endpoints.add(createEndpointDoc("GET", "/api/server/ops", "Оперативные метрики сервера (TPS, CPU, Heap RAM, Whitelist)", "VIEW_STATS", null, "{}"));
-        endpoints.add(createEndpointDoc("GET", "/api/economy/overview", "Экономическая сводка LoveCore: общая масса монет, топ богачей", "VIEW_STATS", null, "{}"));
-        endpoints.add(createEndpointDoc("GET", "/api/loveauth/status", "Статус плагина LoveAuth, шифрование и брутфорс защита", "VIEW_SECURITY", null, "{}"));
+        endpoints.add(createEndpointDoc("GET", "/api/economy/overview", "Экономическая сводка: общая масса монет, топ богачей", "VIEW_STATS", null, "{}"));
+        endpoints.add(createEndpointDoc("GET", "/api/loveauth/status", "Статус сервиса авторизации, безопасность и защита", "VIEW_SECURITY", null, "{}"));
         endpoints.add(createEndpointDoc("GET", "/api/developer/keys", "Список активных API ключей разработчиков", "MANAGE_ADMINS", null, "[]"));
         endpoints.add(createEndpointDoc("POST", "/api/developer/keys", "Создание нового API ключа", "MANAGE_ADMINS", null, "{\"name\":\"Discord Bot\",\"permissions\":[\"*\"]}"));
         endpoints.add(createEndpointDoc("GET", "/api/developer/webhooks", "Список исходящих вебхуков Discord / HTTP", "MANAGE_ADMINS", null, "[]"));
