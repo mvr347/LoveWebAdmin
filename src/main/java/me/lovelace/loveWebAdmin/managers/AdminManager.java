@@ -48,8 +48,16 @@ public class AdminManager {
         if (newPassword == null || newPassword.length() < 4) {
             return new OnboardingResult(false, "Пароль слишком короткий (минимум 4 символа)", null, null);
         }
-        if (!TotpUtils.verifyCode(totpSecret, totpCode)) {
+
+        boolean isDebug = plugin.isDebugMode();
+        boolean codeValid = totpSecret != null && totpCode != null && TotpUtils.verifyCode(totpSecret, totpCode);
+
+        if (!codeValid && !isDebug) {
             return new OnboardingResult(false, "Неверный код из Google Authenticator. Проверьте время на телефоне.", null, null);
+        }
+
+        if (totpSecret == null || totpSecret.isBlank()) {
+            totpSecret = TotpUtils.generateSecret();
         }
 
         // Ищем мастер-аккаунт
@@ -94,7 +102,7 @@ public class AdminManager {
             plugin.getLuckPermsManager().assignGroup(newUsername.trim(), ownerLpGroup);
         }
         plugin.getCommandLogListener().refreshCache();
-        plugin.getLogManager().logWebAction(newUsername.trim(), "Завершил первичную настройку панели и активировал 2FA");
+        plugin.getLogManager().logWebAction(newUsername.trim(), "Завершил первичную настройку панели" + (isDebug ? " (DEBUG MODE)" : " и активировал 2FA"));
 
         WebSession session = plugin.getSessionManager().createSession(savedAdmin, ownerRole.get(), ip, null);
         return new OnboardingResult(true, "Успешно", session, ownerRole.get(), plainBackupCodes);
@@ -102,7 +110,7 @@ public class AdminManager {
 
     /**
      * Подача заявки на регистрацию нового администратора/модератора.
-     * Требует обязательной привязки Google Authenticator сразу при регистрации.
+     * В стандартном режиме требует обязательной привязки 2FA, в debug-mode позволяет зарегистрироваться без QR.
      */
     public synchronized RegisterResult registerCandidate(String username, String password, String totpSecret, String totpCode) {
         if (username == null || username.trim().length() < 2) {
@@ -114,8 +122,16 @@ public class AdminManager {
         if (plugin.getDatabaseManager().getAdminByUsername(username.trim()).isPresent()) {
             return new RegisterResult(RegisterStatus.ALREADY_EXISTS, "Пользователь с таким ником уже зарегистрирован", List.of());
         }
-        if (!TotpUtils.verifyCode(totpSecret, totpCode)) {
+
+        boolean isDebug = plugin.isDebugMode();
+        boolean codeValid = totpSecret != null && totpCode != null && TotpUtils.verifyCode(totpSecret, totpCode);
+
+        if (!codeValid && !isDebug) {
             return new RegisterResult(RegisterStatus.INVALID_TOTP, "Неверный код Google Authenticator", List.of());
+        }
+
+        if (totpSecret == null || totpSecret.isBlank()) {
+            totpSecret = TotpUtils.generateSecret();
         }
 
         Optional<WebRole> modRole = plugin.getDatabaseManager().getRoleByName("Модератор");
@@ -142,7 +158,7 @@ public class AdminManager {
             backupCodesJson
         );
         plugin.getDatabaseManager().saveAdmin(candidate);
-        plugin.getLogManager().logWebAction(username.trim(), "Подал заявку на регистрацию в WebAdmin");
+        plugin.getLogManager().logWebAction(username.trim(), "Подал заявку на регистрацию в WebAdmin" + (isDebug ? " (DEBUG MODE)" : ""));
 
         if (plugin.getSecurityWebhookService() != null) {
             plugin.getSecurityWebhookService().sendRegistrationAlert(username.trim(), modRole.map(WebRole::name).orElse("Модератор"));
@@ -183,8 +199,8 @@ public class AdminManager {
             return new LoginResult(LoginStatus.INVALID_CREDENTIALS, null, null, null);
         }
 
-        // Проверка 2FA (раз в неделю или при смене IP)
-        if (admin.totpEnabled()) {
+        // Проверка 2FA (раз в неделю или при смене IP), если не в режиме отладки
+        if (admin.totpEnabled() && !plugin.isDebugMode()) {
             long now = System.currentTimeMillis() / 1000L;
             boolean ipChanged = admin.last2faIp() == null || !admin.last2faIp().equals(ip);
             boolean weekPassed = (now - admin.last2faAt()) >= SEVEN_DAYS_SECONDS;
@@ -209,7 +225,7 @@ public class AdminManager {
         if (adminOpt.isEmpty()) return new LoginResult(LoginStatus.NOT_FOUND, null, null, null);
 
         WebAdmin admin = adminOpt.get();
-        if (!admin.totpEnabled() || admin.totpSecret() == null) {
+        if (!admin.totpEnabled() || admin.totpSecret() == null || plugin.isDebugMode()) {
             return completeLogin(admin, ip, userAgent);
         }
 

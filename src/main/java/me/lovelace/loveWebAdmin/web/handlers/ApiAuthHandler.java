@@ -144,9 +144,11 @@ public class ApiAuthHandler extends ApiHandlerSupport {
     private void handleStatus(HttpServletResponse resp) throws IOException {
         boolean ownerExists = plugin.getAdminManager().hasOwner();
         boolean initialSetup = plugin.getAdminManager().isInitialSetupNeeded();
+        boolean debugMode = plugin.isDebugMode();
         sendSuccess(resp, Map.of(
             "ownerExists", ownerExists,
-            "initialSetupNeeded", initialSetup
+            "initialSetupNeeded", initialSetup,
+            "debugMode", debugMode
         ));
     }
 
@@ -213,7 +215,12 @@ public class ApiAuthHandler extends ApiHandlerSupport {
         String totpSecret = stringOrNull(body.get("totpSecret"));
         String totpCode = stringOrNull(body.get("totpCode"));
 
-        if (username == null || password == null || totpSecret == null || totpCode == null) {
+        if (username == null || password == null) {
+            sendError(resp, 400, "Заполните логин и пароль");
+            return;
+        }
+
+        if (!plugin.isDebugMode() && (totpSecret == null || totpCode == null)) {
             sendError(resp, 400, "Заполните все поля (ник, пароль, секрет и код подтверждения 2FA)");
             return;
         }
@@ -244,7 +251,12 @@ public class ApiAuthHandler extends ApiHandlerSupport {
         String totpSecret = stringOrNull(body.get("totpSecret"));
         String totpCode = stringOrNull(body.get("totpCode"));
 
-        if (username == null || password == null || totpSecret == null || totpCode == null) {
+        if (username == null || password == null) {
+            sendError(resp, 400, "Заполните логин и пароль");
+            return;
+        }
+
+        if (!plugin.isDebugMode() && (totpSecret == null || totpCode == null)) {
             sendError(resp, 400, "Заполните все поля, включая привязку Google Authenticator");
             return;
         }

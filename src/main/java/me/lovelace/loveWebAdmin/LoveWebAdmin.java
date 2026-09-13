@@ -197,6 +197,10 @@ public final class LoveWebAdmin extends JavaPlugin {
         return (System.currentTimeMillis() - startTimeMillis) / 1000;
     }
 
+    public boolean isDebugMode() {
+        return getConfig().getBoolean("debug-mode", false) || getConfig().getBoolean("security.debug-mode", false);
+    }
+
     public DatabaseManager getDatabaseManager() {
         return databaseManager;
     }

@@ -8,6 +8,7 @@
     let activeNavSection = 'dashboard';
     let banReasonsCache = null;
     let sidebarCollapsed = localStorage.getItem('wa_sidebar_collapsed') === 'true';
+    let serverStatus = null;
 
     // Session shift metrics
     const shiftSession = {
@@ -702,10 +703,12 @@
     }
 
     async function renderAuthGate() {
-        let status = { ownerExists: false, initialSetupNeeded: false };
+        let status = { ownerExists: false, initialSetupNeeded: false, debugMode: false };
         try {
             status = await api('GET', '/api/auth/status');
+            serverStatus = status;
         } catch (e) {
+            serverStatus = status;
             app.innerHTML = `
                 <div class="auth-screen">
                     <div class="auth-card">
@@ -738,6 +741,14 @@
                     colorLight: '#ffffff',
                     correctLevel: (typeof QRCode.CorrectLevel !== 'undefined' ? QRCode.CorrectLevel.M : 0)
                 });
+                // qrcode.js создаёт и <canvas>, и <img> (с display:none).
+                // Убеждаемся, что виден только один элемент и нет дублирования.
+                const canvas = containerEl.querySelector('canvas');
+                const img = containerEl.querySelector('img');
+                if (canvas && img) {
+                    img.style.display = 'none';
+                    img.setAttribute('style', 'display:none !important');
+                }
                 return;
             }
         } catch (e) {
@@ -851,11 +862,13 @@
     }
 
     function renderLogin() {
+        const isDebug = serverStatus && serverStatus.debugMode;
         app.innerHTML = `
             <div class="auth-screen">
                 <div class="auth-card">
                     <div class="logo"><span style="color:var(--accent);">◈</span> WebAdmin</div>
                     <div class="sub">Панель управления Minecraft-сервером</div>
+                    ${isDebug ? '<div class="auth-debug-badge">⚡ Режим отладки: 2FA / QR не требуется</div>' : ''}
                     <form id="login-form">
                         <div class="form-group">
                             <label>Никнейм сотрудника</label>
@@ -908,11 +921,13 @@
     }
 
     function renderCandidateRegistration() {
+        const isDebug = serverStatus && serverStatus.debugMode;
         app.innerHTML = `
             <div class="auth-screen">
                 <div class="auth-card" style="max-width:480px;">
                     <div class="logo"><span style="color:var(--accent);">◈</span> Регистрация сотрудника</div>
                     <div class="sub">Подача заявки на доступ к панели WebAdmin. Главный администратор утвердит вашу заявку.</div>
+                    ${isDebug ? '<div class="auth-debug-badge">⚡ Режим отладки: можно подать заявку без сканирования QR</div>' : ''}
 
                     <div class="stepper">
                         <div class="step-item active">
@@ -941,6 +956,7 @@
                         </div>
                         <div id="cand-reg-err" class="error" style="display:none;"></div>
                         <button type="submit" class="primary" id="btn-cand-next" style="width:100%; margin-top:10px;">ПРОДОЛЖИТЬ (2FA)</button>
+                        ${isDebug ? '<button type="button" class="btn-debug-bypass" id="btn-cand-debug-direct" style="width:100%; margin-top:8px;">⚡ ПОДАТЬ ЗАЯВКУ БЕЗ 2FA / QR (ДЕБАГ)</button>' : ''}
                         <button type="button" class="secondary" id="btn-cand-cancel" style="width:100%; margin-top:8px;">← ВЕРНУТЬСЯ КО ВХОДУ</button>
                     </form>
                 </div>
@@ -949,6 +965,42 @@
         document.getElementById('btn-cand-cancel')?.addEventListener('click', () => {
             renderLogin();
         });
+
+        if (isDebug) {
+            document.getElementById('btn-cand-debug-direct')?.addEventListener('click', async () => {
+                const username = document.getElementById('cand-user').value.trim();
+                const pass = document.getElementById('cand-pass').value;
+                const pass2 = document.getElementById('cand-pass2').value;
+                const err = document.getElementById('cand-reg-err');
+                err.style.display = 'none';
+
+                if (username.length < 2) {
+                    err.textContent = 'Никнейм должен быть не менее 2 символов';
+                    err.style.display = 'block';
+                    return;
+                }
+                if (pass.length < 4) {
+                    err.textContent = 'Пароль должен содержать минимум 4 символа';
+                    err.style.display = 'block';
+                    return;
+                }
+                if (pass !== pass2) {
+                    err.textContent = 'Пароли не совпадают';
+                    err.style.display = 'block';
+                    return;
+                }
+
+                try {
+                    const res = await api('POST', '/api/auth/register', {
+                        username, password: pass, totpSecret: 'debug', totpCode: 'debug'
+                    });
+                    renderCandidateSuccessScreen(username, res.backupCodes || []);
+                } catch (ex) {
+                    err.textContent = ex.message;
+                    err.style.display = 'block';
+                }
+            });
+        }
 
         document.getElementById('cand-reg-form')?.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -991,10 +1043,12 @@
     }
 
     function renderCandidateRegistration2fa(username, password, totpSecret, otpUrl) {
+        const isDebug = serverStatus && serverStatus.debugMode;
         app.innerHTML = `
             <div class="auth-screen">
                 <div class="auth-card" style="max-width:500px;">
                     <div class="logo"><span style="color:var(--accent);">◈</span> Привязка 2FA</div>
+                    ${isDebug ? '<div class="auth-debug-badge">⚡ Режим отладки: QR код необязателен</div>' : ''}
                     <div class="stepper">
                         <div class="step-item completed">
                             <span class="step-badge">✓</span>
@@ -1007,7 +1061,7 @@
                         </div>
                     </div>
 
-                    <div class="sub" style="margin-bottom:12px;">Отсканируйте QR-код в <b>Google Authenticator</b>, <b>Aegis</b> или <b>Яндекс Ключ</b>:</div>
+                    <div class="sub" style="margin-bottom:12px;">Отсканируйте QR-код в <b>Google Authenticator</b> или <b>Aegis</b>:</div>
 
                     <div class="totp-qr-wrapper">
                         <div class="totp-qr-box" id="cand-qrcode-box"></div>
@@ -1025,11 +1079,12 @@
                     <form id="cand-2fa-form">
                         <div class="form-group">
                             <label>6-значный код подтверждения из приложения</label>
-                            <input type="text" id="cand-code" placeholder="123456" maxlength="6" inputmode="numeric" pattern="[0-9]*" required autofocus
+                            <input type="text" id="cand-code" placeholder="123456" maxlength="6" inputmode="numeric" pattern="[0-9]*" ${isDebug ? '' : 'required'} autofocus
                                    style="text-align:center; font-size:22px; font-weight:700; letter-spacing:6px; font-family:'JetBrains Mono';">
                         </div>
                         <div id="cand-2fa-err" class="error" style="display:none;"></div>
                         <button type="submit" class="primary" id="btn-cand-submit" style="width:100%; margin-top:10px;">ОТПРАВИТЬ ЗАЯВКУ</button>
+                        ${isDebug ? '<button type="button" class="btn-debug-bypass" id="btn-cand-debug-submit" style="width:100%; margin-top:8px;">⚡ ОТПРАВИТЬ ЗАЯВКУ БЕЗ 2FA (ДЕБАГ)</button>' : ''}
                         <button type="button" class="secondary" id="btn-cand-back" style="width:100%; margin-top:8px;">← НАЗАД К ДАННЫМ</button>
                     </form>
                 </div>
@@ -1042,9 +1097,25 @@
             renderCandidateRegistration();
         });
 
+        if (isDebug) {
+            document.getElementById('btn-cand-debug-submit')?.addEventListener('click', async () => {
+                const err = document.getElementById('cand-2fa-err');
+                err.style.display = 'none';
+                try {
+                    const res = await api('POST', '/api/auth/register', {
+                        username, password, totpSecret, totpCode: 'debug'
+                    });
+                    renderCandidateSuccessScreen(username, res.backupCodes || []);
+                } catch (ex) {
+                    err.textContent = ex.message;
+                    err.style.display = 'block';
+                }
+            });
+        }
+
         document.getElementById('cand-2fa-form')?.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const code = document.getElementById('cand-code').value.trim();
+            const code = document.getElementById('cand-code').value.trim() || (isDebug ? 'debug' : '');
             const err = document.getElementById('cand-2fa-err');
             const btn = document.getElementById('btn-cand-submit');
             err.style.display = 'none';
@@ -1115,11 +1186,13 @@
     }
 
     function render2faVerification(username) {
+        const isDebug = serverStatus && serverStatus.debugMode;
         app.innerHTML = `
             <div class="auth-screen">
                 <div class="auth-card">
                     <div class="logo"><span style="color:var(--accent);">◈</span> 2FA Подтверждение</div>
                     <div class="sub">Вход для аккаунта <b>${esc(username)}</b>. Введите 6 цифр из приложения Google Authenticator или 8-значный резервной код:</div>
+                    ${isDebug ? '<div class="auth-debug-badge">⚡ Режим отладки: можно войти без ввода кода из приложения</div>' : ''}
                     <form id="form-2fa">
                         <div class="form-group">
                             <label>Код подтверждения</label>
@@ -1128,14 +1201,31 @@
                         </div>
                         <div id="err-2fa" class="error" style="display:none;"></div>
                         <button type="submit" class="primary" style="width:100%; margin-top:10px;">ПОДТВЕРДИТЬ</button>
+                        ${isDebug ? '<button type="button" class="btn-debug-bypass" id="btn-debug-bypass-2fa" style="width:100%; margin-top:8px;">⚡ ВОЙТИ БЕЗ 2FA / QR (РЕЖИМ ОТЛАДКИ)</button>' : ''}
                         <button type="button" class="secondary" onclick="location.reload()" style="width:100%; margin-top:8px;">ОТМЕНА</button>
                     </form>
                 </div>
             </div>`;
 
+        if (isDebug) {
+            document.getElementById('btn-debug-bypass-2fa')?.addEventListener('click', async () => {
+                const err = document.getElementById('err-2fa');
+                err.style.display = 'none';
+                try {
+                    const res = await api('POST', '/api/auth/verify-2fa', { username, code: 'debug' });
+                    setToken(res.token);
+                    me = await api('GET', '/api/me');
+                    renderAppLayout();
+                } catch (ex) {
+                    err.textContent = ex.message;
+                    err.style.display = 'block';
+                }
+            });
+        }
+
         document.getElementById('form-2fa')?.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const code = document.getElementById('code-2fa').value.trim();
+            const code = document.getElementById('code-2fa').value.trim() || (isDebug ? 'debug' : '');
             const err = document.getElementById('err-2fa');
             err.style.display = 'none';
 
@@ -1152,11 +1242,13 @@
     }
 
     function renderMasterOnboarding() {
+        const isDebug = serverStatus && serverStatus.debugMode;
         app.innerHTML = `
             <div class="auth-screen">
                 <div class="auth-card" style="max-width:500px;">
                     <div class="logo"><span style="color:var(--accent);">◈</span> Первичная настройка</div>
                     <div class="sub">Добро пожаловать в WebAdmin! Создайте учетную запись главного администратора.</div>
+                    ${isDebug ? '<div class="auth-debug-badge">⚡ Режим отладки: можно войти без сканирования QR-кода</div>' : ''}
 
                     <div class="stepper">
                         <div class="step-item active">
@@ -1181,9 +1273,44 @@
                         </div>
                         <div id="ob-err" class="error" style="display:none;"></div>
                         <button type="submit" class="primary" style="width:100%; margin-top:10px;">ПРОДОЛЖИТЬ (2FA)</button>
+                        ${isDebug ? '<button type="button" class="btn-debug-bypass" id="btn-ob-debug-direct" style="width:100%; margin-top:8px;">⚡ СОЗДАТЬ И ВОЙТИ БЕЗ QR (ДЕБАГ)</button>' : ''}
                     </form>
                 </div>
             </div>`;
+
+        if (isDebug) {
+            document.getElementById('btn-ob-debug-direct')?.addEventListener('click', async () => {
+                const username = document.getElementById('ob-user').value.trim();
+                const password = document.getElementById('ob-pass').value;
+                const err = document.getElementById('ob-err');
+                err.style.display = 'none';
+
+                if (username.length < 2) {
+                    err.textContent = 'Логин должен быть не менее 2 символов';
+                    err.style.display = 'block';
+                    return;
+                }
+                if (password.length < 4) {
+                    err.textContent = 'Пароль должен содержать минимум 4 символа';
+                    err.style.display = 'block';
+                    return;
+                }
+
+                try {
+                    const res = await api('POST', '/api/auth/setup-owner', {
+                        username, password, totpSecret: 'debug', totpCode: 'debug'
+                    });
+                    setToken(res.token);
+                    me = await api('GET', '/api/me');
+                    renderBackupCodesScreen(username, res.backupCodes || [], () => {
+                        renderAppLayout();
+                    });
+                } catch (ex) {
+                    err.textContent = ex.message;
+                    err.style.display = 'block';
+                }
+            });
+        }
 
         document.getElementById('onboard-form')?.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -1203,10 +1330,12 @@
     }
 
     function renderMasterOnboarding2fa(username, password, totpSecret, otpUrl) {
+        const isDebug = serverStatus && serverStatus.debugMode;
         app.innerHTML = `
             <div class="auth-screen">
                 <div class="auth-card" style="max-width:500px;">
                     <div class="logo"><span style="color:var(--accent);">◈</span> Привязка 2FA</div>
+                    ${isDebug ? '<div class="auth-debug-badge">⚡ Режим отладки: QR код необязателен</div>' : ''}
                     <div class="stepper">
                         <div class="step-item completed">
                             <span class="step-badge">✓</span>
@@ -1219,7 +1348,7 @@
                         </div>
                     </div>
 
-                    <div class="sub" style="margin-bottom:12px;">Отсканируйте QR-код в <b>Google Authenticator</b>, <b>Aegis</b> или <b>Яндекс Ключ</b>:</div>
+                    <div class="sub" style="margin-bottom:12px;">Отсканируйте QR-код в <b>Google Authenticator</b> или <b>Aegis</b>:</div>
 
                     <div class="totp-qr-wrapper">
                         <div class="totp-qr-box" id="ob-qrcode-box"></div>
@@ -1237,11 +1366,12 @@
                     <form id="ob-2fa-form">
                         <div class="form-group">
                             <label>6-значный код подтверждения из приложения</label>
-                            <input type="text" id="ob-code" placeholder="123456" maxlength="6" inputmode="numeric" pattern="[0-9]*" required autofocus
+                            <input type="text" id="ob-code" placeholder="123456" maxlength="6" inputmode="numeric" pattern="[0-9]*" ${isDebug ? '' : 'required'} autofocus
                                    style="text-align:center; font-size:22px; font-weight:700; letter-spacing:6px; font-family:'JetBrains Mono';">
                         </div>
                         <div id="ob-2fa-err" class="error" style="display:none;"></div>
                         <button type="submit" class="primary" id="btn-ob-finish" style="width:100%; margin-top:10px;">ЗАВЕРШИТЬ НАСТРОЙКУ</button>
+                        ${isDebug ? '<button type="button" class="btn-debug-bypass" id="btn-ob-debug-finish" style="width:100%; margin-top:8px;">⚡ ЗАВЕРШИТЬ БЕЗ ВВОДА QR (РЕЖИМ ОТЛАДКИ)</button>' : ''}
                         <button type="button" class="secondary" id="btn-ob-back" style="width:100%; margin-top:8px;">← НАЗАД К ШАГУ 1</button>
                     </form>
                 </div>
@@ -1254,9 +1384,29 @@
             renderMasterOnboarding();
         });
 
+        if (isDebug) {
+            document.getElementById('btn-ob-debug-finish')?.addEventListener('click', async () => {
+                const err = document.getElementById('ob-2fa-err');
+                err.style.display = 'none';
+                try {
+                    const res = await api('POST', '/api/auth/setup-owner', {
+                        username, password, totpSecret, totpCode: 'debug'
+                    });
+                    setToken(res.token);
+                    me = await api('GET', '/api/me');
+                    renderBackupCodesScreen(username, res.backupCodes || [], () => {
+                        renderAppLayout();
+                    });
+                } catch (ex) {
+                    err.textContent = ex.message;
+                    err.style.display = 'block';
+                }
+            });
+        }
+
         document.getElementById('ob-2fa-form')?.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const code = document.getElementById('ob-code').value.trim();
+            const code = document.getElementById('ob-code').value.trim() || (isDebug ? 'debug' : '');
             const err = document.getElementById('ob-2fa-err');
             const btn = document.getElementById('btn-ob-finish');
             err.style.display = 'none';
