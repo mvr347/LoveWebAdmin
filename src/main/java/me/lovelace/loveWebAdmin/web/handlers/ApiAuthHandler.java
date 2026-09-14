@@ -81,6 +81,10 @@ public class ApiAuthHandler extends ApiHandlerSupport {
         String pathInfo = req.getPathInfo();
 
         if ("/api/me".equals(servletPath)) {
+            if ("/preferences".equals(pathInfo) || "/".equals(pathInfo) || pathInfo == null || pathInfo.isEmpty()) {
+                handleUpdatePreferences(req, resp);
+                return;
+            }
             if ("/password".equals(pathInfo)) {
                 handleChangePassword(req, resp);
                 return;
@@ -465,8 +469,8 @@ public class ApiAuthHandler extends ApiHandlerSupport {
         String oldPassword = stringOrNull(body.get("oldPassword"));
         String newPassword = stringOrNull(body.get("newPassword"));
 
-        if (oldPassword == null || newPassword == null || newPassword.length() < 4) {
-            sendError(resp, 400, "Новый пароль должен содержать не менее 4 символов");
+        if (oldPassword == null || newPassword == null || newPassword.length() < 10) {
+            sendError(resp, 400, "Новый пароль должен содержать не менее 10 символов");
             return;
         }
 

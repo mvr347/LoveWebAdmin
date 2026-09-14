@@ -958,7 +958,7 @@
                         </div>
                         <div class="form-group">
                             <label>Придумайте пароль</label>
-                            <input type="password" id="cand-pass" placeholder="Минимум 4 символа" required>
+                            <input type="password" id="cand-pass" placeholder="Минимум 10 символов" required>
                         </div>
                         <div class="form-group">
                             <label>Повторите пароль</label>
@@ -989,8 +989,8 @@
                     err.style.display = 'block';
                     return;
                 }
-                if (pass.length < 4) {
-                    err.textContent = 'Пароль должен содержать минимум 4 символа';
+                if (pass.length < 10) {
+                    err.textContent = 'Пароль должен содержать минимум 10 символов';
                     err.style.display = 'block';
                     return;
                 }
@@ -1026,8 +1026,8 @@
                 err.style.display = 'block';
                 return;
             }
-            if (pass.length < 4) {
-                err.textContent = 'Пароль должен содержать минимум 4 символа';
+            if (pass.length < 10) {
+                err.textContent = 'Пароль должен содержать минимум 10 символов';
                 err.style.display = 'block';
                 return;
             }
@@ -1304,7 +1304,7 @@
                         </div>
                         <div class="form-group">
                             <label>Пароль</label>
-                            <input type="password" id="ob-pass" placeholder="Минимум 4 символа" required>
+                            <input type="password" id="ob-pass" placeholder="Минимум 10 символов" required>
                         </div>
                         <div id="ob-err" class="error" style="display:none;"></div>
                         <button type="submit" class="primary" style="width:100%; margin-top:10px;">ПРОДОЛЖИТЬ (2FA)</button>
@@ -1325,8 +1325,8 @@
                     err.style.display = 'block';
                     return;
                 }
-                if (password.length < 4) {
-                    err.textContent = 'Пароль должен содержать минимум 4 символа';
+                if (password.length < 10) {
+                    err.textContent = 'Пароль должен содержать минимум 10 символов';
                     err.style.display = 'block';
                     return;
                 }
@@ -1353,6 +1353,17 @@
             const password = document.getElementById('ob-pass').value;
             const err = document.getElementById('ob-err');
             err.style.display = 'none';
+
+            if (username.length < 2) {
+                err.textContent = 'Логин должен быть не менее 2 символов';
+                err.style.display = 'block';
+                return;
+            }
+            if (password.length < 10) {
+                err.textContent = 'Пароль должен содержать минимум 10 символов';
+                err.style.display = 'block';
+                return;
+            }
 
             try {
                 const totp = await api('GET', `/api/auth/totp-setup?username=${encodeURIComponent(username)}`);
@@ -3759,7 +3770,14 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                                     📋 ЖАЛОБА #${b.linkedReportId}
                                 </button>
                             </div>
-                        ` : ''}
+                        ` : `
+                            <div style="color:var(--text-dim); font-weight:700;">СВЯЗАННАЯ ЖАЛОБА:</div>
+                            <div>
+                                <button type="button" class="secondary btn-sm" id="btn-attach-report-to-ban" style="font-size:11px; padding:2px 8px;">
+                                    + ПРИКРЕПИТЬ ЖАЛОБУ
+                                </button>
+                            </div>
+                        `}
 
                         <div style="color:var(--text-dim); font-weight:700;">ПОЯСНЕНИЕ:</div>
                         <div style="color:#e2e8f0; line-height:1.5;">${esc(b.description || 'Комментарий отсутствует')}</div>
@@ -3773,9 +3791,27 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                     ` : ''}
                 `;
 
+                document.getElementById('btn-attach-report-to-ban')?.addEventListener('click', async () => {
+                    const input = prompt('Введите номер жалобы (ID) для прикрепления к бану #' + banId + ':');
+                    if (!input || !input.trim()) return;
+                    const reportId = parseInt(input.trim());
+                    if (isNaN(reportId) || reportId <= 0) {
+                        showToast('Ошибка', 'Укажите корректный числовой ID жалобы', 'warning');
+                        return;
+                    }
+                    try {
+                        await api('POST', `/api/bans/${banId}/attach-report`, { reportId });
+                        showToast('Жалоба привязана', `Жалоба #${reportId} успешно привязана к бану #${banId}`, 'success');
+                        closeModal();
+                        window.viewBanDetails(banId);
+                    } catch (err) {
+                        showToast('Ошибка', err.message || 'Не удалось привязать жалобу', 'danger');
+                    }
+                });
+
                 if (footer) {
                     footer.innerHTML = `
-                        <button type="button" class="secondary" onclick="window.closeCurrentModal(); window.renderPunishmentsView('appeals', ${b.id});">⚖️ АПЕЛЛЯЦИЯ (DISCORD)</button>
+                        <button type="button" class="secondary" onclick="window.closeCurrentModal(); window.renderPunishmentsView('appeals', ${b.id});">⚖️ АПЕЛЛЯЦИЯ (ТИКЕТЫ)</button>
                         <button type="button" class="secondary" onclick="window.openPlayerAltsModal('${esc(b.targetName)}')">ПРОВЕРИТЬ АЛЬТЫ</button>
                         ${isActive && canUnban ? `
                             <button type="button" class="danger" id="btn-modal-unban">РАЗБАНИТЬ ИГРОКА</button>
@@ -3796,23 +3832,29 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
     // Modal: Screenshot Lightbox
     window.openScreenshotLightbox = function(imgSrc) {
         if (!imgSrc) return;
-        openModal(`
-            <div class="modal-header">
-                <h3>ПРОСМОТР ДОКАЗАТЕЛЬСТВА</h3>
-                <button type="button" class="close-btn" data-modal-close="true">✕</button>
+        const overlay = document.createElement('div');
+        overlay.className = 'lightbox-overlay';
+        overlay.innerHTML = `
+            <div style="position:relative; max-width:92vw; max-height:92vh; display:flex; flex-direction:column; align-items:center;">
+                <button type="button" class="btn-remove-screenshot" style="top:-14px; right:-14px; width:32px; height:32px; font-size:16px;" onclick="this.closest('.lightbox-overlay').remove()">✕</button>
+                <img src="${esc(imgSrc)}" class="lightbox-img" alt="Доказательство бана">
+                <div style="margin-top:10px; display:flex; gap:10px;">
+                    <a href="${esc(imgSrc)}" target="_blank" class="secondary btn-sm" style="text-decoration:none; padding:6px 14px; font-size:12px; border-radius:4px; border:1px solid var(--border); background:rgba(0,0,0,0.7); color:#fff;">ОТКРЫТЬ В НОВОЙ ВКЛАДКЕ ↗</a>
+                </div>
             </div>
-            <div class="modal-body" style="text-align:center; padding:10px;">
-                <img src="${esc(imgSrc)}" style="max-width:100%; max-height:75vh; border-radius:6px; object-fit:contain; box-shadow:0 10px 30px rgba(0,0,0,0.5);" alt="Доказательство">
-            </div>
-            <div class="modal-footer">
-                <a href="${esc(imgSrc)}" target="_blank" class="button secondary" rel="noopener noreferrer">ОТКРЫТЬ В НОВОЙ ВКЛАДКЕ ↗</a>
-                <button type="button" class="secondary" data-modal-close="true">ЗАКРЫТЬ</button>
-            </div>
-        `, null, 'modal-lg');
+        `;
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) overlay.remove();
+        });
+        document.body.appendChild(overlay);
     };
 
     // Confirm Unban
     window.confirmUnban = function(banId, playerName) {
+        if (isModeratorRole() && !me.isOwner) {
+            showToast('Недостаточно прав', 'Разбан игроков разрешён только Администраторам сервера!', 'warning');
+            return;
+        }
         confirmAction(
             'СНЯТИЕ БЛОКИРОВКИ',
             `Вы действительно хотите разбанить игрока ${playerName}? Блокировка #${banId} будет снята, игрок сможет зайти на сервер.`,
@@ -3823,6 +3865,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                     showToast('Разбан', `Игрок ${playerName} успешно разбанен`, 'success');
                     closeModal();
                     if (window.refreshPunishmentsView) window.refreshPunishmentsView();
+                    if (activeNavSection === 'punishments' && window.renderPunishmentsView) window.renderPunishmentsView('bans');
                 } catch (e) {
                     showToast('Ошибка разбана', e.message, 'error');
                 }
@@ -4096,156 +4139,6 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
         }, 'modal-lg');
     };
 
-
-    // Modal: Ban Details with Linked Report
-    window.viewBanDetails = async function(banId) {
-        openModal(`
-            <div class="modal-header">
-                <h3>ДЕТАЛИ БЛОКИРОВКИ #${banId}</h3>
-                <button type="button" class="close-btn" onclick="window.closeCurrentModal()">✕</button>
-            </div>
-            <div class="modal-body" id="modal-ban-details-body">
-                <div style="text-align:center; padding:32px; color:var(--text-dim);">Загрузка информации о бане...</div>
-            </div>
-            <div class="modal-footer" id="modal-ban-details-footer">
-                <button type="button" class="secondary" onclick="window.closeCurrentModal(); window.openAppealTemplateModal(${banId});">📋 ШАБЛОН АПЕЛЛЯЦИИ</button>
-                <button type="button" class="secondary" onclick="window.closeCurrentModal()">ЗАКРЫТЬ</button>
-            </div>
-        `, async () => {
-            const body = document.getElementById('modal-ban-details-body');
-            if (!body) return;
-
-            try {
-                const b = await api('GET', `/api/bans/${banId}`);
-                const isActive = b.status === 'ACTIVE';
-                const proofUrl = b.screenshotUrl || (b.proofUrls && b.proofUrls.length ? b.proofUrls[0] : null);
-
-                body.innerHTML = `
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:12px;">
-                        <div style="display:flex; align-items:center; gap:12px;">
-                            <img src="https://mc-heads.net/avatar/${encodeURIComponent(b.targetName)}/48" style="width:48px; height:48px; border-radius:6px;" alt="">
-                            <div>
-                                <div style="font-size:18px; font-weight:800; color:#fff;">${esc(b.targetName)}</div>
-                                <div style="font-size:12px; color:var(--text-dim);">
-                                    ${b.targetUuid ? `UUID: <span class="font-mono">${esc(b.targetUuid)}</span>` : ''}
-                                    ${b.targetIp ? ` • IP: <span class="font-mono">${esc(b.targetIp)}</span>` : ''}
-                                </div>
-                            </div>
-                        </div>
-                        <div>
-                            <span class="badge ${isActive ? 'red' : 'green'}" style="font-size:12px;">
-                                ${isActive ? 'АКТИВНЫЙ БАН' : 'РАЗБАНЕН'}
-                            </span>
-                        </div>
-                    </div>
-
-                    ${b.linkedReportId ? `
-                        <div class="attached-report-card">
-                            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-                                <div>
-                                    <span class="badge purple">ПРИКРЕПЛЕННАЯ ЖАЛОБА #${b.linkedReportId}</span>
-                                    ${b.linkedReport ? `
-                                        <div style="font-size:12px; color:var(--text-secondary); margin-top:4px;">
-                                            Заявитель: <b>${esc(b.linkedReport.reporterName)}</b> • Причины: <b>${(b.linkedReport.reasons || []).join(', ') || 'не указаны'}</b>
-                                        </div>
-                                    ` : ''}
-                                </div>
-                                <button type="button" class="secondary btn-sm" onclick="window.closeCurrentModal(); window.openReportDetailModal(${b.linkedReportId});">
-                                    ОТКРЫТЬ ДОСЬЕ ЖАЛОБЫ
-                                </button>
-                            </div>
-                        </div>
-                    ` : `
-                        <div style="background:rgba(255, 255, 255, 0.03); border:1px dashed var(--border); border-radius:var(--radius-md); padding:10px 14px; margin-bottom:16px; display:flex; justify-content:space-between; align-items:center;">
-                            <span style="font-size:12px; color:var(--text-dim);">К этому бану не привязана жалоба</span>
-                            <button type="button" class="secondary btn-sm" id="btn-attach-report-to-ban">
-                                + ПРИКРЕПИТЬ ЖАЛОБУ
-                            </button>
-                        </div>
-                    `}
-
-                    <div class="report-dossier-card" style="margin-bottom:16px;">
-                        <div style="margin-bottom:10px;">
-                            <span style="font-size:11px; font-weight:700; color:var(--text-dim); text-transform:uppercase;">Пункт правил / Причина:</span>
-                            <div style="margin-top:4px;"><span class="badge red" style="font-size:13px;">${esc(b.ruleReason)}</span></div>
-                        </div>
-                        <div style="margin-bottom:10px;">
-                            <span style="font-size:11px; font-weight:700; color:var(--text-dim); text-transform:uppercase;">Подробное описание:</span>
-                            <div style="margin-top:4px; padding:10px; background:rgba(0,0,0,0.3); border-radius:6px; color:#e2e8f0; font-size:13px;">
-                                ${esc(b.description || 'Описание не указано')}
-                            </div>
-                        </div>
-                        <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--text-dim); margin-top:12px; flex-wrap:wrap; gap:8px;">
-                            <div>Заблокировал: <b style="color:var(--accent-light);">${esc(b.creatorName)}</b></div>
-                            <div>Дата выдачи: <b class="font-mono" style="color:#fff;">${fmtTime(b.createdAt)}</b></div>
-                        </div>
-                    </div>
-
-                    ${proofUrl ? `
-                        <div style="margin-bottom:16px;">
-                            <span style="font-size:11px; font-weight:700; color:var(--text-dim); text-transform:uppercase; display:block; margin-bottom:6px;">Скриншот / Доказательство:</span>
-                            <img src="${esc(proofUrl)}" class="screenshot-preview-img" style="max-height:240px; cursor:pointer;" onclick="window.openScreenshotLightbox('${esc(proofUrl)}')" alt="Доказательство">
-                        </div>
-                    ` : ''}
-                `;
-
-                document.getElementById('btn-attach-report-to-ban')?.addEventListener('click', async () => {
-                    const input = prompt('Введите номер жалобы (ID) для прикрепления к бану #' + banId + ':');
-                    if (!input || !input.trim()) return;
-                    const reportId = parseInt(input.trim());
-                    if (isNaN(reportId) || reportId <= 0) {
-                        alert('Укажите корректный числовой ID жалобы');
-                        return;
-                    }
-                    try {
-                        await api('POST', `/api/bans/${banId}/attach-report`, { reportId });
-                        showToast('Жалоба привязана', `Жалоба #${reportId} успешно привязана к бану #${banId}`, 'success');
-                        closeModal();
-                        if (activeNavSection === 'bans') renderBansView();
-                    } catch (err) {
-                        alert('Ошибка привязки: ' + err.message);
-                    }
-                });
-
-            } catch (e) {
-                body.innerHTML = `<div style="color:var(--red); padding:24px; text-align:center;">Ошибка загрузки бана: ${esc(e.message)}</div>`;
-            }
-        });
-    };
-
-    window.openScreenshotLightbox = function(imgSrc) {
-        if (!imgSrc) return;
-        const div = document.createElement('div');
-        div.className = 'lightbox-overlay';
-        div.innerHTML = `
-            <div style="position:relative; display:inline-block;">
-                <img src="${esc(imgSrc)}" class="lightbox-img" alt="Скриншот нарушения">
-                <button type="button" class="btn-remove-screenshot" style="top:-12px; right:-12px; width:32px; height:32px; font-size:16px;" onclick="this.closest('.lightbox-overlay').remove()">✕</button>
-            </div>
-        `;
-        div.addEventListener('click', (e) => {
-            if (e.target === div) div.remove();
-        });
-        document.body.appendChild(div);
-    };
-
-    window.confirmUnban = function(banId, playerName) {
-        if (isModeratorRole() && !me.isOwner) {
-            alert('Разбан игроков разрешён только Администраторам сервера!');
-            return;
-        }
-
-        confirmAction('РАЗБАН ИГРОКА', `Вы действительно хотите снять бан с игрока ${playerName}? Действие будет зафиксировано в журнале аудита.`, async () => {
-            try {
-                await api('POST', `/api/bans/${banId}/unban`);
-                recordShiftAction(`Разбанил ${playerName}`);
-                showToast('Игрок разбанен', `Бан с игрока ${playerName} успешно снят`, 'success');
-                if (activeNavSection === 'bans') renderBansView();
-            } catch (e) {
-                alert('Ошибка разбана: ' + e.message);
-            }
-        }, 'РАЗБАНИТЬ', false);
-    };
 
     // Modal: Appeal Templates & Verdicts Generator
     let cachedAppealTemplates = null;
@@ -5112,7 +5005,11 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                             const res = await api('POST', `/api/players/${encodeURIComponent(p.name)}/action`, { action, ...bodyObj });
                             showToast('Действие выполнено', res.message || 'Успешно', 'success');
                         } catch (e) {
-                            alert('Ошибка действия: ' + e.message);
+                            if (e.message && e.message.includes('не в сети')) {
+                                showToast('Игрок оффлайн', `Игрок ${p.name} не в сети или вышел с сервера`, 'warning');
+                            } else {
+                                showToast('Ошибка действия', e.message || 'Не удалось выполнить действие', 'danger');
+                            }
                         }
                     };
 
@@ -6773,7 +6670,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 </div>
                 <div class="form-group">
                     <label>Новый надежный пароль</label>
-                    <input type="password" id="prof-new-pass" placeholder="Минимум 4 символа">
+                    <input type="password" id="prof-new-pass" placeholder="Минимум 10 символов">
                 </div>
                 <div id="prof-pass-err" class="error" style="display:none;"></div>
                 <button type="button" class="primary" id="btn-save-new-pass" style="width:100%; margin-top:6px;">ИЗМЕНИТЬ ПАРОЛЬ</button>
@@ -6792,7 +6689,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 userPrefs.discordNotifyTickets = newNotifyTickets;
 
                 try {
-                    await api('POST', '/api/me/preferences', { uiPreferences: userPrefs });
+                    await api('PUT', '/api/me/preferences', { uiPreferences: userPrefs });
                     me.uiPreferences = JSON.stringify(userPrefs);
                     showToast('Настройки сохранены', 'Параметры уведомлений Discord обновлены', 'success');
                 } catch (e) {
@@ -6849,6 +6746,11 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                     err.style.display = 'block';
                     return;
                 }
+                if (newPassword.length < 10) {
+                    err.textContent = 'Новый пароль должен содержать минимум 10 символов';
+                    err.style.display = 'block';
+                    return;
+                }
 
                 try {
                     await api('POST', '/api/me/password', { oldPassword, newPassword });
@@ -6898,7 +6800,11 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                     showToast('Кик', `Игрок ${name} кикнут с сервера`, 'warning');
                     closeModal();
                 } catch (e) {
-                    alert('Ошибка: ' + e.message);
+                    if (e.message && e.message.includes('не в сети')) {
+                        showToast('Игрок оффлайн', `Игрок ${name} не в сети или не найден`, 'warning');
+                    } else {
+                        showToast('Ошибка', e.message || 'Не удалось кикнуть игрока', 'danger');
+                    }
                 }
             });
         });
@@ -6935,7 +6841,11 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                     showToast('Телепортация', `Игрок ${name} отправлен на спавн`, 'info');
                     closeModal();
                 } catch (e) {
-                    alert('Ошибка: ' + e.message);
+                    if (e.message && e.message.includes('не в сети')) {
+                        showToast('Игрок оффлайн', `Игрок ${name} не в сети или не найден`, 'warning');
+                    } else {
+                        showToast('Ошибка', e.message || 'Не удалось телепортировать игрока', 'danger');
+                    }
                 }
             });
         });
@@ -6975,7 +6885,11 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                     showToast('Заморозка', `Игрок ${name} заморожен для проверки`, 'warning');
                     closeModal();
                 } catch (e) {
-                    alert('Ошибка: ' + e.message);
+                    if (e.message && e.message.includes('не в сети')) {
+                        showToast('Игрок оффлайн', `Игрок ${name} не в сети или не найден`, 'warning');
+                    } else {
+                        showToast('Ошибка', e.message || 'Не удалось заморозить игрока', 'danger');
+                    }
                 }
             });
         });
@@ -7011,7 +6925,11 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                     showToast('Vanish', `Режим скрытности переключен для ${name}`, 'info');
                     closeModal();
                 } catch (e) {
-                    alert('Ошибка: ' + e.message);
+                    if (e.message && e.message.includes('не в сети')) {
+                        showToast('Игрок оффлайн', `Игрок ${name} не в сети или не найден`, 'warning');
+                    } else {
+                        showToast('Ошибка', e.message || 'Не удалось переключить Vanish', 'danger');
+                    }
                 }
             });
         });
@@ -7061,30 +6979,14 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                     showToast('Мут чата', `Игрок ${name} заглушен на ${duration}`, 'warning');
                     closeModal();
                 } catch (e) {
-                    alert('Ошибка: ' + e.message);
+                    if (e.message && e.message.includes('не в сети')) {
+                        showToast('Игрок оффлайн', `Игрок ${name} не в сети или не найден`, 'warning');
+                    } else {
+                        showToast('Ошибка', e.message || 'Не удалось выдать мут', 'danger');
+                    }
                 }
             });
         });
-    };
-
-    // Modal: Full-screen Screenshot Lightbox
-    window.openScreenshotLightbox = function(imgSrc) {
-        if (!imgSrc) return;
-        const overlay = document.createElement('div');
-        overlay.className = 'lightbox-overlay';
-        overlay.innerHTML = `
-            <div style="position:relative; max-width:92vw; max-height:92vh; display:flex; flex-direction:column; align-items:center;">
-                <button type="button" class="btn-remove-screenshot" style="top:-14px; right:-14px; width:32px; height:32px; font-size:16px;" onclick="this.closest('.lightbox-overlay').remove()">✕</button>
-                <img src="${esc(imgSrc)}" class="lightbox-img" alt="Доказательство бана">
-                <div style="margin-top:10px; display:flex; gap:10px;">
-                    <a href="${esc(imgSrc)}" target="_blank" class="secondary btn-sm" style="text-decoration:none; padding:6px 14px; font-size:12px; border-radius:4px; border:1px solid var(--border); background:rgba(0,0,0,0.7); color:#fff;">ОТКРЫТЬ В НОВОЙ ВКЛАДКЕ ↗</a>
-                </div>
-            </div>
-        `;
-        overlay.addEventListener('click', (e) => {
-            if (e.target === overlay) overlay.remove();
-        });
-        document.body.appendChild(overlay);
     };
 
 

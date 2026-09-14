@@ -267,19 +267,34 @@ public class ApiPlayersHandler extends ApiHandlerSupport {
                     String reason = stringOrNull(body.get("reason"));
                     if (reason == null || reason.isBlank()) reason = "Нарушение правил общения";
                     final String finalMuteReason = reason;
-                    plugin.getServer().getScheduler().callSyncMethod(plugin, () -> {
-                        Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "mute " + player.getName() + " " + finalMuteReason);
-                        player.sendMessage(Component.text("§c[WebAdmin] Вы получили блокировку чата. Причина: " + finalMuteReason));
-                        return true;
+                    boolean cmdDispatched = plugin.getServer().getScheduler().callSyncMethod(plugin, () -> {
+                        try {
+                            boolean ok = Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "mute " + player.getName() + " " + finalMuteReason);
+                            player.sendMessage(Component.text("§c[WebAdmin] Вы получили блокировку чата. Причина: " + finalMuteReason));
+                            return ok;
+                        } catch (Exception ex) {
+                            return false;
+                        }
                     }).get();
+                    if (!cmdDispatched) {
+                        sendError(resp, 422, "Команда /mute не поддерживается или не зарегистрирована на сервере");
+                        return;
+                    }
                     plugin.getLogManager().logWebAction(session.adminUsername(), "Замутил игрока " + player.getName() + " по причине: " + reason);
                     sendSuccess(resp, Map.of("message", "Игрок замучен"));
                 }
                 case "vanish" -> {
-                    plugin.getServer().getScheduler().callSyncMethod(plugin, () -> {
-                        Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "v " + player.getName());
-                        return true;
+                    boolean cmdDispatched = plugin.getServer().getScheduler().callSyncMethod(plugin, () -> {
+                        try {
+                            return Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "v " + player.getName());
+                        } catch (Exception ex) {
+                            return false;
+                        }
                     }).get();
+                    if (!cmdDispatched) {
+                        sendError(resp, 422, "Команда /v (Vanish) не поддерживается или не зарегистрирована на сервере");
+                        return;
+                    }
                     plugin.getLogManager().logWebAction(session.adminUsername(), "Переключил режим Vanish игроку " + player.getName());
                     sendSuccess(resp, Map.of("message", "Режим невидимости (Vanish) переключен"));
                 }

@@ -37,7 +37,7 @@ public class CorsFilter implements Filter {
             httpResponse.setHeader("Access-Control-Allow-Origin", origin);
             httpResponse.setHeader("Vary", "Origin");
             httpResponse.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-            httpResponse.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+            httpResponse.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key");
         }
 
         // Security headers
@@ -46,8 +46,8 @@ public class CorsFilter implements Filter {
         httpResponse.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
         httpResponse.setHeader("Permissions-Policy", "geolocation=(), camera=(), microphone=(), payment=()");
         httpResponse.setHeader("Content-Security-Policy",
-            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
-            "font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'");
+            "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+            "font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self'; frame-ancestors 'none'");
 
         if ("OPTIONS".equalsIgnoreCase(httpRequest.getMethod())) {
             httpResponse.setStatus(HttpServletResponse.SC_OK);

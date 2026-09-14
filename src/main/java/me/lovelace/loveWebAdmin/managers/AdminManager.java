@@ -45,8 +45,8 @@ public class AdminManager {
         if (newUsername == null || newUsername.trim().equalsIgnoreCase("admin") || newUsername.trim().length() < 2) {
             return new OnboardingResult(false, "Выберите персональный никнейм (не 'admin')", null, null);
         }
-        if (newPassword == null || newPassword.length() < 4) {
-            return new OnboardingResult(false, "Пароль слишком короткий (минимум 4 символа)", null, null);
+        if (newPassword == null || newPassword.length() < 10) {
+            return new OnboardingResult(false, "Пароль слишком короткий (минимум 10 символов)", null, null);
         }
 
         boolean isDebug = plugin.isDebugMode();
@@ -116,8 +116,8 @@ public class AdminManager {
         if (username == null || username.trim().length() < 2) {
             return new RegisterResult(RegisterStatus.INVALID_INPUT, "Слишком короткий никнейм", List.of());
         }
-        if (password == null || password.length() < 4) {
-            return new RegisterResult(RegisterStatus.INVALID_INPUT, "Пароль слишком короткий (минимум 4 символа)", List.of());
+        if (password == null || password.length() < 10) {
+            return new RegisterResult(RegisterStatus.INVALID_INPUT, "Пароль слишком короткий (минимум 10 символов)", List.of());
         }
         if (plugin.getDatabaseManager().getAdminByUsername(username.trim()).isPresent()) {
             return new RegisterResult(RegisterStatus.ALREADY_EXISTS, "Пользователь с таким ником уже зарегистрирован", List.of());

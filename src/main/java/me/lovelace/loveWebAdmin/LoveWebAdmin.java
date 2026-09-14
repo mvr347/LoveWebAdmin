@@ -172,6 +172,15 @@ public final class LoveWebAdmin extends JavaPlugin {
             getLogger().warning("[LoveWebAdmin] порт " + port + " файрволом хостинга для всех кроме нужных IP.");
             getLogger().warning("=============================================================================");
         }
+
+        if (isDebugMode()) {
+            getLogger().warning("=============================================================================");
+            getLogger().warning("[LoveWebAdmin] ВНИМАНИЕ: debug-mode = true АКТИВИРОВАН!");
+            getLogger().warning("[LoveWebAdmin] Двухфакторная аутентификация (2FA / Google Authenticator) ОТКЛЮЧЕНА.");
+            getLogger().warning("[LoveWebAdmin] Этот режим предназначен ИСКЛЮЧИТЕЛЬНО для локальной разработки.");
+            getLogger().warning("[LoveWebAdmin] На боевом сервере ОБЯЗАТЕЛЬНО установите debug-mode: false в config.yml!");
+            getLogger().warning("=============================================================================");
+        }
         this.webServer = new WebServer(this, port, host);
         Bukkit.getAsyncScheduler().runNow(this, task -> webServer.start());
 
