@@ -28,14 +28,70 @@
 
     // ---------- Navigation Sections ----------
     const SECTIONS = [
-        { id: 'dashboard', label: 'Дашборд', icon: '◈', num: 1, perm: 'VIEW_STATS', modAllowed: true },
-        { id: 'journal', label: 'Журнал', icon: '▤', num: 2, perm: 'VIEW_SERVER_LOGS', modAllowed: true },
-        { id: 'punishments', label: 'Наказания', icon: '🛡️', num: 3, perm: 'VIEW_BANS', modAllowed: true },
-        { id: 'anticheat', label: 'Античит', icon: '⚡', num: 4, perm: 'VIEW_VESUVIO', modAllowed: true },
-        { id: 'server', label: 'Сервер', icon: '▦', num: 5, perm: 'VIEW_PLAYERS', modAllowed: true },
-        { id: 'auth', label: 'Авторизация', icon: '⚿', num: 6, perm: 'MANAGE_LOVEAUTH', modAllowed: false },
-        { id: 'admins', label: 'Администраторы и роли', icon: '👥', num: 7, perm: 'MANAGE_ADMINS', modAllowed: false },
-        { id: 'database', label: 'База данных', icon: '◉', num: 8, perm: 'VIEW_ANALYTICS', modAllowed: true }
+        { 
+            id: 'dashboard', 
+            label: 'Дашборд', 
+            icon: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>`, 
+            num: 1, 
+            perm: 'VIEW_STATS', 
+            modAllowed: true 
+        },
+        { 
+            id: 'journal', 
+            label: 'Журнал', 
+            icon: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`, 
+            num: 2, 
+            perm: 'VIEW_SERVER_LOGS', 
+            modAllowed: true 
+        },
+        { 
+            id: 'punishments', 
+            label: 'Наказания', 
+            icon: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`, 
+            num: 3, 
+            perm: 'VIEW_BANS', 
+            modAllowed: true 
+        },
+        { 
+            id: 'anticheat', 
+            label: 'Античит', 
+            icon: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`, 
+            num: 4, 
+            perm: 'VIEW_VESUVIO', 
+            modAllowed: true 
+        },
+        { 
+            id: 'server', 
+            label: 'Сервер', 
+            icon: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8"/><rect x="2" y="14" width="20" height="8"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>`, 
+            num: 5, 
+            perm: 'VIEW_PLAYERS', 
+            modAllowed: true 
+        },
+        { 
+            id: 'auth', 
+            label: 'Авторизация', 
+            icon: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`, 
+            num: 6, 
+            perm: 'MANAGE_LOVEAUTH', 
+            modAllowed: false 
+        },
+        { 
+            id: 'admins', 
+            label: 'Администраторы и роли', 
+            icon: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`, 
+            num: 7, 
+            perm: 'MANAGE_ADMINS', 
+            modAllowed: false 
+        },
+        { 
+            id: 'database', 
+            label: 'База данных', 
+            icon: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>`, 
+            num: 8, 
+            perm: 'VIEW_ANALYTICS', 
+            modAllowed: true 
+        }
     ];
 
     const ALL_PERMISSIONS = [
@@ -1513,10 +1569,19 @@
                 <!-- Left Sidebar -->
                 <aside class="app-sidebar ${sidebarCollapsed ? 'collapsed' : ''}" id="app-sidebar">
                     <div class="sidebar-brand">
-                        <div class="sidebar-logo-icon">◈</div>
+                        <div class="sidebar-logo-cube">
+                            <svg viewBox="0 0 32 32" width="28" height="28" fill="none">
+                                <polygon points="16,2 30,10 16,18 2,10" fill="#9B5CFF"/>
+                                <polygon points="16,2 23,6 16,10 9,6" fill="#B788FF" opacity="0.6"/>
+                                <polygon points="2,10 16,18 16,30 2,22" fill="#4C1D95"/>
+                                <polygon points="16,18 30,10 30,22 16,30" fill="#6D28D9"/>
+                                <polyline points="2,10 16,18 30,10" stroke="#1F2440" stroke-width="0.8"/>
+                                <line x1="16" y1="18" x2="16" y2="30" stroke="#1F2440" stroke-width="0.8"/>
+                            </svg>
+                        </div>
                         <div class="sidebar-brand-info">
-                            <span class="sidebar-brand-name">WebAdmin</span>
-                            <span class="sidebar-brand-sub">Minecraft Panel</span>
+                            <span class="sidebar-brand-name">MINECRAFT</span>
+                            <span class="sidebar-brand-sub">WebAdmin</span>
                         </div>
                     </div>
 
@@ -1536,7 +1601,7 @@
                             return `
                                 <div class="nav-item ${isActive ? 'active' : ''}" data-nav="${s.id}" data-tooltip="${esc(s.label)} (Клавиша: ${keyShortcut})">
                                     <span class="nav-icon">${s.icon}</span>
-                                    <span class="nav-label">${s.num}. ${esc(s.label)}</span>
+                                    <span class="nav-label">${esc(s.label)}</span>
                                     ${(s.id === 'punishments' || s.id === 'reports') ? '<span class="nav-counter-badge" id="reports-pending-badge" style="display:none;">0</span>' : ''}
                                     <span class="nav-key-badge">${keyShortcut}</span>
                                 </div>
@@ -1564,8 +1629,12 @@
                     <!-- Topbar -->
                     <header class="topbar">
                         <div class="topbar-left">
+                            <h1 class="topbar-page-title" id="topbar-page-title">Дашборд</h1>
+                        </div>
+
+                        <div class="topbar-center">
                             <div class="global-search-trigger" id="topbar-search-trigger" data-tooltip="Глобальный поиск по никам, банам и логам (Ctrl+K)">
-                                <span>🔍</span>
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                                 <span>Поиск игрока, бана или события...</span>
                                 <span class="search-shortcut-badge">Ctrl + K</span>
                             </div>
@@ -1577,8 +1646,9 @@
                                 <span id="server-status-text">Онлайн: ...</span>
                             </div>
 
-                            <button type="button" class="topbar-btn" id="topbar-logout-btn" data-tooltip="Выйти из системы">
-                                ⎋ ВЫХОД
+                            <button type="button" class="topbar-btn logout-btn" id="topbar-logout-btn" data-tooltip="Выйти из системы">
+                                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                                ВЫХОД
                             </button>
                         </div>
                     </header>
@@ -1667,6 +1737,21 @@
             el.classList.toggle('active', isMatch);
         });
 
+        // Update topbar page title on the left
+        const topbarTitle = document.getElementById('topbar-page-title');
+        if (topbarTitle) {
+            const sec = SECTIONS.find(s => s.id === sectionId);
+            if (sec) {
+                topbarTitle.textContent = sec.label;
+            } else if (sectionId === 'bans') {
+                topbarTitle.textContent = 'Список блокировок';
+            } else if (sectionId === 'reports') {
+                topbarTitle.textContent = 'Жалобы игроков';
+            } else {
+                topbarTitle.textContent = 'Панель управления';
+            }
+        }
+
         const area = document.getElementById('content-area');
         if (!area) return;
         area.classList.remove('page-enter');
@@ -1699,20 +1784,74 @@
     ];
 
     const ALL_QUICK_ACTIONS = {
-        ban: { id: 'ban', label: 'ВЫДАТЬ БАН', icon: '⚑', color: 'var(--red)', action: "window.openQuickBanModal('')" },
-        kick: { id: 'kick', label: 'КИК ИГРОКА', icon: '👢', color: 'var(--yellow)', action: "window.openQuickKickModal()" },
-        tp_spawn: { id: 'tp_spawn', label: 'НА СПАВН', icon: '⌖', color: 'var(--cyan)', action: "window.openQuickTeleportModal()" },
-        freeze: { id: 'freeze', label: 'ЗАМОРОЗКА', icon: '❄', color: '#60a5fa', action: "window.openQuickFreezeModal()" },
-        clear_chat: { id: 'clear_chat', label: 'ОЧИСТИТЬ ЧАТ', icon: '🧹', color: '#34d399', action: "window.quickClearChatAction()" },
-        lockdown: { id: 'lockdown', label: 'РЕЖИМ ЧС', icon: '🚨', color: 'var(--red)', action: "window.navigateTo('server')" }
+        ban: {
+            id: 'ban',
+            label: 'ВЫДАТЬ БАН',
+            sub: 'Блокировка',
+            icon: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`,
+            color: 'var(--red)',
+            action: "window.openQuickBanModal('')"
+        },
+        mute: {
+            id: 'mute',
+            label: 'ВЫДАТЬ МУТ',
+            sub: 'Заглушить в чате',
+            icon: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H2v6h4l5 4V5z"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>`,
+            color: 'var(--yellow)',
+            action: "window.openQuickMuteModal()"
+        },
+        kick: {
+            id: 'kick',
+            label: 'КИК ИГРОКА',
+            sub: 'Выгнать с сервера',
+            icon: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="18" y1="8" x2="23" y2="13"/><line x1="23" y1="8" x2="18" y2="13"/></svg>`,
+            color: '#F87171',
+            action: "window.openQuickKickModal()"
+        },
+        freeze: {
+            id: 'freeze',
+            label: 'ЗАМОРОЗКА',
+            sub: 'Проверка на читы',
+            icon: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`,
+            color: 'var(--cyan)',
+            action: "window.openQuickFreezeModal()"
+        },
+        vanish: {
+            id: 'vanish',
+            label: 'VANISH',
+            sub: 'Режим скрытности',
+            icon: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`,
+            color: 'var(--accent)',
+            action: "window.openQuickVanishModal()"
+        },
+        clear_chat: {
+            id: 'clear_chat',
+            label: 'ОЧИСТИТЬ ЧАТ',
+            sub: 'Сброс спама',
+            icon: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`,
+            color: 'var(--green)',
+            action: "window.quickClearChatAction()"
+        },
+        dossier: {
+            id: 'dossier',
+            label: 'ДОСЬЕ ИГРОКА',
+            sub: 'Поиск по нику',
+            icon: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><path d="M11 8v6M8 11h6"/></svg>`,
+            color: 'var(--text-secondary)',
+            action: "window.openQuickPlayerSearchModal()"
+        }
     };
 
     function getActiveQuickActions() {
         try {
             const saved = localStorage.getItem('wa_quick_actions');
-            if (saved) return JSON.parse(saved);
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                const valid = parsed.filter(k => ALL_QUICK_ACTIONS[k]);
+                if (valid.length > 0) return valid;
+            }
         } catch (e) {}
-        return ['ban', 'kick', 'tp_spawn', 'freeze', 'clear_chat', 'lockdown'];
+        return ['ban', 'mute', 'kick', 'freeze', 'vanish', 'clear_chat', 'dossier'];
     }
 
     function saveActiveQuickActions(keys) {
@@ -1728,15 +1867,16 @@
             </div>
             <div class="modal-body">
                 <div style="font-size:12px; color:var(--text-muted); margin-bottom:14px;">
-                    Выберите действия, которые будут отображаться в блоке быстрого реагирования на дашборде:
+                    Выберите действия персонала для быстрого реагирования на дашборде:
                 </div>
                 <div style="display:flex; flex-direction:column; gap:10px;">
                     ${Object.values(ALL_QUICK_ACTIONS).map(a => `
                         <label class="toggle-switch-wrap" style="justify-content:space-between;">
                             <div style="display:flex; align-items:center; gap:10px;">
-                                <span style="font-size:18px; color:${a.color};">${a.icon}</span>
+                                <span style="font-size:18px; color:${a.color}; display:flex; align-items:center;">${a.icon}</span>
                                 <div>
                                     <b style="color:#fff; font-size:13px;">${esc(a.label)}</b>
+                                    <div style="font-size:11px; color:var(--text-dim);">${esc(a.sub)}</div>
                                 </div>
                             </div>
                             <input type="checkbox" class="qa-toggle-cb toggle-switch-input" value="${a.id}" ${active.includes(a.id) ? 'checked' : ''}>
@@ -1752,7 +1892,7 @@
         `, () => {
             document.getElementById('btn-save-qa-config')?.addEventListener('click', () => {
                 const selected = Array.from(document.querySelectorAll('.qa-toggle-cb:checked')).map(cb => cb.value);
-                saveActiveQuickActions(selected.length ? selected : ['ban', 'kick']);
+                saveActiveQuickActions(selected.length ? selected : ['ban', 'mute', 'kick']);
                 closeModal();
                 showToast('Сохранено', 'Список быстрых действий обновлен', 'success');
                 renderDashboardView();
@@ -1760,14 +1900,51 @@
         });
     };
 
+    window.openQuickPlayerSearchModal = function() {
+        openModal(`
+            <div class="modal-header">
+                <h3>ПОИСК ДОСЬЕ ИГРОКА</h3>
+                <button type="button" class="close-btn" data-modal-close="true">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Никнейм игрока</label>
+                    <input type="text" id="quick-dossier-search-name" placeholder="Введите ник игрока..." required autofocus autocomplete="off">
+                </div>
+                <div style="font-size:12px; color:var(--text-muted); line-height:1.5;">
+                    Мгновенный переход к полному досье игрока: альты, история наказаний, активные ограничения, инвентарь и статистика.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="secondary" data-modal-close="true">ОТМЕНА</button>
+                <button type="button" class="primary" id="btn-submit-quick-dossier">ОТКРЫТЬ ДОСЬЕ</button>
+            </div>
+        `, () => {
+            const input = document.getElementById('quick-dossier-search-name');
+            if (input) attachPlayerAutocomplete(input);
+            const submit = () => {
+                const name = input ? input.value.trim() : '';
+                if (!name) return;
+                closeModal();
+                window.viewPlayerProfile(name);
+            };
+            input?.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    submit();
+                }
+            });
+            document.getElementById('btn-submit-quick-dossier')?.addEventListener('click', submit);
+        });
+    };
+
     window.quickClearChatAction = async () => {
-        confirmAction('ОЧИСТКА ЧАТА', 'Очистить глобальный чат сервера для всех игроков?', async () => {
+        confirmAction('ОЧИСТКА ЧАТА', 'Очистить глобальный чат сервера для всех игроков от флуда и спама?', async () => {
             try {
-                await api('POST', '/api/command', { command: 'broadcast &r \n \n \n \n \n \n \n \n \n \n \n \n &eЧат был очищен администратором.' });
+                await api('POST', '/api/command', { command: 'broadcast &r \n \n \n \n \n \n \n \n \n \n \n \n &eГлобальный чат был очищен администратором.' });
                 showToast('Чат очищен', 'Команда очистки чата выполнена', 'info');
                 recordShiftAction('Очистил чат сервера');
             } catch (e) {
-                // Fallback direct broadcast
                 showToast('Чат очищен', 'Сообщение отправлено на сервер', 'info');
             }
         }, 'ОЧИСТИТЬ', false);
@@ -1834,18 +2011,22 @@
                 return `
                     <div class="tile tile-sm" id="tile-quick_actions">
                         <div class="tile-header">
-                            <span class="tile-title">⚡ БЫСТРЫЕ ДЕЙСТВИЯ</span>
-                            <button type="button" class="secondary btn-sm" onclick="window.openQuickActionsConfigModal()" title="Настроить состав действий">⚙ НАСТРОИТЬ</button>
+                            <span class="tile-title">
+                                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#9B5CFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                                БЫСТРЫЕ ДЕЙСТВИЯ
+                            </span>
+                            <button type="button" class="secondary btn-sm" onclick="window.openQuickActionsConfigModal()" title="Настроить состав действий">НАСТРОИТЬ</button>
                         </div>
                         <div class="tile-body" id="tile-body-quick_actions">
-                            <div class="quick-actions-grid" style="grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));">
+                            <div class="quick-actions-grid">
                                 ${activeKeys.map(k => {
                                     const act = ALL_QUICK_ACTIONS[k];
                                     if (!act) return '';
                                     return `
                                         <button type="button" class="quick-action-btn" onclick="${act.action}">
                                             <span class="qa-icon" style="color:${act.color};">${act.icon}</span>
-                                            <span>${esc(act.label)}</span>
+                                            <span class="qa-label">${esc(act.label)}</span>
+                                            <span class="qa-sub">${esc(act.sub || '')}</span>
                                         </button>
                                     `;
                                 }).join('')}
