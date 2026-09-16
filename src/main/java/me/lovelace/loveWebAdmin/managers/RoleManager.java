@@ -24,7 +24,12 @@ public class RoleManager {
     }
 
     public WebRole createRole(String name, String lpGroup, Set<Permission> permissions) {
-        WebRole role = new WebRole(0, name, lpGroup, permissions, false);
+        return createRole(name, lpGroup, permissions, "#8b5cf6");
+    }
+
+    public WebRole createRole(String name, String lpGroup, Set<Permission> permissions, String color) {
+        String roleColor = (color != null && !color.isBlank()) ? color.trim() : "#8b5cf6";
+        WebRole role = new WebRole(0, name, lpGroup, permissions, false, roleColor);
         plugin.getDatabaseManager().saveRole(role);
         if (lpGroup != null && !lpGroup.isBlank()) {
             plugin.getLuckPermsManager().ensureGroupExists(lpGroup);
@@ -33,14 +38,19 @@ public class RoleManager {
     }
 
     public boolean updateRole(int id, String lpGroup, Set<Permission> permissions) {
-        return updateRole(id, null, lpGroup, permissions);
+        return updateRole(id, null, lpGroup, permissions, null);
     }
 
     public boolean updateRole(int id, String name, String lpGroup, Set<Permission> permissions) {
+        return updateRole(id, name, lpGroup, permissions, null);
+    }
+
+    public boolean updateRole(int id, String name, String lpGroup, Set<Permission> permissions, String color) {
         Optional<WebRole> existing = plugin.getDatabaseManager().getRoleById(id);
         if (existing.isEmpty() || existing.get().isOwner()) return false;
 
         String roleName = (name != null && !name.isBlank()) ? name.trim() : existing.get().name();
+        String roleColor = (color != null && !color.isBlank()) ? color.trim() : existing.get().color();
 
         // Проверка на дублирование имени с другой ролью
         Optional<WebRole> byName = plugin.getDatabaseManager().getRoleByName(roleName);
@@ -50,7 +60,7 @@ public class RoleManager {
 
         boolean lpGroupChanged = !Objects.equals(existing.get().lpGroup(), lpGroup);
 
-        WebRole updated = new WebRole(id, roleName, lpGroup, permissions, false);
+        WebRole updated = new WebRole(id, roleName, lpGroup, permissions, false, roleColor);
         plugin.getDatabaseManager().saveRole(updated);
 
         if (lpGroupChanged && lpGroup != null && !lpGroup.isBlank()) {

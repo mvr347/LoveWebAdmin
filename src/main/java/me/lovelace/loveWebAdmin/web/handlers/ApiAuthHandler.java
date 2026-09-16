@@ -34,6 +34,11 @@ public class ApiAuthHandler extends ApiHandlerSupport {
         String servletPath = req.getServletPath();
         String pathInfo = req.getPathInfo();
 
+        if ("/api/staff/shifts".equals(servletPath) || ("/api/staff".equals(servletPath) && "/shifts".equals(pathInfo))) {
+            handleStaffShifts(req, resp);
+            return;
+        }
+
         if ("/api/me".equals(servletPath)) {
             if (pathInfo == null || pathInfo.isEmpty() || "/".equals(pathInfo)) {
                 handleMe(req, resp);
@@ -41,6 +46,10 @@ public class ApiAuthHandler extends ApiHandlerSupport {
             }
             if ("/sessions".equals(pathInfo)) {
                 handleSessions(req, resp);
+                return;
+            }
+            if ("/shift".equals(pathInfo)) {
+                handleMyShift(req, resp);
                 return;
             }
             sendError(resp, 404, "Не найдено");
@@ -87,6 +96,10 @@ public class ApiAuthHandler extends ApiHandlerSupport {
             }
             if ("/password".equals(pathInfo)) {
                 handleChangePassword(req, resp);
+                return;
+            }
+            if ("/shift".equals(pathInfo)) {
+                handleToggleShift(req, resp);
                 return;
             }
             if ("/backup-codes/regenerate".equals(pathInfo)) {
@@ -149,10 +162,16 @@ public class ApiAuthHandler extends ApiHandlerSupport {
         boolean ownerExists = plugin.getAdminManager().hasOwner();
         boolean initialSetup = plugin.getAdminManager().isInitialSetupNeeded();
         boolean debugMode = plugin.isDebugMode();
+        boolean maintenance = plugin.isMaintenanceMode();
+        String maintenanceMsg = plugin.getMaintenanceMessage();
+        boolean strictIp = plugin.getConfig().getBoolean("security.strict-ip", false);
         sendSuccess(resp, Map.of(
             "ownerExists", ownerExists,
             "initialSetupNeeded", initialSetup,
-            "debugMode", debugMode
+            "debugMode", debugMode,
+            "maintenance", maintenance,
+            "maintenanceMessage", maintenanceMsg != null ? maintenanceMsg : "Ведутся технические работы",
+            "strictIp", strictIp
         ));
     }
 
@@ -214,13 +233,24 @@ public class ApiAuthHandler extends ApiHandlerSupport {
         }
 
         Map<String, Object> body = readJsonBody(req);
+        String setupToken = stringOrNull(body.get("setupToken"));
         String username = stringOrNull(body.get("username"));
         String password = stringOrNull(body.get("password"));
         String totpSecret = stringOrNull(body.get("totpSecret"));
         String totpCode = stringOrNull(body.get("totpCode"));
 
+        if (setupToken == null || !plugin.getAdminManager().validateAndConsumeSetupToken(setupToken)) {
+            sendError(resp, 403, "Неверный или просроченный одноразовый токен настройки. Сгенерируйте его в консоли сервера командой: /lovewebadmin generatetoken");
+            return;
+        }
+
         if (username == null || password == null) {
             sendError(resp, 400, "Заполните логин и пароль");
+            return;
+        }
+
+        if (password.length() < 10) {
+            sendError(resp, 400, "Минимальная длина пароля управляющего — 10 символов");
             return;
         }
 
@@ -309,8 +339,21 @@ public class ApiAuthHandler extends ApiHandlerSupport {
         AdminManager.LoginResult result = plugin.getAdminManager().login(username, password, ip, userAgent);
         switch (result.status()) {
             case NOT_FOUND, INVALID_CREDENTIALS -> {
-                attemptTracker.recordFailure(ipKey, userKey);
-                plugin.getLogManager().logWebAction(username, "Неудачная попытка входа");
+                boolean locked = attemptTracker.recordFailureAndCheckNewlyLocked(ipKey, userKey);
+                plugin.getLogManager().logWebAction(username, "Неудачная попытка входа с IP " + ip);
+                if (locked) {
+                    if (plugin.getSecurityWebhookService() != null) {
+                        plugin.getSecurityWebhookService().sendBruteForceAlert(ip, username, 5);
+                    }
+                    if (plugin.getNotificationManager() != null) {
+                        plugin.getNotificationManager().broadcast(
+                            "Брутфорс атака!",
+                            "IP-адрес " + ip + " временно заблокирован после серии неудачных попыток входа под пользователем '" + username + "'.",
+                            "CRITICAL",
+                            "security"
+                        );
+                    }
+                }
                 sendError(resp, 401, "Неверный ник или пароль");
             }
             case NEED_ONBOARDING -> {
@@ -357,6 +400,19 @@ public class ApiAuthHandler extends ApiHandlerSupport {
     }
 
     private void sendLoginSuccess(HttpServletResponse resp, AdminManager.LoginResult result) throws IOException {
+        if (plugin.isMaintenanceMode()) {
+            boolean canBypass = result.role().isOwner()
+                || result.role().permissions().contains(Permission.MANAGE_ADMINS)
+                || result.role().permissions().contains(Permission.BYPASS_MAINTENANCE);
+            if (!canBypass) {
+                if (result.session() != null) {
+                    plugin.getSessionManager().invalidate(result.session().token());
+                }
+                sendError(resp, 503, plugin.getMaintenanceMessage() != null ? plugin.getMaintenanceMessage() : "Ведутся технические работы. Доступ разрешён только руководству.");
+                return;
+            }
+        }
+
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("token", result.session().token());
         data.put("username", result.session().adminUsername());
@@ -468,9 +524,11 @@ public class ApiAuthHandler extends ApiHandlerSupport {
         Map<String, Object> body = readJsonBody(req);
         String oldPassword = stringOrNull(body.get("oldPassword"));
         String newPassword = stringOrNull(body.get("newPassword"));
+        String confirmPassword = stringOrNull(body.get("confirmPassword"));
+        String totpCode = stringOrNull(body.get("totpCode"));
 
-        if (oldPassword == null || newPassword == null || newPassword.length() < 10) {
-            sendError(resp, 400, "Новый пароль должен содержать не менее 10 символов");
+        if (oldPassword == null || newPassword == null) {
+            sendError(resp, 400, "Заполните старый и новый пароли");
             return;
         }
 
@@ -481,14 +539,67 @@ public class ApiAuthHandler extends ApiHandlerSupport {
         }
 
         WebAdmin admin = adminOpt.get();
+        // МГНОВЕННЫЙ КИК С САЙТА ПРИ НЕВЕРНОМ СТАРОМ ПАРОЛЕ
         if (admin.passwordHash() != null && !PasswordUtils.verify(oldPassword, admin.passwordHash())) {
-            sendError(resp, 400, "Неверный текущий пароль");
+            plugin.getSessionManager().invalidate(sessionOpt.get().token());
+            plugin.getDatabaseManager().deleteSession(sessionOpt.get().token());
+            plugin.getLogManager().logWebAction(admin.username(), "Введён неверный старый пароль при попытке смены. Сессия принудительно аннулирована.");
+            sendError(resp, 401, "Неверный текущий пароль! Ваша сессия аннулирована.");
             return;
         }
 
+        if (confirmPassword != null && !newPassword.equals(confirmPassword)) {
+            sendError(resp, 400, "Новые пароли не совпадают");
+            return;
+        }
+
+        if (newPassword.length() < 10) {
+            sendError(resp, 400, "Новый пароль должен содержать не менее 10 символов");
+            return;
+        }
+
+        if (admin.totpEnabled() && admin.totpSecret() != null && !admin.totpSecret().isBlank()) {
+            if (totpCode == null || totpCode.trim().isBlank()) {
+                sendError(resp, 400, "Требуется 6-значный код Google Authenticator (2FA)");
+                return;
+            }
+            if (!TotpUtils.verifyCode(admin.totpSecret(), totpCode.trim())) {
+                sendError(resp, 400, "Неверный код 2FA");
+                return;
+            }
+        }
+
         plugin.getDatabaseManager().setAdminPassword(admin.id(), PasswordUtils.hash(newPassword));
-        plugin.getLogManager().logWebAction(admin.username(), "Изменил свой пароль");
+        plugin.getLogManager().logWebAction(admin.username(), "Успешно изменил пароль");
         sendSuccess(resp, Map.of("message", "Пароль успешно изменён"));
+    }
+
+    private void handleToggleShift(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+        Optional<WebSession> sessionOpt = requireSession(req, resp);
+        if (sessionOpt.isEmpty()) return;
+
+        Map<String, Object> body = readJsonBody(req);
+        boolean onShift = Boolean.TRUE.equals(body.get("onShift"));
+        plugin.getDatabaseManager().setAdminShiftStatus(sessionOpt.get().adminId(), onShift);
+        plugin.getLogManager().logWebAction(sessionOpt.get().adminUsername(), onShift ? "Заступил на смену" : "Завершил смену");
+        sendSuccess(resp, Map.of("onShift", onShift, "message", onShift ? "Вы заступили на смену" : "Вы завершили смену"));
+    }
+
+    private void handleMyShift(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+        Optional<WebSession> sessionOpt = requireSession(req, resp);
+        if (sessionOpt.isEmpty()) return;
+
+        List<Map<String, Object>> list = plugin.getDatabaseManager().getStaffOnShift();
+        boolean onShift = list.stream().anyMatch(m -> sessionOpt.get().adminUsername().equalsIgnoreCase(String.valueOf(m.get("username"))));
+        sendSuccess(resp, Map.of("onShift", onShift));
+    }
+
+    private void handleStaffShifts(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+        Optional<WebSession> sessionOpt = requireSession(req, resp);
+        if (sessionOpt.isEmpty()) return;
+
+        List<Map<String, Object>> staffOnShift = plugin.getDatabaseManager().getStaffOnShift();
+        sendSuccess(resp, staffOnShift);
     }
 
     private void handleAllSessions(HttpServletRequest req, HttpServletResponse resp) throws IOException {

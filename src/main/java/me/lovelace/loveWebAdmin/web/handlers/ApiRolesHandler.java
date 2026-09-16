@@ -49,6 +49,7 @@ public class ApiRolesHandler extends ApiHandlerSupport {
         Map<String, Object> body = readJsonBody(req);
         String name = stringOrNull(body.get("name"));
         String lpGroup = stringOrNull(body.get("lpGroup"));
+        String color = stringOrNull(body.get("color"));
         Set<Permission> permissions = parsePermissions(body.get("permissions"));
 
         if (name == null || name.isBlank()) {
@@ -60,7 +61,7 @@ public class ApiRolesHandler extends ApiHandlerSupport {
             return;
         }
 
-        WebRole role = plugin.getRoleManager().createRole(name, lpGroup, permissions);
+        WebRole role = plugin.getRoleManager().createRole(name, lpGroup, permissions, color);
         plugin.getLogManager().logWebAction(sessionOpt.get().adminUsername(), "Создал роль " + name);
         sendSuccess(resp, toRoleMap(role));
     }
@@ -89,9 +90,10 @@ public class ApiRolesHandler extends ApiHandlerSupport {
         Map<String, Object> body = readJsonBody(req);
         String name = stringOrNull(body.get("name"));
         String lpGroup = stringOrNull(body.get("lpGroup"));
+        String color = stringOrNull(body.get("color"));
         Set<Permission> permissions = parsePermissions(body.get("permissions"));
 
-        boolean ok = plugin.getRoleManager().updateRole(roleId, name, lpGroup, permissions);
+        boolean ok = plugin.getRoleManager().updateRole(roleId, name, lpGroup, permissions, color);
         if (!ok) {
             sendError(resp, 400, "Не удалось обновить роль (возможно, такое имя уже занято)");
             return;
@@ -132,6 +134,7 @@ public class ApiRolesHandler extends ApiHandlerSupport {
         map.put("lpGroup", role.lpGroup());
         map.put("permissions", role.permissions().stream().map(Enum::name).toList());
         map.put("isOwner", role.isOwner());
+        map.put("color", role.color() != null ? role.color() : "#8b5cf6");
         return map;
     }
 

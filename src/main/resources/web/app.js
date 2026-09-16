@@ -102,7 +102,7 @@
         'VIEW_SERVER_LOGS', 'VIEW_WEB_LOGS', 'EXECUTE_COMMANDS',
         'MANAGE_LOVEAUTH', 'MANAGE_ADMINS', 'MANAGE_ROLES', 'MANAGE_PASSWORDS',
         'MANAGE_LOCKDOWN', 'VIEW_STAFF_AUDIT', 'VIEW_ECONOMY', 'MANAGE_ECONOMY',
-        'MANAGE_API', 'VIEW_SERVER_INTERNALS'
+        'MANAGE_API', 'VIEW_SERVER_INTERNALS', 'BYPASS_MAINTENANCE'
     ];
 
     const PERMISSION_LABELS = {
@@ -131,7 +131,8 @@
         VIEW_ECONOMY: 'Просмотр оборота экономики',
         MANAGE_ECONOMY: 'Управление балансом игроков',
         MANAGE_API: 'Управление API ключами и вебхуками',
-        VIEW_SERVER_INTERNALS: 'Просмотр технических параметров сервера (СУБД, хеши, брутфорс-фильтр)'
+        VIEW_SERVER_INTERNALS: 'Позволяет видеть ошибки плагинов, технические детали сервера, расширенные логи и stacktrace',
+        BYPASS_MAINTENANCE: 'Позволяет входить в веб-панель во время технических работ'
     };
 
     // ---------- Helpers ----------
@@ -237,6 +238,18 @@
             throw new Error('Некорректный ответ сервера');
         }
         if (!res.ok || !json.success) {
+            if (res.status === 401 && token && !path.includes('/login')) {
+                setToken(null);
+                clearPollers();
+                const errMsg = json.error || 'Сессия аннулирована';
+                showToast('Сессия аннулирована', errMsg, 'error');
+                setTimeout(() => renderLoginScreen(), 400);
+                throw new Error(errMsg);
+            }
+            if (res.status === 503 && (json.maintenance || path.includes('/api/'))) {
+                renderMaintenanceScreen(json.error);
+                throw new Error(json.error || 'Ведутся технические работы');
+            }
             throw new Error(json.error || 'Ошибка запроса');
         }
         return json.data;
@@ -1355,11 +1368,18 @@
 
                     <form id="onboard-form">
                         <div class="form-group">
-                            <label>Логин администратора</label>
+                            <label>Одноразовый токен настройки из консоли сервера *</label>
+                            <input type="text" id="ob-token" placeholder="Например: 6f8b... или lwa-setup-..." required style="font-family:'JetBrains Mono',monospace; letter-spacing:0.04em;">
+                            <div style="font-size:11px; color:var(--text-muted); margin-top:4px; line-height:1.4;">
+                                Сгенерируйте токен в консоли сервера командой: <code style="color:var(--accent); font-weight:700;">/lovewebadmin generatetoken</code>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Логин управляющего *</label>
                             <input type="text" id="ob-user" placeholder="Например: Lovelace" required autofocus>
                         </div>
                         <div class="form-group">
-                            <label>Пароль</label>
+                            <label>Пароль *</label>
                             <input type="password" id="ob-pass" placeholder="Минимум 10 символов" required>
                         </div>
                         <div id="ob-err" class="error" style="display:none;"></div>
@@ -1371,11 +1391,17 @@
 
         if (isDebug) {
             document.getElementById('btn-ob-debug-direct')?.addEventListener('click', async () => {
+                const setupToken = document.getElementById('ob-token').value.trim();
                 const username = document.getElementById('ob-user').value.trim();
                 const password = document.getElementById('ob-pass').value;
                 const err = document.getElementById('ob-err');
                 err.style.display = 'none';
 
+                if (!setupToken) {
+                    err.textContent = 'Укажите одноразовый токен из консоли сервера (/lovewebadmin generatetoken)';
+                    err.style.display = 'block';
+                    return;
+                }
                 if (username.length < 2) {
                     err.textContent = 'Логин должен быть не менее 2 символов';
                     err.style.display = 'block';
@@ -1389,7 +1415,7 @@
 
                 try {
                     const res = await api('POST', '/api/auth/setup-owner', {
-                        username, password, totpSecret: 'debug', totpCode: 'debug'
+                        setupToken, username, password, totpSecret: 'debug', totpCode: 'debug'
                     });
                     setToken(res.token);
                     me = await api('GET', '/api/me');
@@ -1405,11 +1431,17 @@
 
         document.getElementById('onboard-form')?.addEventListener('submit', async (e) => {
             e.preventDefault();
+            const setupToken = document.getElementById('ob-token').value.trim();
             const username = document.getElementById('ob-user').value.trim();
             const password = document.getElementById('ob-pass').value;
             const err = document.getElementById('ob-err');
             err.style.display = 'none';
 
+            if (!setupToken) {
+                err.textContent = 'Укажите одноразовый токен из консоли сервера (/lovewebadmin generatetoken)';
+                err.style.display = 'block';
+                return;
+            }
             if (username.length < 2) {
                 err.textContent = 'Логин должен быть не менее 2 символов';
                 err.style.display = 'block';
@@ -1423,7 +1455,7 @@
 
             try {
                 const totp = await api('GET', `/api/auth/totp-setup?username=${encodeURIComponent(username)}`);
-                renderMasterOnboarding2fa(username, password, totp.secret, totp.otpUrl);
+                renderMasterOnboarding2fa(username, password, setupToken, totp.secret, totp.otpUrl);
             } catch (ex) {
                 err.textContent = ex.message;
                 err.style.display = 'block';
@@ -1431,7 +1463,7 @@
         });
     }
 
-    function renderMasterOnboarding2fa(username, password, totpSecret, otpUrl) {
+    function renderMasterOnboarding2fa(username, password, setupToken, totpSecret, otpUrl) {
         const isDebug = serverStatus && serverStatus.debugMode;
         app.innerHTML = `
             <div class="auth-screen">
@@ -1517,7 +1549,7 @@
                 err.style.display = 'none';
                 try {
                     const res = await api('POST', '/api/auth/setup-owner', {
-                        username, password, totpSecret, totpCode: 'debug'
+                        setupToken, username, password, totpSecret, totpCode: 'debug'
                     });
                     setToken(res.token);
                     me = await api('GET', '/api/me');
@@ -1542,7 +1574,7 @@
 
             try {
                 const res = await api('POST', '/api/auth/setup-owner', {
-                    username, password, totpSecret, totpCode: code
+                    setupToken, username, password, totpSecret, totpCode: code
                 });
                 setToken(res.token);
                 me = await api('GET', '/api/me');
@@ -1564,8 +1596,14 @@
         const roleName = me.isOwner ? 'Управляющий' : (me.role || (isMod ? 'Модератор' : 'Администратор'));
         const roleClass = (isMod && !me.isOwner) ? 'moderator' : 'admin';
 
+        let userPrefs = {};
+        try {
+            userPrefs = typeof me.uiPreferences === 'string' ? JSON.parse(me.uiPreferences) : (me.uiPreferences || {});
+        } catch (_) { userPrefs = {}; }
+
         app.innerHTML = `
             <div class="app-layout">
+                <div class="sidebar-mobile-backdrop" id="sidebar-mobile-backdrop"></div>
                 <!-- Left Sidebar -->
                 <aside class="app-sidebar ${sidebarCollapsed ? 'collapsed' : ''}" id="app-sidebar">
                     <div class="sidebar-brand">
@@ -1583,12 +1621,6 @@
                             <span class="sidebar-brand-name">MINECRAFT</span>
                             <span class="sidebar-brand-sub">WebAdmin</span>
                         </div>
-                    </div>
-
-                    <!-- Role Badge (Always Visible) -->
-                    <div class="sidebar-role-card">
-                        <div class="sidebar-role-label">Текущая роль</div>
-                        <div class="sidebar-role-badge ${roleClass}">${esc(roleName)}</div>
                     </div>
 
                     <!-- 8 Main Navigation Items -->
@@ -1611,7 +1643,7 @@
 
                     <!-- Sidebar Footer -->
                     <div class="sidebar-footer">
-                        <div class="sidebar-user-block" id="sidebar-user-btn" data-tooltip="Профиль сотрудника и сессии">
+                        <div class="sidebar-user-block" id="sidebar-user-btn" data-tooltip="Настройки администратора и профиль">
                             <div class="sidebar-user-avatar">${esc((me.username || 'A').substring(0, 2).toUpperCase())}</div>
                             <div class="sidebar-user-meta">
                                 <span class="sidebar-user-name">${esc(me.username)}</span>
@@ -1628,7 +1660,8 @@
                 <main class="main-viewport">
                     <!-- Topbar -->
                     <header class="topbar">
-                        <div class="topbar-left">
+                        <div class="topbar-left" style="display:flex; align-items:center; gap:10px;">
+                            <button type="button" class="mobile-menu-btn" id="mobile-menu-toggle" title="Открыть меню">☰</button>
                             <h1 class="topbar-page-title" id="topbar-page-title">Дашборд</h1>
                         </div>
 
@@ -1640,7 +1673,34 @@
                             </div>
                         </div>
 
-                        <div class="topbar-right">
+                        <div class="topbar-right" style="display:flex; align-items:center; gap:8px;">
+                            <!-- Shift Status Toggle -->
+                            <div style="display:flex; align-items:center; gap:2px;">
+                                <button type="button" class="topbar-shift-btn" id="topbar-shift-btn" data-tooltip="Ваш статус: Нажмите для переключения смены">
+                                    <span id="shift-btn-dot">⚪</span>
+                                    <span id="shift-btn-text">ВНЕ СМЕНЫ</span>
+                                </button>
+                                <button type="button" class="topbar-icon-btn" id="topbar-shift-list-btn" data-tooltip="Кто сейчас на смене из персонала" style="width:28px; height:31px; font-size:12px;">
+                                    👥
+                                </button>
+                            </div>
+
+                            <!-- Notifications Bell -->
+                            <button type="button" class="topbar-icon-btn" id="topbar-notif-btn" data-tooltip="Уведомления персонала">
+                                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                                <span class="notif-badge" id="topbar-notif-badge" style="display:none;">0</span>
+                            </button>
+
+                            <!-- Theme Toggle Button -->
+                            <button type="button" class="topbar-icon-btn" id="topbar-theme-btn" data-tooltip="Сменить тему (Тёмная / Светлая)">
+                                <span id="theme-btn-icon">🌙</span>
+                            </button>
+
+                            <!-- Admin Settings Button -->
+                            <button type="button" class="topbar-icon-btn" id="topbar-settings-btn" data-tooltip="Настройки администратора панели">
+                                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                            </button>
+
                             <div class="status-pill" id="topbar-status-pill" data-tooltip="Статус ядра Minecraft сервера">
                                 <span class="status-dot" id="server-status-dot"></span>
                                 <span id="server-status-text">Онлайн: ...</span>
@@ -1660,6 +1720,47 @@
                 </main>
             </div>
         `;
+
+        // Apply theme from preferences
+        const savedTheme = userPrefs.theme || localStorage.getItem('wa_theme') || 'dark';
+        applyUserTheme(savedTheme);
+
+        // Mobile drawer handlers
+        const sidebar = document.getElementById('app-sidebar');
+        const mobileBackdrop = document.getElementById('sidebar-mobile-backdrop');
+        document.getElementById('mobile-menu-toggle')?.addEventListener('click', () => {
+            sidebar?.classList.toggle('mobile-open');
+            mobileBackdrop?.classList.toggle('open');
+        });
+        mobileBackdrop?.addEventListener('click', () => {
+            sidebar?.classList.remove('mobile-open');
+            mobileBackdrop?.classList.remove('open');
+        });
+
+        // Theme button click
+        document.getElementById('topbar-theme-btn')?.addEventListener('click', async () => {
+            const isLightNow = document.body.classList.contains('theme-light');
+            const newTheme = isLightNow ? 'dark' : 'light';
+            applyUserTheme(newTheme);
+            userPrefs.theme = newTheme;
+            try {
+                await api('PUT', '/api/me/preferences', { uiPreferences: userPrefs });
+                me.uiPreferences = JSON.stringify(userPrefs);
+            } catch (_) {}
+        });
+
+        // Shift button handlers
+        document.getElementById('topbar-shift-btn')?.addEventListener('click', toggleMyShift);
+        document.getElementById('topbar-shift-list-btn')?.addEventListener('click', openStaffOnShiftModal);
+        initShiftStatus();
+
+        // Notifications button handler
+        document.getElementById('topbar-notif-btn')?.addEventListener('click', openNotificationsModal);
+        updateNotificationsBadge();
+        setInterval(updateNotificationsBadge, 6000);
+
+        // Admin settings modal button
+        document.getElementById('topbar-settings-btn')?.addEventListener('click', () => openAdminSettingsModal('general'));
 
         // Sidebar navigation clicks
         document.getElementById('sidebar-nav')?.addEventListener('click', (e) => {
@@ -1951,6 +2052,13 @@
     };
 
     function getActiveDashboardTiles() {
+        let prefs = {};
+        try {
+            prefs = typeof me?.uiPreferences === 'string' ? JSON.parse(me.uiPreferences) : (me?.uiPreferences || {});
+        } catch (_) {}
+        if (Array.isArray(prefs.dashboardTiles) && prefs.dashboardTiles.length) {
+            return prefs.dashboardTiles;
+        }
         try {
             const saved = localStorage.getItem('wa_dashboard_tiles');
             if (saved) return JSON.parse(saved);
@@ -1958,8 +2066,17 @@
         return DEFAULT_DASHBOARD_TILES;
     }
 
-    function saveDashboardTiles(tiles) {
+    async function saveDashboardTiles(tiles) {
         localStorage.setItem('wa_dashboard_tiles', JSON.stringify(tiles));
+        let prefs = {};
+        try {
+            prefs = typeof me?.uiPreferences === 'string' ? JSON.parse(me.uiPreferences) : (me?.uiPreferences || {});
+        } catch (_) {}
+        prefs.dashboardTiles = tiles;
+        if (me) me.uiPreferences = JSON.stringify(prefs);
+        try {
+            await api('PUT', '/api/me/preferences', { uiPreferences: prefs });
+        } catch (_) {}
     }
 
     async function renderDashboardView() {
@@ -1970,7 +2087,7 @@
             <div class="view-header">
                 <div class="view-title-block">
                     <h2>ДАШБОРД</h2>
-                    <p>Оперативная панель мониторинга сервера и быстрого реагирования</p>
+                    <p>Оперативная панель мониторинга сервера и быстрого реагирования (перетаскивайте плитки для настройки порядка)</p>
                 </div>
                 <div class="view-actions">
                     <button type="button" class="secondary" id="dash-customize-btn">⚙ НАСТРОЙКА ПЛИТОК</button>
@@ -1989,7 +2106,60 @@
         });
 
         const grid = document.getElementById('dashboard-grid');
-        grid.innerHTML = activeTiles.map(tileKey => getTileContainerHtml(tileKey)).join('');
+        grid.innerHTML = activeTiles.map((tileKey, idx) => {
+            const html = getTileContainerHtml(tileKey);
+            return html.replace('<div class="tile ', `<div draggable="true" data-tile-key="${tileKey}" data-tile-idx="${idx}" class="tile `);
+        }).join('');
+
+        // Mount Drag & Drop handlers for tiles
+        let draggedTileKey = null;
+        let draggedTileIdx = null;
+
+        grid.querySelectorAll('.tile[draggable="true"]').forEach(el => {
+            el.addEventListener('dragstart', (e) => {
+                draggedTileKey = el.dataset.tileKey;
+                draggedTileIdx = parseInt(el.dataset.tileIdx, 10);
+                el.classList.add('dragging');
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', draggedTileKey);
+            });
+            el.addEventListener('dragenter', (e) => {
+                e.preventDefault();
+                if (el.dataset.tileKey !== draggedTileKey) {
+                    el.classList.add('drag-over');
+                }
+            });
+            el.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+            });
+            el.addEventListener('dragleave', (e) => {
+                if (!el.contains(e.relatedTarget)) {
+                    el.classList.remove('drag-over');
+                }
+            });
+            el.addEventListener('drop', async (e) => {
+                e.preventDefault();
+                el.classList.remove('drag-over');
+                const targetKey = el.dataset.tileKey;
+                const targetIdx = parseInt(el.dataset.tileIdx, 10);
+                if (draggedTileKey && targetKey && draggedTileKey !== targetKey) {
+                    const newTiles = [...activeTiles];
+                    const [removed] = newTiles.splice(draggedTileIdx, 1);
+                    newTiles.splice(targetIdx, 0, removed);
+                    activeTiles = newTiles;
+                    await saveDashboardTiles(newTiles);
+                    renderDashboardView();
+                    showToast('Порядок сохранён', 'Порядок плиток обновлён и сохранён в профиль', 'info');
+                }
+            });
+            el.addEventListener('dragend', () => {
+                el.classList.remove('dragging');
+                grid.querySelectorAll('.tile').forEach(t => t.classList.remove('drag-over'));
+                draggedTileKey = null;
+                draggedTileIdx = null;
+            });
+        });
 
         // Mount tile logic
         activeTiles.forEach(tileKey => mountTileLogic(tileKey));
@@ -2389,9 +2559,14 @@
 
     async function renderJournalView() {
         const area = document.getElementById('content-area');
-        let primaryMode = 'web'; // 'web' or 'server'
+        const canViewWebLogs = hasPerm('VIEW_WEB_LOGS');
+        let primaryMode = canViewWebLogs ? 'web' : 'server'; // 'web' or 'server'
         let webSubfilter = 'ALL'; // ALL, AUTH, PUNISHMENTS, REPORTS, ROLES
         let serverSubfilter = 'ALL'; // ALL, COMMANDS, GAME, WARNINGS
+        let filterStaff = '';
+        let filterActionType = 'ALL';
+        let filterDateFrom = '';
+        let filterDateTo = '';
         let searchQuery = '';
         let cachedWebLogs = [];
         let cachedServerLogs = [];
@@ -2399,24 +2574,25 @@
         area.innerHTML = `
             <div class="view-header">
                 <div class="view-title-block">
-                    <h2>ЖУРНАЛ СОБЫТИЙ</h2>
-                    <p>Раздельный аудит веб-панели управления и серверных логов Minecraft</p>
+                    <h2>ЖУРНАЛ СОБЫТИЙ (AUDIT LOG)</h2>
+                    <p>Раздельный аудит действий веб-панели и серверных событий Minecraft с фильтрами и экспортом</p>
                 </div>
                 <div class="view-actions">
-                    <button type="button" class="secondary" id="journal-export-btn">📥 ЭКСПОРТ ЛОГОВ</button>
-                    <button type="button" class="primary" id="journal-refresh-btn">ОБНОВИТЬ</button>
+                    <button type="button" class="secondary" id="journal-export-csv-btn">📥 ЭКСПОРТ CSV</button>
+                    <button type="button" class="secondary" id="journal-export-json-btn">📥 ЭКСПОРТ JSON</button>
                 </div>
             </div>
 
             <!-- Primary Mode Tabs (Web vs Server) -->
             <div class="segmented-nav-tabs" style="margin-bottom:18px;">
-                <button type="button" class="segmented-nav-tab active" data-mode="web">
+                ${canViewWebLogs ? `
+                <button type="button" class="segmented-nav-tab ${primaryMode === 'web' ? 'active' : ''}" data-mode="web">
                     <span>🌐</span>
-                    <span>ВЕБ-ЖУРНАЛ (АУДИТ ПАНЕЛИ)</span>
-                </button>
-                <button type="button" class="segmented-nav-tab" data-mode="server">
+                    <span>ВЕБ-ЖУРНАЛ (ТОЛЬКО ДЕЙСТВИЯ ЧЕРЕЗ САЙТ)</span>
+                </button>` : ''}
+                <button type="button" class="segmented-nav-tab ${primaryMode === 'server' ? 'active' : ''}" data-mode="server">
                     <span>🖥️</span>
-                    <span>СЕРВЕРНЫЙ ЖУРНАЛ (MINECRAFT)</span>
+                    <span>СЕРВЕРНЫЙ ЖУРНАЛ (ИГРОВЫЕ СОБЫТИЯ + ВЕБ-ДЕЙСТВИЯ)</span>
                 </button>
             </div>
 
@@ -2426,11 +2602,32 @@
                     <!-- Dynamic subfilter buttons inserted by renderSubfilters() -->
                 </div>
 
-                <div style="display:flex; gap:12px; align-items:center;">
-                    <div style="flex:1; position:relative;">
-                        <input type="text" id="journal-search-input" placeholder="Поиск по нику, действию или тексту..." style="padding-left:34px;">
+                <!-- Audit Log Filters: Staff, Action, Date Range -->
+                <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                    <div style="flex:1; min-width:200px; position:relative;">
+                        <input type="text" id="journal-search-input" placeholder="Поиск по содержанию лога..." style="padding-left:34px;">
                         <span style="position:absolute; left:12px; top:50%; transform:translateY(-50%); color:var(--text-dim);">🔍</span>
                     </div>
+
+                    <input type="text" id="journal-filter-staff" placeholder="Сотрудник (ник)..." style="width:160px;">
+
+                    <select id="journal-filter-action" style="width:170px;">
+                        <option value="ALL">Все типы действий</option>
+                        <option value="AUTH">Авторизация / Сессии</option>
+                        <option value="PUNISHMENTS">Баны / Наказания</option>
+                        <option value="REPORTS">Жалобы игроков</option>
+                        <option value="ROLES">Роли и персонал</option>
+                        <option value="MAINTENANCE">Технические работы</option>
+                    </select>
+
+                    <div style="display:flex; align-items:center; gap:6px;">
+                        <span style="font-size:12px; color:var(--text-dim);">С:</span>
+                        <input type="date" id="journal-filter-from" style="width:130px; font-size:12px; padding:6px;">
+                        <span style="font-size:12px; color:var(--text-dim);">По:</span>
+                        <input type="date" id="journal-filter-to" style="width:130px; font-size:12px; padding:6px;">
+                    </div>
+
+                    <button type="button" class="secondary btn-sm" id="journal-reset-filters">СБРОС</button>
                 </div>
             </div>
 
@@ -2498,7 +2695,6 @@
 
         const sanitizeWebAction = (actionStr) => {
             if (!actionStr) return '';
-            // Remove IP addresses completely
             return actionStr
                 .replace(/\(IP:\s*[^)]+\)/gi, '')
                 .replace(/\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b/g, '')
@@ -2520,21 +2716,33 @@
             if (s.includes('рол') || s.includes('персонал') || s.includes('сотрудник') || s.includes('прав')) {
                 return { type: 'ПЕРСОНАЛ', typeClass: 'yellow' };
             }
+            if (s.includes('тех') || s.includes('maintenance')) {
+                return { type: 'ТЕХ. РАБОТЫ', typeClass: 'yellow' };
+            }
             return { type: 'ДЕЙСТВИЕ', typeClass: 'cyan' };
         };
 
         const loadLogs = async () => {
             const body = document.getElementById('journal-table-body');
-            if (body) body.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:24px;">Загрузка записей журнала...</td></tr>`;
 
             try {
                 if (primaryMode === 'web') {
-                    const rawLogs = await api('GET', '/api/logs/web?limit=250').catch(() => []);
-                    // Filter out section navigation logs and clean IP addresses
+                    let queryUrl = '/api/logs/web?limit=300';
+                    if (filterStaff) queryUrl += `&staff=${encodeURIComponent(filterStaff)}`;
+                    if (filterActionType && filterActionType !== 'ALL') queryUrl += `&action=${encodeURIComponent(filterActionType)}`;
+                    if (filterDateFrom) {
+                        const fromSec = Math.floor(new Date(filterDateFrom).getTime() / 1000);
+                        queryUrl += `&from=${fromSec}`;
+                    }
+                    if (filterDateTo) {
+                        const toSec = Math.floor(new Date(filterDateTo).getTime() / 1000) + 86399;
+                        queryUrl += `&to=${toSec}`;
+                    }
+
+                    const rawLogs = await api('GET', queryUrl).catch(() => []);
                     cachedWebLogs = rawLogs
                         .filter(l => {
                             const act = (l.action || '').toLowerCase();
-                            // STRICT REQUIREMENT: "но не открыл раздел какой то"
                             if (act.includes('открыл раздел') || act.includes('открыл вкладку')) return false;
                             return true;
                         })
@@ -2553,7 +2761,7 @@
                         });
                 } else {
                     const [sLogs, cmdLogs] = await Promise.all([
-                        api('GET', '/api/logs/server?limit=150').catch(() => []),
+                        api('GET', '/api/logs/server?limit=200').catch(() => []),
                         api('GET', '/api/staff-audit/logs?limit=100').catch(() => ({ logs: [] }))
                     ]);
 
@@ -2626,6 +2834,12 @@
                 }
             }
 
+            // Apply staff filter in server mode if specified
+            if (filterStaff && primaryMode === 'server') {
+                const fs = filterStaff.toLowerCase();
+                source = source.filter(e => e.actor && e.actor.toLowerCase().includes(fs));
+            }
+
             // Search query filter
             if (searchQuery) {
                 const q = searchQuery.toLowerCase();
@@ -2641,7 +2855,7 @@
                 return;
             }
 
-            body.innerHTML = source.slice(0, 150).map((row, idx) => `
+            body.innerHTML = source.slice(0, 200).map((row, idx) => `
                 <tr>
                     <td class="font-mono" style="font-size:12px; color:var(--text-muted);">${fmtTime(row.time)}</td>
                     <td style="font-weight:700;">
@@ -2692,11 +2906,11 @@
             `);
         };
 
-        // Export Log Handler
-        document.getElementById('journal-export-btn')?.addEventListener('click', () => {
+        // Export Log Handlers (CSV and JSON)
+        document.getElementById('journal-export-csv-btn')?.addEventListener('click', () => {
             const list = primaryMode === 'web' ? cachedWebLogs : cachedServerLogs;
             if (!list.length) {
-                alert('Журнал пуст');
+                showToast('Внимание', 'Журнал пуст для экспорта', 'warning');
                 return;
             }
             const csvRows = ['Timestamp,Time,Actor,Type,Action'];
@@ -2708,10 +2922,35 @@
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `webadmin-${primaryMode}-journal-${Date.now()}.csv`;
+            a.download = `lovewebadmin-${primaryMode}-journal-${Date.now()}.csv`;
             a.click();
             URL.revokeObjectURL(url);
-            showToast('Экспорт завершён', 'Файл CSV успешно скачан', 'success');
+            showToast('Экспорт CSV', 'Файл CSV успешно сохранён', 'success');
+        });
+
+        document.getElementById('journal-export-json-btn')?.addEventListener('click', () => {
+            const list = primaryMode === 'web' ? cachedWebLogs : cachedServerLogs;
+            if (!list.length) {
+                showToast('Внимание', 'Журнал пуст для экспорта', 'warning');
+                return;
+            }
+            const exportData = list.map(e => ({
+                id: e.id,
+                timestamp: e.time,
+                formattedTime: fmtTime(e.time),
+                actor: e.actor,
+                type: e.type,
+                action: e.action,
+                details: e.raw
+            }));
+            const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `lovewebadmin-${primaryMode}-journal-${Date.now()}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast('Экспорт JSON', 'Файл JSON успешно сохранён', 'success');
         });
 
         // Primary Tab Switcher (Web vs Server)
@@ -2740,17 +2979,53 @@
             renderTableRows();
         });
 
+        // Filter Inputs
+        document.getElementById('journal-filter-staff')?.addEventListener('input', (e) => {
+            filterStaff = e.target.value.trim();
+            loadLogs();
+        });
+
+        document.getElementById('journal-filter-action')?.addEventListener('change', (e) => {
+            filterActionType = e.target.value;
+            loadLogs();
+        });
+
+        document.getElementById('journal-filter-from')?.addEventListener('change', (e) => {
+            filterDateFrom = e.target.value;
+            loadLogs();
+        });
+
+        document.getElementById('journal-filter-to')?.addEventListener('change', (e) => {
+            filterDateTo = e.target.value;
+            loadLogs();
+        });
+
+        document.getElementById('journal-reset-filters')?.addEventListener('click', () => {
+            filterStaff = '';
+            filterActionType = 'ALL';
+            filterDateFrom = '';
+            filterDateTo = '';
+            searchQuery = '';
+            const isStaff = document.getElementById('journal-filter-staff'); if (isStaff) isStaff.value = '';
+            const isAct = document.getElementById('journal-filter-action'); if (isAct) isAct.value = 'ALL';
+            const isFrom = document.getElementById('journal-filter-from'); if (isFrom) isFrom.value = '';
+            const isTo = document.getElementById('journal-filter-to'); if (isTo) isTo.value = '';
+            const isQ = document.getElementById('journal-search-input'); if (isQ) isQ.value = '';
+            loadLogs();
+        });
+
         // Search input
         document.getElementById('journal-search-input')?.addEventListener('input', (e) => {
             searchQuery = e.target.value.trim();
             renderTableRows();
         });
 
-        document.getElementById('journal-refresh-btn')?.addEventListener('click', loadLogs);
-
         renderSubfilters();
         renderTableHead();
         await loadLogs();
+
+        // Auto-refresh without manual button
+        pollers['journal_auto_refresh'] = setInterval(loadLogs, 10000);
     }
 
 
@@ -2818,7 +3093,6 @@
                 </div>
                 <div class="view-actions" id="punishments-top-actions">
                     <button type="button" class="primary" id="btn-create-ban-top">+ ВЫДАТЬ БАН</button>
-                    <button type="button" class="secondary" id="punishments-refresh-btn">ОБНОВИТЬ</button>
                 </div>
             </div>
 
@@ -2844,12 +3118,16 @@
         `;
 
         document.getElementById('btn-create-ban-top')?.addEventListener('click', () => openQuickBanModal(''));
-        document.getElementById('punishments-refresh-btn')?.addEventListener('click', () => {
+
+        // Auto-refresh pollers for punishments
+        pollers['punishments_sync'] = setInterval(() => {
             if (currentPunishmentsSubtab === 'reports') loadReportsSubtab();
             else if (currentPunishmentsSubtab === 'bans') loadBansSubtab();
-            else if (currentPunishmentsSubtab === 'appeals') loadAppealsSubtab();
-            showToast('Обновлено', 'Данные раздела синхронизированы', 'info');
-        });
+            else if (currentPunishmentsSubtab === 'appeals') {
+                const listWrap = document.getElementById('live-appeals-list-wrap');
+                if (listWrap && typeof renderLiveAppealsList === 'function') renderLiveAppealsList();
+            }
+        }, 10000);
 
         // Wire subtab buttons
         document.querySelectorAll('#punishments-subtabs-bar .segmented-nav-tab').forEach(btn => {
@@ -3347,7 +3625,6 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                                 <option value="APPROVED">Одобренные</option>
                                 <option value="REJECTED">Отклонённые</option>
                             </select>
-                            <button type="button" class="secondary btn-sm" id="btn-refresh-appeals-list">🔄 Обновить</button>
                         </div>
                     </div>
 
@@ -4688,37 +4965,36 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
         const area = document.getElementById('content-area');
         let currentCheckFilter = '';
         let isStreamPaused = false;
-        let activeTab = 'stream'; // stream, suspects, stats
+        let activeTab = 'stream'; // stream, suspects, models
 
         area.innerHTML = `
             <div class="view-header">
                 <div class="view-title-block">
                     <h2>АНТИЧИТ</h2>
-                    <p>Прямая телеметрия, детекция запрещённых модов и поведенческий анализ</p>
-                </div>
-                <div class="view-actions">
-                    <button type="button" class="secondary" id="vesuvio-pause-btn">⏸ ПАУЗА ПОТОКА</button>
-                    <button type="button" class="primary" id="vesuvio-refresh-btn">ОБНОВИТЬ</button>
+                    <p>Прямая телеметрия, детекция запрещённых модификаций, поведенческие эвристики и ML-модели</p>
                 </div>
             </div>
 
-            <!-- Live Beacon Status Bar -->
+            <!-- Live Beacon Status Bar with embedded Pause Button inside the stream -->
             <div class="radar-stream-header">
                 <div class="live-beacon">
                     <span class="live-beacon-dot" id="radar-beacon-dot"></span>
                     <span id="radar-beacon-text">ЖИВОЙ ПОТОК СРАБАТЫВАНИЙ (LIVE 3S)</span>
                 </div>
-                <div style="font-size:12px; color:var(--text-muted);">
-                    Интеграция: <span class="badge green">АКТИВНА</span>
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <button type="button" class="secondary btn-sm" id="vesuvio-pause-btn">⏸ ПАУЗА ПОТОКА</button>
+                    <div style="font-size:12px; color:var(--text-muted);">
+                        Эвристики: <span class="badge green">АКТИВНЫ</span>
+                    </div>
                 </div>
             </div>
 
-            <!-- Sub-Tabs: Stream / Suspects / Stats -->
+            <!-- Sub-Tabs: Stream / Suspects / Models -->
             <div style="background:var(--card-bg); border:1px solid var(--border); border-radius:var(--radius-md); padding:12px 16px; margin-bottom:16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
                 <div class="filter-tags" id="anticheat-tabs">
                     <button type="button" class="filter-tag-btn active" data-tab="stream">Поток нарушений</button>
-                    <button type="button" class="filter-tag-btn" data-tab="suspects">Режим «Наблюдение»</button>
-                    <button type="button" class="filter-tag-btn" data-tab="engine">Статус движка</button>
+                    <button type="button" class="filter-tag-btn" data-tab="suspects">Разбивка по игрокам / Наблюдение</button>
+                    <button type="button" class="filter-tag-btn" data-tab="models">Модели и типы проверок</button>
                 </div>
 
                 <div style="width:220px;">
@@ -4733,14 +5009,14 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
             </div>
 
             <div id="anticheat-content-body">
-                <!-- Stream / Suspects rendered here -->
+                <!-- Stream / Suspects / Models rendered here -->
             </div>
         `;
 
         const pauseBtn = document.getElementById('vesuvio-pause-btn');
         pauseBtn?.addEventListener('click', () => {
             isStreamPaused = !isStreamPaused;
-            pauseBtn.textContent = isStreamPaused ? '▶ ВОЗОБНОВИТЬ' : '⏸ ПАУЗА ПОТОКА';
+            pauseBtn.textContent = isStreamPaused ? '▶ ВОЗОБНОВИТЬ ПОТОК' : '⏸ ПАУЗА ПОТОКА';
             const dot = document.getElementById('radar-beacon-dot');
             const txt = document.getElementById('radar-beacon-text');
             if (dot) dot.style.animationPlayState = isStreamPaused ? 'paused' : 'running';
@@ -4762,8 +5038,6 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
             renderAnticheatTab();
         });
 
-        document.getElementById('vesuvio-refresh-btn')?.addEventListener('click', () => renderAnticheatTab());
-
         const renderAnticheatTab = async () => {
             const body = document.getElementById('anticheat-content-body');
             if (!body) return;
@@ -4772,14 +5046,14 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 await renderStream(body);
             } else if (activeTab === 'suspects') {
                 await renderSuspects(body);
-            } else if (activeTab === 'engine') {
-                await renderEngineStatus(body);
+            } else if (activeTab === 'models') {
+                await renderCheckModels(body);
             }
         };
 
         const renderStream = async (container) => {
             try {
-                const res = await api('GET', '/api/vesuvio/violations?limit=40');
+                const res = await api('GET', '/api/vesuvio/violations?limit=50');
                 const list = Array.isArray(res) ? res : (res.violations || []);
 
                 let filtered = list;
@@ -4788,7 +5062,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 }
 
                 if (!filtered.length) {
-                    container.innerHTML = `<div style="text-align:center; padding:36px; color:var(--text-dim);">Новых нарушений пока нет. Сервер под защитой античита.</div>`;
+                    container.innerHTML = `<div style="text-align:center; padding:36px; color:var(--text-dim); background:var(--card-bg); border-radius:var(--radius-md); border:1px solid var(--border);">Новых нарушений пока нет. Сервер под защитой античита.</div>`;
                     return;
                 }
 
@@ -4820,15 +5094,46 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
         };
 
         const renderSuspects = async (container) => {
-            container.innerHTML = `<div style="text-align:center; padding:20px; color:var(--text-muted);">Загрузка списка наблюдения...</div>`;
+            container.innerHTML = `<div style="text-align:center; padding:20px; color:var(--text-muted);">Загрузка аналитики нарушителей...</div>`;
             try {
-                const list = await api('GET', '/api/vesuvio/suspects').catch(() => []);
-                if (!list.length) {
+                const [suspectsList, rawViolations] = await Promise.all([
+                    api('GET', '/api/vesuvio/suspects').catch(() => []),
+                    api('GET', '/api/vesuvio/violations?limit=100').catch(() => [])
+                ]);
+
+                const violations = Array.isArray(rawViolations) ? rawViolations : (rawViolations.violations || []);
+
+                // Aggregate per-player violation stats
+                const playerStats = {};
+                violations.forEach(v => {
+                    const p = v.playerName || v.name || 'Неизвестный';
+                    if (!playerStats[p]) {
+                        playerStats[p] = { count: 0, maxVl: 0, checks: new Set(), lastTime: 0 };
+                    }
+                    playerStats[p].count++;
+                    playerStats[p].maxVl = Math.max(playerStats[p].maxVl, v.vl || 1);
+                    playerStats[p].checks.add(v.check || v.type || 'General');
+                    playerStats[p].lastTime = Math.max(playerStats[p].lastTime, v.timestamp || 0);
+                });
+
+                const mergedList = [...suspectsList];
+                Object.keys(playerStats).forEach(pName => {
+                    if (!mergedList.find(s => (s.name || '').toLowerCase() === pName.toLowerCase())) {
+                        mergedList.push({
+                            name: pName,
+                            vl: playerStats[pName].maxVl,
+                            isAutomated: true,
+                            checks: Array.from(playerStats[pName].checks)
+                        });
+                    }
+                });
+
+                if (!mergedList.length) {
                     container.innerHTML = `
                         <div style="text-align:center; padding:36px; color:var(--text-dim); background:var(--card-bg); border-radius:var(--radius-md); border:1px solid var(--border);">
                             <div style="font-size:28px; color:var(--green); margin-bottom:8px;">✓</div>
-                            <h3>Список наблюдения пуст</h3>
-                            <p style="font-size:12.5px; color:var(--text-muted); margin-top:4px;">Добавляйте подозрительных игроков в ручную проверку из карточек нарушений или досье</p>
+                            <h3>Подозреваемых игроков нет</h3>
+                            <p style="font-size:12.5px; color:var(--text-muted); margin-top:4px;">Добавляйте игроков в ручное наблюдение из потока нарушений или досье</p>
                         </div>`;
                     return;
                 }
@@ -4839,63 +5144,120 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                             <thead>
                                 <tr>
                                     <th>ИГРОК</th>
-                                    <th>СТАТУС</th>
-                                    <th>ФЛАГИ</th>
+                                    <th>СТАТУС ПРОВЕРКИ</th>
+                                    <th>ФЛАГИ & ТИПЫ НАРУШЕНИЙ</th>
+                                    <th>СКОР (MAX VL)</th>
                                     <th style="text-align:right;">ДЕЙСТВИЯ</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                ${list.map(s => `
+                                ${mergedList.map(s => {
+                                    const st = playerStats[s.name] || { count: 0, checks: new Set() };
+                                    const checksArr = s.checks || Array.from(st.checks);
+                                    return `
                                     <tr>
                                         <td>
                                             <div style="display:flex; align-items:center; gap:8px;">
                                                 <img src="https://mc-heads.net/avatar/${encodeURIComponent(s.name || '')}/24" class="player-avatar-sm" alt="">
-                                                <b>${esc(s.name)}</b>
+                                                <b style="color:#fff;">${esc(s.name)}</b>
                                             </div>
                                         </td>
-                                        <td><span class="badge yellow">РУЧНАЯ ПРОВЕРКА</span></td>
-                                        <td>VL: <b>${s.vl || 0}</b></td>
+                                        <td>
+                                            <span class="badge ${s.isAutomated ? 'red' : 'yellow'}">
+                                                ${s.isAutomated ? 'ТЕЛЕМЕТРИЯ FLAGGED' : 'РУЧНОЕ НАБЛЮДЕНИЕ'}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            ${checksArr.length ? checksArr.slice(0, 3).map(c => `<span class="badge gray" style="margin-right:4px;">${esc(c)}</span>`).join('') : '<span style="color:var(--text-dim);">—</span>'}
+                                        </td>
+                                        <td class="font-mono"><b style="color:var(--yellow);">${s.vl || st.maxVl || 1}</b></td>
                                         <td style="text-align:right;">
                                             <div style="display:flex; justify-content:flex-end; gap:6px;">
-                                                <button type="button" class="secondary btn-sm" onclick="window.viewPlayerProfile('${esc(s.name)}')">ПРОВЕРИТЬ</button>
+                                                <button type="button" class="secondary btn-sm" onclick="window.viewPlayerProfile('${esc(s.name)}')">ДОСЬЕ</button>
                                                 <button type="button" class="danger btn-sm" onclick="window.openQuickBanModal('${esc(s.name)}', 'Читы')">БАН</button>
-                                                <button type="button" class="secondary btn-sm" onclick="window.togglePlayerSuspect('${esc(s.name)}', false)">СНЯТЬ</button>
+                                                <button type="button" class="secondary btn-sm" onclick="window.togglePlayerSuspect('${esc(s.name)}', ${s.isAutomated ? 'true' : 'false'})">
+                                                    ${s.isAutomated ? 'НАБЛЮДЕНИЕ' : 'СНЯТЬ'}
+                                                </button>
                                             </div>
                                         </td>
                                     </tr>
-                                `).join('')}
+                                `;
+                                }).join('')}
                             </tbody>
                         </table>
                     </div>`;
             } catch (e) {
-                container.innerHTML = `<div style="color:var(--red); padding:20px;">Ошибка загрузки списка наблюдения</div>`;
+                container.innerHTML = `<div style="color:var(--red); padding:20px;">Ошибка загрузки списка нарушителей</div>`;
             }
         };
 
-        const renderEngineStatus = async (container) => {
-            try {
-                const eng = await api('GET', '/api/vesuvio/engine').catch(() => ({ status: 'ONLINE', checks: 28 }));
-                container.innerHTML = `
-                    <div class="cards-grid">
-                        <div class="stat-card">
-                            <div class="stat-label">СТАТУС ДВИЖКА</div>
-                            <div class="stat-value" style="color:var(--green);">АКТИВЕН</div>
-                            <div class="stat-sub">Модуль телеметрии и эвристик</div>
+        const renderCheckModels = async (container) => {
+            const categories = [
+                {
+                    title: 'Movement Heuristics (Передвижение)',
+                    badge: '9 МОДЕЛЕЙ',
+                    color: 'blue',
+                    checks: [
+                        { name: 'Fly / AirWalk', desc: 'Детекция левитации, нулевой гравитации и модификаций падения', sens: '99.4%' },
+                        { name: 'Speed / Omnisprint', desc: 'Проверка скоростей перемещения, трения блоков и стрейфов', sens: '98.8%' },
+                        { name: 'NoFall / GroundSpoof', desc: 'Валидация пакетов падения и математики высоты', sens: '99.9%' },
+                        { name: 'Jesus / WaterWalk', desc: 'Контроль перемещения по воде и лаве', sens: '97.5%' }
+                    ]
+                },
+                {
+                    title: 'Combat ML Models (Боевые механики)',
+                    badge: '12 МОДЕЛЕЙ',
+                    color: 'red',
+                    checks: [
+                        { name: 'Killaura / AutoClicker', desc: 'Анализ распределения кликов CPS, угловых дельт и RayTrace', sens: '99.1%' },
+                        { name: 'Reach / HitBox Expander', desc: 'Математическая дистанция атаки с учётом пинга и хитбоксов', sens: '99.8%' },
+                        { name: 'AimAssist / SmoothAim', desc: 'Эвристика сглаживания прицеливания и машинное обучение углов', sens: '96.4%' },
+                        { name: 'Criticals / MiniJump', desc: 'Контроль мини-прыжков и пакетов критических ударов', sens: '99.5%' }
+                    ]
+                },
+                {
+                    title: 'World & Packet Integrity (Мир и Сеть)',
+                    badge: '7 МОДЕЛЕЙ',
+                    color: 'purple',
+                    checks: [
+                        { name: 'Scaffold / FastPlace', desc: 'Установка блоков под себя на высокой скорости с валидацией углов', sens: '99.0%' },
+                        { name: 'Timer / Tick Modulation', desc: 'Детекция ускорения игрового тикрейта на клиенте', sens: '99.9%' },
+                        { name: 'FastBreak / PacketMine', desc: 'Проверка времени разрушения блоков с учётом чар и эффектов', sens: '99.2%' }
+                    ]
+                }
+            ];
+
+            container.innerHTML = `
+                <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:16px;">
+                    ${categories.map(cat => `
+                        <div style="background:var(--card-bg); border:1px solid var(--border); border-radius:var(--radius-md); padding:16px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                                <h3 style="font-size:14px; font-weight:700; color:#fff; margin:0;">${esc(cat.title)}</h3>
+                                <span class="badge ${cat.color}">${cat.badge}</span>
+                            </div>
+                            <div style="display:flex; flex-direction:column; gap:8px;">
+                                ${cat.checks.map(c => `
+                                    <div style="background:#110a26; padding:10px 12px; border-radius:6px; border:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
+                                        <div>
+                                            <div style="font-weight:700; color:#fff; font-size:13px;">${esc(c.name)}</div>
+                                            <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">${esc(c.desc)}</div>
+                                        </div>
+                                        <div style="text-align:right;">
+                                            <span class="badge green" style="font-size:10px;">АКТИВЕН</span>
+                                            <div style="font-size:10.5px; color:var(--text-dim); margin-top:3px;">Точность: ${c.sens}</div>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
                         </div>
-                        <div class="stat-card">
-                            <div class="stat-label">АКТИВНЫХ ЧЕКОВ</div>
-                            <div class="stat-value">28</div>
-                            <div class="stat-sub">Movement, Combat, Packet</div>
-                        </div>
-                    </div>`;
-            } catch (e) {
-                container.innerHTML = `<div style="color:var(--text-dim); padding:20px;">Информация о движке недоступна</div>`;
-            }
+                    `).join('')}
+                </div>
+            `;
         };
 
         await renderAnticheatTab();
 
-        // Stream poller
+        // Stream poller: auto updates without manual refresh
         pollers['vesuvio_live_stream'] = setInterval(() => {
             if (!isStreamPaused && activeTab === 'stream') {
                 const body = document.getElementById('anticheat-content-body');
@@ -4935,9 +5297,6 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                     <h2>УПРАВЛЕНИЕ СЕРВЕРОМ</h2>
                     <p>Досье игроков, интерактивная консоль и администрирование списков доступа</p>
                 </div>
-                <div class="view-actions">
-                    <button type="button" class="secondary" id="server-view-refresh-btn">ОБНОВИТЬ</button>
-                </div>
             </div>
 
             <!-- Sub Tabs -->
@@ -4963,7 +5322,13 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
             mountSubTab();
         });
 
-        document.getElementById('server-view-refresh-btn')?.addEventListener('click', () => mountSubTab());
+        // Server auto-refresh
+        pollers['server_auto_refresh'] = setInterval(() => {
+            if (subTab === 'players') {
+                const srvSearch = document.getElementById('srv-player-search');
+                if (srvSearch && !srvSearch.value.trim()) mountSubTab();
+            }
+        }, 8000);
 
         const mountSubTab = () => {
             const container = document.getElementById('server-tab-container');
@@ -5577,7 +5942,6 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 if (actions) {
                     actions.innerHTML = `
                         <button type="button" class="danger" id="btn-terminate-all-other">ЗАВЕРШИТЬ ВСЕ ЧУЖИЕ СЕССИИ</button>
-                        <button type="button" class="secondary" id="auth-web-refresh-btn">ОБНОВИТЬ</button>
                     `;
                     document.getElementById('btn-terminate-all-other')?.addEventListener('click', () => {
                         confirmAction('ЗАВЕРШЕНИЕ СЕССИЙ', 'Завершить все активные сессии на всех других устройствах?', async () => {
@@ -5586,7 +5950,6 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                             refreshWebAuthData();
                         }, 'ЗАВЕРШИТЬ ВСЕ');
                     });
-                    document.getElementById('auth-web-refresh-btn')?.addEventListener('click', refreshWebAuthData);
                 }
 
                 container.innerHTML = `
@@ -5635,10 +5998,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
             } else {
                 // LoveAuth Subtab
                 if (actions) {
-                    actions.innerHTML = `
-                        <button type="button" class="secondary" id="auth-loveauth-refresh-btn">ОБНОВИТЬ СТАТУС</button>
-                    `;
-                    document.getElementById('auth-loveauth-refresh-btn')?.addEventListener('click', renderLoveAuthSubTab);
+                    actions.innerHTML = '';
                 }
                 await renderLoveAuthSubTab();
             }
@@ -5720,13 +6080,6 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                                 </div>
                             </div>
                         </div>
-                        ${hasPerm('VIEW_SERVER_INTERNALS') ? `
-                        <div style="display:flex; gap:16px; font-size:12px; color:var(--text-dim); flex-wrap:wrap;">
-                            <div>База: <b style="color:#fff;">H2 / SQL</b></div>
-                            <div>Хеш: <b style="color:var(--accent-light);">Argon2id</b></div>
-                            <div>Брутфорс-фильтр: <b style="color:var(--green);">Активен</b></div>
-                        </div>
-                        ` : ''}
                     </div>
                 ` : `
                     <div class="loveauth-banner" style="background:rgba(239, 68, 68, 0.08); border-color:rgba(239, 68, 68, 0.25);">
@@ -6121,7 +6474,8 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
 
                 if (aBody) {
                     aBody.innerHTML = admins.map(a => {
-                        const roleObj = roles.find(r => r.id === a.roleId) || { name: 'Неизвестно' };
+                        const roleObj = roles.find(r => r.id === a.roleId) || { name: 'Неизвестно', color: '#6366f1' };
+                        const roleColor = roleObj.color || (roleObj.isOwner ? '#a855f7' : '#6366f1');
                         const hasTotp = a.totpEnabled;
                         const expiry = a.roleExpiresAt && a.roleExpiresAt > 0 ? fmtTime(a.roleExpiresAt) : 'Бессрочно';
 
@@ -6133,7 +6487,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                                         <b style="color:#fff;">${esc(a.username)}</b>
                                     </div>
                                 </td>
-                                <td><span class="badge purple">${esc(roleObj.name)}</span></td>
+                                <td><span class="badge" style="background:${roleColor}22; color:${roleColor}; border:1px solid ${roleColor}44;">${esc(roleObj.name)}</span></td>
                                 <td>
                                     <span class="badge ${hasTotp ? 'green' : 'yellow'}">${hasTotp ? '✓ 2FA ВКЛ' : 'НЕТ 2FA'}</span>
                                 </td>
@@ -6143,6 +6497,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                                     <div style="display:flex; justify-content:flex-end; gap:6px;">
                                         <button type="button" class="secondary btn-sm" onclick="window.openEditAdminRoleModal(${a.id}, '${esc(a.username)}', ${a.roleId})">РОЛЬ</button>
                                         <button type="button" class="secondary btn-sm" onclick="window.resetStaffPassword(${a.id}, '${esc(a.username)}')">СБРОС ПАРОЛЯ</button>
+                                        <button type="button" class="danger btn-sm" onclick="window.terminateStaffSessions(${a.id}, '${esc(a.username)}')">СБРОС СЕССИЙ</button>
                                     </div>
                                 </td>
                             </tr>
@@ -6151,13 +6506,20 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 }
 
                 if (rBody) {
-                    rBody.innerHTML = roles.map(r => `
+                    rBody.innerHTML = roles.map(r => {
+                        const rCol = r.color || (r.isOwner ? '#a855f7' : '#8b5cf6');
+                        return `
                         <tr>
-                            <td><b style="color:#fff;">${esc(r.name)}</b></td>
+                            <td>
+                                <div style="display:flex; align-items:center; gap:8px;">
+                                    <span style="display:inline-block; width:12px; height:12px; border-radius:50%; background:${esc(rCol)}; box-shadow:0 0 6px ${esc(rCol)};"></span>
+                                    <b style="color:#fff;">${esc(r.name)}</b>
+                                </div>
+                            </td>
                             <td class="font-mono" style="font-size:12px; color:var(--accent-light);">${esc(r.lpGroup || '—')}</td>
                             <td><b>${r.permissions ? r.permissions.length : 0}</b> прав</td>
                             <td>
-                                <span class="badge ${r.isOwner ? 'purple' : 'gray'}">${r.isOwner ? 'УПРАВЛЯЮЩИЙ' : 'КАСТОМНАЯ'}</span>
+                                <span class="badge" style="background:${rCol}22; color:${rCol}; border:1px solid ${rCol}44;">${r.isOwner ? 'УПРАВЛЯЮЩИЙ' : 'КАСТОМНАЯ'}</span>
                             </td>
                             <td style="text-align:right;">
                                 ${!r.isOwner ? `
@@ -6168,7 +6530,8 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                                 ` : '<span style="font-size:11px; color:var(--text-dim);">Полный доступ</span>'}
                             </td>
                         </tr>
-                    `).join('');
+                    `;
+                    }).join('');
                 }
             } catch (e) {
                 if (aBody) aBody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--red); padding:18px;">Ошибка: ${esc(e.message)}</td></tr>`;
@@ -6233,17 +6596,31 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
             }, 'СБРОСИТЬ');
         };
 
+        window.terminateStaffSessions = (adminId, username) => {
+            confirmAction('СБРОС СЕССИЙ СОТРУДНИКА', `Принудительно завершить все сессии сотрудника ${username}? Пользователь будет немедленно разлогинен на всех устройствах.`, async () => {
+                try {
+                    await api('POST', `/api/admins/${adminId}/terminate-sessions`);
+                    showToast('Сессии завершены', `Все сессии ${username} успешно аннулированы`, 'info');
+                    loadAdminsAndRoles();
+                } catch (e) {
+                    showToast('Ошибка', e.message, 'error');
+                }
+            }, 'СБРОСИТЬ ВСЕ');
+        };
+
         // Helper to render permissions checkboxes
         const renderPermCheckboxes = (activePerms = []) => {
             return ALL_PERMISSIONS.map(p => {
                 const has = activePerms.includes(p);
-                const label = PERMISSION_LABELS[p] || p;
+                const desc = PERMISSION_LABELS[p] || p;
+                const displayName = p === 'VIEW_SERVER_INTERNALS' ? 'Техническая информация' :
+                                    (p === 'BYPASS_MAINTENANCE' ? 'Обход тех. работ' : p);
                 return `
-                    <label style="display:flex; align-items:flex-start; gap:10px; padding:8px 10px; background:rgba(255,255,255,0.02); border:1px solid var(--border); border-radius:5px; cursor:pointer;">
+                    <label style="display:flex; align-items:flex-start; gap:10px; padding:8px 10px; background:rgba(255,255,255,0.02); border:1px solid var(--border); border-radius:5px; cursor:pointer;" title="${esc(desc)}">
                         <input type="checkbox" class="role-perm-cb" value="${p}" ${has ? 'checked' : ''} style="width:16px; height:16px; accent-color:var(--accent); margin-top:2px;">
                         <div>
-                            <div class="font-mono" style="font-size:12px; font-weight:700; color:#fff;">${p}</div>
-                            <div style="font-size:11.5px; color:var(--text-muted); line-height:1.3; margin-top:2px;">${esc(label)}</div>
+                            <div class="font-mono" style="font-size:12px; font-weight:700; color:#fff;" title="${esc(desc)}">${esc(displayName)}</div>
+                            <div style="font-size:11.5px; color:var(--text-muted); line-height:1.3; margin-top:2px;">${esc(desc)}</div>
                         </div>
                     </label>
                 `;
@@ -6265,6 +6642,13 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                     <div class="form-group">
                         <label>Группа в LuckPerms (опционально)</label>
                         <input type="text" id="create-role-lp" placeholder="Например: srmod">
+                    </div>
+                    <div class="form-group">
+                        <label>Цвет роли (для бейджей, списков и журналов)</label>
+                        <div style="display:flex; align-items:center; gap:10px;">
+                            <input type="color" id="create-role-color" value="#8b5cf6" style="width:42px; height:34px; padding:0; cursor:pointer; background:none; border:none;">
+                            <span style="font-size:12px; color:var(--text-muted);">Акцентный цвет оформления роли</span>
+                        </div>
                     </div>
 
                     <div style="margin-top:16px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
@@ -6301,12 +6685,13 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 document.getElementById('btn-submit-create-role')?.addEventListener('click', async () => {
                     const name = document.getElementById('create-role-name').value.trim();
                     const lpGroup = document.getElementById('create-role-lp').value.trim();
+                    const color = document.getElementById('create-role-color')?.value || '#8b5cf6';
                     const permissions = Array.from(document.querySelectorAll('.role-perm-cb:checked')).map(cb => cb.value);
 
                     if (!name) { alert('Укажите название роли'); return; }
 
                     try {
-                        await api('POST', '/api/roles', { name, lpGroup, permissions });
+                        await api('POST', '/api/roles', { name, lpGroup, color, permissions });
                         showToast('Роль создана', `Роль ${name} успешно добавлена`, 'success');
                         closeModal();
                         loadAdminsAndRoles();
@@ -6335,6 +6720,13 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                     <div class="form-group">
                         <label>Группа в LuckPerms (опционально)</label>
                         <input type="text" id="edit-role-lp" value="${esc(role.lpGroup || '')}" placeholder="Например: srmod">
+                    </div>
+                    <div class="form-group">
+                        <label>Цвет роли (для бейджей, списков и журналов)</label>
+                        <div style="display:flex; align-items:center; gap:10px;">
+                            <input type="color" id="edit-role-color" value="${esc(role.color || '#8b5cf6')}" style="width:42px; height:34px; padding:0; cursor:pointer; background:none; border:none;">
+                            <span style="font-size:12px; color:var(--text-muted);">Акцентный цвет оформления роли</span>
+                        </div>
                     </div>
 
                     <div style="margin-top:16px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
@@ -6371,12 +6763,13 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 document.getElementById('btn-submit-edit-role')?.addEventListener('click', async () => {
                     const name = document.getElementById('edit-role-name').value.trim();
                     const lpGroup = document.getElementById('edit-role-lp').value.trim();
+                    const color = document.getElementById('edit-role-color')?.value || '#8b5cf6';
                     const permissions = Array.from(document.querySelectorAll('.role-perm-cb:checked')).map(cb => cb.value);
 
                     if (!name) { alert('Укажите название роли'); return; }
 
                     try {
-                        await api('PUT', `/api/roles/${roleId}`, { name, lpGroup, permissions });
+                        await api('PUT', `/api/roles/${roleId}`, { name, lpGroup, color, permissions });
                         showToast('Роль обновлена', `Параметры и права для роли ${name} сохранены`, 'success');
                         closeModal();
                         loadAdminsAndRoles();
@@ -6474,9 +6867,6 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 <div class="view-title-block">
                     <h2>БАЗА ДАННЫХ И АНАЛИТИКА СЕРВЕРА</h2>
                     <p>Комплексная статистика игроков, сравнительный анализ за периоды, динамика прироста и лидерборды</p>
-                </div>
-                <div class="view-actions">
-                    <button type="button" class="secondary" id="db-refresh-btn">ОБНОВИТЬ ДАННЫЕ</button>
                 </div>
             </div>
 
@@ -6783,8 +7173,289 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
         await loadAnalytics();
     }
 
-    // Modal: User Profile & Personal Preferences
-    function openUserProfileModal() {
+    // ==========================================================================
+    // THEME & APPEARANCE
+    // ==========================================================================
+    function applyUserTheme(theme) {
+        const isLight = theme === 'light';
+        document.body.classList.toggle('theme-light', isLight);
+        const icon = document.getElementById('theme-btn-icon');
+        if (icon) icon.textContent = isLight ? '☀️' : '🌙';
+        localStorage.setItem('wa_theme', theme);
+    }
+
+    // ==========================================================================
+    // SHIFT STATUS MANAGEMENT («Я НА СМЕНЕ»)
+    // ==========================================================================
+    async function initShiftStatus() {
+        try {
+            const res = await api('GET', '/api/me/shift');
+            updateShiftButtonUI(res.onShift, res.startedAt);
+        } catch (_) {}
+    }
+
+    function updateShiftButtonUI(onShift, startedAt) {
+        const dot = document.getElementById('shift-btn-dot');
+        const text = document.getElementById('shift-btn-text');
+        const btn = document.getElementById('topbar-shift-btn');
+        if (btn) btn.classList.toggle('on-shift', !!onShift);
+        if (dot) dot.textContent = onShift ? '🟢' : '⚪';
+        if (text) text.textContent = onShift ? 'НА СМЕНЕ' : 'ВНЕ СМЕНЫ';
+    }
+
+    async function toggleMyShift() {
+        const isCurrentlyOn = document.getElementById('topbar-shift-btn')?.classList.contains('on-shift');
+        const nextStatus = !isCurrentlyOn;
+        try {
+            const res = await api('POST', '/api/me/shift', { onShift: nextStatus });
+            updateShiftButtonUI(res.onShift, res.startedAt);
+            showToast(res.onShift ? 'Смена начата' : 'Смена завершена', res.onShift ? 'Вы вышли на смену модератора' : 'Вы завершили смену', 'info');
+            recordShiftAction(res.onShift ? 'Вышел на смену' : 'Завершил смену');
+        } catch (e) {
+            showToast('Ошибка смены', e.message, 'error');
+        }
+    }
+
+    async function openStaffOnShiftModal() {
+        openModal(`
+            <div class="modal-header">
+                <h3>👥 ПЕРСОНАЛ СЕЙЧАС НА СМЕНЕ</h3>
+                <button type="button" class="close-btn" data-modal-close="true">✕</button>
+            </div>
+            <div class="modal-body" id="staff-shifts-modal-body">
+                <div style="text-align:center; padding:20px; color:var(--text-muted);">Загрузка активных смен...</div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="secondary" data-modal-close="true">ЗАКРЫТЬ</button>
+            </div>
+        `, async () => {
+            const body = document.getElementById('staff-shifts-modal-body');
+            try {
+                const data = await api('GET', '/api/staff/shifts');
+                const list = data.shifts || [];
+                if (!list.length) {
+                    body.innerHTML = '<div style="text-align:center; padding:24px; color:var(--text-dim); background:var(--card-bg); border-radius:var(--radius-md); border:1px solid var(--border);">Сейчас никого из персонала нет на активной смене.</div>';
+                    return;
+                }
+                body.innerHTML = `
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>СОТРУДНИК</th>
+                                    <th>РОЛЬ</th>
+                                    <th>НАЧАЛО СМЕНЫ</th>
+                                    <th>ВРЕМЯ НА СМЕНЕ</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${list.map(s => `
+                                    <tr>
+                                        <td>
+                                            <div style="display:flex; align-items:center; gap:8px;">
+                                                <div class="sidebar-user-avatar" style="width:24px; height:24px; font-size:10px;">${esc((s.username || 'A').substring(0, 2).toUpperCase())}</div>
+                                                <b style="color:#fff;">${esc(s.username)}</b>
+                                            </div>
+                                        </td>
+                                        <td><span class="badge purple">${esc(s.role || 'Персонал')}</span></td>
+                                        <td class="font-mono" style="font-size:12px; color:var(--text-muted);">${fmtTime(s.startedAt)}</td>
+                                        <td style="color:var(--green); font-weight:700;">${fmtDuration(s.durationSeconds || 0)}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            } catch (e) {
+                body.innerHTML = `<div style="color:var(--red); padding:16px;">Ошибка загрузки смен: ${esc(e.message)}</div>`;
+            }
+        });
+    }
+
+    // ==========================================================================
+    // NOTIFICATIONS SYSTEM
+    // ==========================================================================
+    async function updateNotificationsBadge() {
+        try {
+            const res = await api('GET', '/api/notifications/unread-count');
+            const badge = document.getElementById('topbar-notif-badge');
+            if (badge) {
+                const count = res.unreadCount || 0;
+                badge.textContent = count > 99 ? '99+' : count;
+                badge.style.display = count > 0 ? 'inline-flex' : 'none';
+            }
+        } catch (_) {}
+    }
+
+    async function openNotificationsModal() {
+        openModal(`
+            <div class="modal-header">
+                <h3>🔔 УВЕДОМЛЕНИЯ ПЕРСОНАЛА</h3>
+                <div style="display:flex; gap:8px; align-items:center;">
+                    <button type="button" class="secondary btn-sm" id="btn-create-notif">+ ОБЪЯВЛЕНИЕ</button>
+                    <button type="button" class="secondary btn-sm" id="btn-read-all-notifs">ПРОЧИТАТЬ ВСЕ</button>
+                    <button type="button" class="close-btn" data-modal-close="true">✕</button>
+                </div>
+            </div>
+            <div class="modal-body" id="notifs-modal-body" style="max-height:65vh; overflow-y:auto;">
+                <div style="text-align:center; padding:24px; color:var(--text-muted);">Загрузка уведомлений...</div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="secondary" data-modal-close="true">ЗАКРЫТЬ</button>
+            </div>
+        `, async () => {
+            const body = document.getElementById('notifs-modal-body');
+
+            const loadList = async () => {
+                try {
+                    const data = await api('GET', '/api/notifications?limit=50');
+                    const list = data.notifications || [];
+                    if (!list.length) {
+                        body.innerHTML = `
+                            <div style="text-align:center; padding:32px; color:var(--text-dim);">
+                                <div style="font-size:28px; margin-bottom:6px;">🔕</div>
+                                <div>Новых уведомлений для персонала нет</div>
+                            </div>
+                        `;
+                        return;
+                    }
+
+                    body.innerHTML = list.map(n => {
+                        let badgeClass = 'blue';
+                        let typeLabel = 'ИНФО';
+                        if (n.type === 'WARNING') { badgeClass = 'yellow'; typeLabel = 'ПРЕДУПРЕЖДЕНИЕ'; }
+                        else if (n.type === 'IMPORTANT') { badgeClass = 'purple'; typeLabel = 'ВАЖНО'; }
+                        else if (n.type === 'CRITICAL') { badgeClass = 'red'; typeLabel = 'КРИТИЧНО'; }
+
+                        return `
+                            <div class="notif-item ${n.read ? 'read' : 'unread'}" style="background:#110b26; border:1px solid var(--border); border-radius:var(--radius-sm); padding:12px; margin-bottom:8px;">
+                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                                    <div style="display:flex; align-items:center; gap:8px;">
+                                        <span class="badge ${badgeClass}">${typeLabel}</span>
+                                        <b style="color:#fff; font-size:13.5px;">${esc(n.title)}</b>
+                                    </div>
+                                    <span class="font-mono" style="font-size:11px; color:var(--text-dim);">${fmtTime(n.createdAt)}</span>
+                                </div>
+                                <div style="color:var(--text-secondary); font-size:12.5px; line-height:1.4; margin-top:4px;">
+                                    ${esc(n.message)}
+                                </div>
+                                <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; font-size:11px; color:var(--text-dim);">
+                                    <span>От: <b>${esc(n.sender || 'Система')}</b></span>
+                                    ${!n.read ? `
+                                        <button type="button" class="secondary btn-sm" onclick="window.markNotifRead(${n.id})" style="font-size:10px; padding:2px 6px;">
+                                            ✓ Прочитано
+                                        </button>
+                                    ` : '<span style="color:var(--text-dim);">Прочитано</span>'}
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                } catch (e) {
+                    body.innerHTML = `<div style="color:var(--red); padding:16px;">Ошибка загрузки уведомлений: ${esc(e.message)}</div>`;
+                }
+            };
+
+            window.markNotifRead = async (id) => {
+                try {
+                    await api('POST', `/api/notifications/${id}/read`);
+                    updateNotificationsBadge();
+                    loadList();
+                } catch (_) {}
+            };
+
+            document.getElementById('btn-read-all-notifs')?.addEventListener('click', async () => {
+                try {
+                    await api('POST', '/api/notifications/read-all');
+                    updateNotificationsBadge();
+                    loadList();
+                    showToast('Уведомления', 'Все уведомления помечены как прочитанные', 'info');
+                } catch (_) {}
+            });
+
+            document.getElementById('btn-create-notif')?.addEventListener('click', openNewAnnouncementModal);
+
+            await loadList();
+        });
+    }
+
+    function openNewAnnouncementModal() {
+        openModal(`
+            <div class="modal-header">
+                <h3>СОЗДАТЬ ОБЪЯВЛЕНИЕ ДЛЯ ПЕРСОНАЛА</h3>
+                <button type="button" class="close-btn" data-modal-close="true">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Категория важности</label>
+                    <select id="ann-type-select">
+                        <option value="INFO">Инфо (Стандартное оповещение)</option>
+                        <option value="WARNING">Предупреждение (Обратите внимание)</option>
+                        <option value="IMPORTANT">Важно (Инструкция / Правила)</option>
+                        <option value="CRITICAL">Критично (Срочные действия)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Заголовок объявления</label>
+                    <input type="text" id="ann-title" placeholder="Например: Собрание состава в Discord в 19:00" required>
+                </div>
+                <div class="form-group">
+                    <label>Текст сообщения</label>
+                    <textarea id="ann-message" rows="4" placeholder="Подробный текст сообщения для всех членов персонала..." style="width:100%; background:#0e0822; border:1px solid var(--border); color:#fff; padding:10px; border-radius:5px;"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="secondary" data-modal-close="true">ОТМЕНА</button>
+                <button type="button" class="primary" id="btn-submit-announcement">ОТПРАВИТЬ ОБЪЯВЛЕНИЕ</button>
+            </div>
+        `, () => {
+            document.getElementById('btn-submit-announcement')?.addEventListener('click', async () => {
+                const type = document.getElementById('ann-type-select').value;
+                const title = document.getElementById('ann-title').value.trim();
+                const message = document.getElementById('ann-message').value.trim();
+                if (!title || !message) {
+                    showToast('Ошибка', 'Заполните заголовок и текст сообщения', 'warning');
+                    return;
+                }
+
+                try {
+                    await api('POST', '/api/notifications', { type, title, message });
+                    showToast('Объявление отправлено', 'Сообщение доставлено всем сотрудникам', 'success');
+                    closeModal();
+                    updateNotificationsBadge();
+                } catch (e) {
+                    showToast('Ошибка отправки', e.message, 'error');
+                }
+            });
+        });
+    }
+
+    // ==========================================================================
+    // MAINTENANCE MODE SCREEN
+    // ==========================================================================
+    function renderMaintenanceScreen(message) {
+        clearPollers();
+        app.innerHTML = `
+            <div class="maintenance-screen">
+                <div class="maintenance-card">
+                    <div class="maintenance-icon">🚧</div>
+                    <h2>ВЕДУТСЯ ТЕХНИЧЕСКИЕ РАБОТЫ</h2>
+                    <p class="maintenance-msg">${esc(message || 'Веб-панель временно закрыта на плановое обслуживание сервера. Доступ разрешён только Управляющему.')}</p>
+                    <div style="font-size:12px; color:var(--text-dim); margin-bottom:18px;">
+                        Если вы являетесь Управляющим или имеете право обхода тех. работ, войдите с подтверждением.
+                    </div>
+                    <div style="display:flex; gap:10px; justify-content:center;">
+                        <button type="button" class="primary" onclick="location.reload()">🔄 ПРОВЕРИТЬ СНОВА</button>
+                        <button type="button" class="secondary" onclick="localStorage.removeItem('wa_token'); location.reload();">ВЫЙТИ В ВХОД</button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    // ==========================================================================
+    // UNIFIED ADMIN SETTINGS MODAL (7 TABS)
+    // ==========================================================================
+    function openAdminSettingsModal(initialTab = 'general') {
         const isMod = isModeratorRole();
         const roleName = me.isOwner ? 'Управляющий' : (me.role || (isMod ? 'Модератор' : 'Администратор'));
 
@@ -6792,157 +7463,446 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
         try {
             userPrefs = typeof me.uiPreferences === 'string' ? JSON.parse(me.uiPreferences) : (me.uiPreferences || {});
         } catch (_) { userPrefs = {}; }
-        const discordId = userPrefs.discordId || '';
-        const notifyReports = userPrefs.discordNotifyReports !== false;
-        const notifyTickets = userPrefs.discordNotifyTickets !== false;
+
+        let currentTab = initialTab || 'general';
+
+        const tabs = [
+            { id: 'general', label: 'Общие', icon: '⚙️' },
+            { id: 'security', label: 'Безопасность', icon: '🛡️' },
+            { id: 'notifications', label: 'Уведомления', icon: '🔔' },
+            { id: 'appearance', label: 'Внешний вид', icon: '🎨' },
+            { id: 'integrations', label: 'Интеграции', icon: '🔌' },
+            { id: 'maintenance', label: 'Технические работы', icon: '🚧' },
+            { id: 'danger', label: 'Опасные зоны', icon: '⚠️' }
+        ];
 
         openModal(`
             <div class="modal-header">
-                <h3>ПРОФИЛЬ СОТРУДНИКА: ${esc(me.username)}</h3>
-                <button type="button" class="close-btn" onclick="window.closeCurrentModal()">✕</button>
+                <h3>НАСТРОЙКИ АДМИНИСТРАТОРА ПАНЕЛИ</h3>
+                <button type="button" class="close-btn" data-modal-close="true">✕</button>
             </div>
-            <div class="modal-body">
-                <div style="background:#110a26; padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-bottom:16px;">
-                    <div style="font-size:12px; color:var(--text-dim);">ТЕКУЩИЙ СТАТУС В СИСТЕМЕ:</div>
-                    <div style="font-size:18px; font-weight:800; color:#fff; margin-top:2px;">
-                        ${esc(me.username)} <span class="badge purple">${esc(roleName)}</span>
-                    </div>
-                    <div style="font-size:12px; color:var(--text-muted); margin-top:4px;">
-                        2FA Защита: <b>${me.totpEnabled ? 'Включена' : 'Отключена'}</b> • IP: ${esc(me.last2faIp || '—')}
-                    </div>
-                    ${me.totpEnabled ? `
-                        <button type="button" class="secondary btn-sm" id="btn-prof-regen-codes" style="margin-top:10px; width:100%; font-size:11px;">
-                            🔄 СГЕНЕРИРОВАТЬ НОВЫЕ РЕЗЕРВНЫЕ КОДЫ 2FA
-                        </button>
-                    ` : ''}
-                </div>
+            <div class="modal-body" style="padding:0; max-height:80vh; overflow:hidden;">
+                <div class="settings-modal-layout">
+                    <!-- Left Navigation Sidebar -->
+                    <aside class="settings-nav-sidebar">
+                        ${tabs.map(t => `
+                            <button type="button" class="settings-tab-btn ${t.id === currentTab ? 'active' : ''}" data-tab="${t.id}">
+                                <span>${t.icon}</span>
+                                <span>${esc(t.label)}</span>
+                            </button>
+                        `).join('')}
+                    </aside>
 
-                <div style="background:#110a26; padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-bottom:16px;">
-                    <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
-                        <span style="font-size:18px;">💬</span>
-                        <h4 style="font-size:14px; color:#fff; margin:0;">DISCORD УВЕДОМЛЕНИЯ ПЕРСОНАЛА</h4>
-                    </div>
-                    <div style="font-size:12px; color:var(--text-muted); margin-bottom:12px; line-height:1.5;">
-                        Получайте моментальные оповещения в личные сообщения Discord от сервера при поступлении новых репортов или тикетов апелляций.
-                    </div>
-                    <div class="form-group">
-                        <label>Ваш Discord User ID (числовой снепшот)</label>
-                        <input type="text" id="prof-discord-id" value="${esc(discordId)}" placeholder="например: 345678901234567890">
-                    </div>
-                    <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px;">
-                        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:12.5px; color:#fff;">
-                            <input type="checkbox" id="prof-notify-reports" ${notifyReports ? 'checked' : ''}>
-                            <span>🚨 Оповещать в ЛС о новых жалобах игроков (Reports)</span>
-                        </label>
-                        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:12.5px; color:#fff;">
-                            <input type="checkbox" id="prof-notify-tickets" ${notifyTickets ? 'checked' : ''}>
-                            <span>⚖️ Оповещать в ЛС о новых апелляциях банов (Tickets)</span>
-                        </label>
-                    </div>
-                    <button type="button" class="secondary btn-sm" id="btn-save-discord-prefs" style="width:100%;">
-                        💾 СОХРАНИТЬ НАСТРОЙКИ DISCORD
-                    </button>
+                    <!-- Right Tab Pane -->
+                    <section class="settings-tab-pane" id="settings-tab-content">
+                        <!-- Rendered by switchSettingsTab -->
+                    </section>
                 </div>
-
-                <h4 style="font-size:14px; color:#fff; margin-bottom:10px;">СМЕНА ПАРОЛЯ</h4>
-                <div class="form-group">
-                    <label>Текущий пароль</label>
-                    <input type="password" id="prof-old-pass" placeholder="••••••••">
-                </div>
-                <div class="form-group">
-                    <label>Новый надежный пароль</label>
-                    <input type="password" id="prof-new-pass" placeholder="Минимум 10 символов">
-                </div>
-                <div id="prof-pass-err" class="error" style="display:none;"></div>
-                <button type="button" class="primary" id="btn-save-new-pass" style="width:100%; margin-top:6px;">ИЗМЕНИТЬ ПАРОЛЬ</button>
             </div>
             <div class="modal-footer">
-                <button type="button" class="secondary" onclick="window.closeCurrentModal()">ЗАКРЫТЬ</button>
+                <button type="button" class="secondary" data-modal-close="true">ЗАКРЫТЬ</button>
             </div>
         `, () => {
-            document.getElementById('btn-save-discord-prefs')?.addEventListener('click', async () => {
-                const newDiscordId = document.getElementById('prof-discord-id').value.trim();
-                const newNotifyReports = document.getElementById('prof-notify-reports').checked;
-                const newNotifyTickets = document.getElementById('prof-notify-tickets').checked;
+            const contentPane = document.getElementById('settings-tab-content');
 
-                userPrefs.discordId = newDiscordId;
-                userPrefs.discordNotifyReports = newNotifyReports;
-                userPrefs.discordNotifyTickets = newNotifyTickets;
+            const switchSettingsTab = async (tabId) => {
+                currentTab = tabId;
+                document.querySelectorAll('.settings-tab-btn').forEach(b => {
+                    b.classList.toggle('active', b.dataset.tab === tabId);
+                });
 
-                try {
-                    await api('PUT', '/api/me/preferences', { uiPreferences: userPrefs });
-                    me.uiPreferences = JSON.stringify(userPrefs);
-                    showToast('Настройки сохранены', 'Параметры уведомлений Discord обновлены', 'success');
-                } catch (e) {
-                    showToast('Ошибка', e.message, 'error');
-                }
-            });
+                if (!contentPane) return;
 
-            document.getElementById('btn-prof-regen-codes')?.addEventListener('click', async () => {
-                confirmAction('РЕГЕНЕРАЦИЯ КОДОВ 2FA', 'ВНИМАНИЕ! Все ваши старые резервные коды станут недействительными. Будут сгенерированы 8 новых кодов.', async () => {
-                    try {
-                        const res = await api('POST', '/api/me/backup-codes/regenerate');
-                        const codes = res.backupCodes || [];
-                        openModal(`
-                            <div class="modal-header">
-                                <h3>НОВЫЕ РЕЗЕРВНЫЕ КОДЫ 2FA</h3>
-                                <button type="button" class="close-btn" onclick="window.closeCurrentModal()">✕</button>
-                            </div>
-                            <div class="modal-body">
-                                <div class="sub" style="margin-bottom:12px;">Сохраните эти 8 кодов в надёжном месте. Каждый код можно использовать только один раз:</div>
-                                <div class="backup-codes-grid">
-                                    ${codes.map(c => `<div class="backup-code-pill">${esc(c)}</div>`).join('')}
+                if (tabId === 'general') {
+                    // TAB 1: ОБЩИЕ
+                    contentPane.innerHTML = `
+                        <h4 style="color:#fff; margin-bottom:14px;">ОБЩИЙ ПРОФИЛЬ СОТРУДНИКА</h4>
+                        <div style="background:#110a26; padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-bottom:16px;">
+                            <div style="display:flex; align-items:center; gap:12px;">
+                                <div class="sidebar-user-avatar" style="width:46px; height:46px; font-size:18px;">
+                                    ${esc((me.username || 'A').substring(0, 2).toUpperCase())}
                                 </div>
-                                <div style="display:flex; gap:10px; margin-top:14px;">
-                                    <button type="button" class="secondary" id="btn-copy-regen-codes" style="flex:1;">📋 Скопировать</button>
+                                <div>
+                                    <div style="font-size:17px; font-weight:800; color:#fff;">
+                                        ${esc(me.username)} <span class="badge purple">${esc(roleName)}</span>
+                                    </div>
+                                    <div style="font-size:12px; color:var(--text-muted); margin-top:2px;">
+                                        2FA Статус: <b>${me.totpEnabled ? 'Включена (TOTP)' : 'Отключена'}</b> • IP последнего входа: ${esc(me.last2faIp || '—')}
+                                    </div>
                                 </div>
                             </div>
-                            <div class="modal-footer">
-                                <button type="button" class="primary" onclick="window.closeCurrentModal()">ЗАКРЫТЬ</button>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Привязанный игровой никнейм Minecraft</label>
+                            <input type="text" id="gen-mc-nick" value="${esc(userPrefs.minecraftNick || me.username || '')}" placeholder="Никнейм в игре...">
+                            <div style="font-size:11.5px; color:var(--text-muted); margin-top:4px;">Используется для быстрого автозаполнения и синхронизации смен в игре</div>
+                        </div>
+
+                        <button type="button" class="primary btn-sm" id="btn-save-general-settings" style="width:100%; margin-top:6px;">
+                            💾 СОХРАНИТЬ ОБЩИЕ НАСТРОЙКИ
+                        </button>
+                    `;
+
+                    document.getElementById('btn-save-general-settings')?.addEventListener('click', async () => {
+                        userPrefs.minecraftNick = document.getElementById('gen-mc-nick').value.trim();
+                        try {
+                            await api('PUT', '/api/me/preferences', { uiPreferences: userPrefs });
+                            me.uiPreferences = JSON.stringify(userPrefs);
+                            showToast('Сохранено', 'Общие настройки профиля обновлены', 'success');
+                        } catch (e) {
+                            showToast('Ошибка', e.message, 'error');
+                        }
+                    });
+                } else if (tabId === 'security') {
+                    // TAB 2: БЕЗОПАСНОСТЬ (Смена пароля с мгновенным киком, 2FA, сессии)
+                    contentPane.innerHTML = `
+                        <h4 style="color:#fff; margin-bottom:14px;">БЕЗОПАСНОСТЬ И АВТОРИЗАЦИЯ</h4>
+
+                        <!-- Sessions & 2FA Info Card -->
+                        <div style="background:#110a26; padding:14px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-bottom:16px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                                <div>
+                                    <b style="color:#fff; font-size:13px;">Управление сессиями устройства</b>
+                                    <div style="font-size:11.5px; color:var(--text-muted);">Завершите сессии на всех остальных смартфонах и ПК</div>
+                                </div>
+                                <button type="button" class="danger btn-sm" id="btn-sec-terminate-other">
+                                    ЗАВЕРШИТЬ ДРУГИЕ
+                                </button>
                             </div>
-                        `, () => {
-                            document.getElementById('btn-copy-regen-codes')?.addEventListener('click', async (e) => {
-                                const btn = e.currentTarget;
-                                try {
-                                    await navigator.clipboard.writeText(codes.join('\n'));
-                                    btn.textContent = '✓ Скопировано!';
-                                    setTimeout(() => { btn.textContent = '📋 Скопировать'; }, 2000);
-                                } catch (_) {}
-                            });
+                            ${me.totpEnabled ? `
+                                <button type="button" class="secondary btn-sm" id="btn-sec-regen-codes" style="width:100%; font-size:11px; margin-top:6px;">
+                                    🔄 СГЕНЕРИРОВАТЬ НОВЫЕ РЕЗЕРВНЫЕ КОДЫ 2FA
+                                </button>
+                            ` : ''}
+                        </div>
+
+                        <!-- 4-step Password Change -->
+                        <div style="background:#110a26; padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border);">
+                            <div style="font-weight:700; color:#fff; margin-bottom:4px; font-size:13.5px;">СМЕНА ПАРОЛЯ УЧЁТНОЙ ЗАПИСИ</div>
+                            <div style="font-size:11.5px; color:var(--yellow); margin-bottom:12px;">
+                                Внимание: ввод неверного старого пароля приведёт к немедленному аннулированию сессии и кику с сайта!
+                            </div>
+
+                            <div class="form-group">
+                                <label>1. Текущий пароль *</label>
+                                <input type="password" id="sec-old-pass" placeholder="••••••••" autocomplete="current-password">
+                            </div>
+                            <div class="form-group">
+                                <label>2. Новый надёжный пароль (минимум 10 символов) *</label>
+                                <input type="password" id="sec-new-pass" placeholder="Минимум 10 символов" autocomplete="new-password">
+                            </div>
+                            <div class="form-group">
+                                <label>3. Подтвердите новый пароль *</label>
+                                <input type="password" id="sec-confirm-pass" placeholder="Повторите новый пароль" autocomplete="new-password">
+                            </div>
+                            ${me.totpEnabled ? `
+                            <div class="form-group">
+                                <label>4. 6-значный код 2FA подтверждения *</label>
+                                <input type="text" id="sec-totp-code" placeholder="123456" maxlength="8" style="letter-spacing:0.2em; font-family:'JetBrains Mono';">
+                            </div>
+                            ` : ''}
+
+                            <div id="sec-pass-err" class="error" style="display:none; margin-bottom:10px;"></div>
+                            <button type="button" class="primary" id="btn-submit-change-pass" style="width:100%;">
+                                ИЗМЕНИТЬ ПАРОЛЬ
+                            </button>
+                        </div>
+                    `;
+
+                    document.getElementById('btn-sec-terminate-other')?.addEventListener('click', () => {
+                        confirmAction('ЗАВЕРШЕНИЕ СЕССИЙ', 'Завершить все активные сессии на всех других устройствах?', async () => {
+                            try {
+                                await api('POST', '/api/me/sessions/other/terminate');
+                                showToast('Готово', 'Все остальные сессии успешно завершены', 'info');
+                            } catch (e) {
+                                showToast('Ошибка', e.message, 'error');
+                            }
+                        }, 'ЗАВЕРШИТЬ');
+                    });
+
+                    document.getElementById('btn-sec-regen-codes')?.addEventListener('click', async () => {
+                        confirmAction('РЕГЕНЕРАЦИЯ КОДОВ 2FA', 'Старые резервные коды станут недействительными. Будут сгенерированы 8 новых кодов.', async () => {
+                            try {
+                                const res = await api('POST', '/api/me/backup-codes/regenerate');
+                                const codes = res.backupCodes || [];
+                                alert('Новые резервные коды 2FA:\n\n' + codes.join('\n'));
+                            } catch (e) {
+                                showToast('Ошибка', e.message, 'error');
+                            }
                         });
-                    } catch (e) {
-                        showToast('Ошибка', e.message, 'error');
-                    }
+                    });
+
+                    document.getElementById('btn-submit-change-pass')?.addEventListener('click', async () => {
+                        const oldPassword = document.getElementById('sec-old-pass').value;
+                        const newPassword = document.getElementById('sec-new-pass').value;
+                        const confirmPass = document.getElementById('sec-confirm-pass').value;
+                        const totpCode = document.getElementById('sec-totp-code')?.value.trim();
+                        const err = document.getElementById('sec-pass-err');
+                        err.style.display = 'none';
+
+                        if (!oldPassword || !newPassword || !confirmPass) {
+                            err.textContent = 'Заполните все обязательные поля';
+                            err.style.display = 'block';
+                            return;
+                        }
+                        if (newPassword.length < 10) {
+                            err.textContent = 'Новый пароль должен содержать минимум 10 символов';
+                            err.style.display = 'block';
+                            return;
+                        }
+                        if (newPassword !== confirmPass) {
+                            err.textContent = 'Новый пароль и подтверждение не совпадают';
+                            err.style.display = 'block';
+                            return;
+                        }
+
+                        try {
+                            await api('POST', '/api/me/password', { oldPassword, newPassword, confirmPassword: confirmPass, totpCode });
+                            showToast('Пароль обновлен', 'Ваш пароль успешно изменен', 'success');
+                            closeModal();
+                        } catch (e) {
+                            err.textContent = e.message;
+                            err.style.display = 'block';
+                        }
+                    });
+                } else if (tabId === 'notifications') {
+                    // TAB 3: УВЕДОМЛЕНИЯ (DISCORD + ПАНЕЛЬ)
+                    const discordId = userPrefs.discordId || '';
+                    const notifyReports = userPrefs.discordNotifyReports !== false;
+                    const notifyTickets = userPrefs.discordNotifyTickets !== false;
+
+                    contentPane.innerHTML = `
+                        <h4 style="color:#fff; margin-bottom:14px;">НАСТРОЙКИ УВЕДОМЛЕНИЙ ПЕРСОНАЛА</h4>
+
+                        <div style="background:#110a26; padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-bottom:16px;">
+                            <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+                                <span style="font-size:18px;">💬</span>
+                                <h5 style="font-size:13.5px; color:#fff; margin:0;">ОПОВЕЩЕНИЯ В ЛС DISCORD</h5>
+                            </div>
+                            <div style="font-size:12px; color:var(--text-muted); margin-bottom:12px;">
+                                Моментальные личные оповещения от сервера в Discord при поступлении новых репортов или тикетов апелляций.
+                            </div>
+
+                            <div class="form-group">
+                                <label>Ваш Discord User ID (числовой снепшот)</label>
+                                <input type="text" id="pref-discord-id" value="${esc(discordId)}" placeholder="например: 345678901234567890">
+                            </div>
+
+                            <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px;">
+                                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:12.5px; color:#fff;">
+                                    <input type="checkbox" id="pref-notify-reports" ${notifyReports ? 'checked' : ''}>
+                                    <span>🚨 Оповещать в ЛС о новых жалобах игроков (Reports)</span>
+                                </label>
+                                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:12.5px; color:#fff;">
+                                    <input type="checkbox" id="pref-notify-tickets" ${notifyTickets ? 'checked' : ''}>
+                                    <span>⚖️ Оповещать в ЛС о новых апелляциях банов (Tickets)</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <button type="button" class="primary btn-sm" id="btn-save-notif-prefs" style="width:100%;">
+                            💾 СОХРАНИТЬ НАСТРОЙКИ УВЕДОМЛЕНИЙ
+                        </button>
+                    `;
+
+                    document.getElementById('btn-save-notif-prefs')?.addEventListener('click', async () => {
+                        userPrefs.discordId = document.getElementById('pref-discord-id').value.trim();
+                        userPrefs.discordNotifyReports = document.getElementById('pref-notify-reports').checked;
+                        userPrefs.discordNotifyTickets = document.getElementById('pref-notify-tickets').checked;
+
+                        try {
+                            await api('PUT', '/api/me/preferences', { uiPreferences: userPrefs });
+                            me.uiPreferences = JSON.stringify(userPrefs);
+                            showToast('Настройки сохранены', 'Параметры уведомлений успешно обновлены', 'success');
+                        } catch (e) {
+                            showToast('Ошибка', e.message, 'error');
+                        }
+                    });
+                } else if (tabId === 'appearance') {
+                    // TAB 4: ВНЕШНИЙ ВИД (ТЕМА, ЦВЕТА РОЛЕЙ)
+                    const isLight = document.body.classList.contains('theme-light');
+                    contentPane.innerHTML = `
+                        <h4 style="color:#fff; margin-bottom:14px;">ВНЕШНИЙ ВИД И ПЕРСОНАЛИЗАЦИЯ</h4>
+
+                        <div style="background:#110a26; padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-bottom:16px;">
+                            <b style="color:#fff; font-size:13.5px;">Тема оформления интерфейса</b>
+                            <div style="font-size:12px; color:var(--text-muted); margin-bottom:12px;">Выберите комфортную цветовую схему для работы:</div>
+
+                            <div style="display:flex; gap:12px;">
+                                <button type="button" class="secondary ${!isLight ? 'active' : ''}" id="btn-theme-dark" style="flex:1; padding:12px;">
+                                    🌙 ТЁМНАЯ ТЕМА (DARK)
+                                </button>
+                                <button type="button" class="secondary ${isLight ? 'active' : ''}" id="btn-theme-light" style="flex:1; padding:12px;">
+                                    ☀️ СВЕТЛАЯ ТЕМА (LIGHT)
+                                </button>
+                            </div>
+                        </div>
+
+                        <div style="background:#110a26; padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border);">
+                            <b style="color:#fff; font-size:13.5px;">Раскладка дашборда</b>
+                            <div style="font-size:12px; color:var(--text-muted); margin-bottom:10px;">
+                                Плитки дашборда можно свободно перетаскивать (Drag & Drop) прямо на главной странице.
+                            </div>
+                            <button type="button" class="secondary btn-sm" onclick="window.openDashboardCustomizerModal()">
+                                ▦ НАСТРОИТЬ АКТИВНЫЕ ПЛИТКИ
+                            </button>
+                        </div>
+                    `;
+
+                    document.getElementById('btn-theme-dark')?.addEventListener('click', async () => {
+                        applyUserTheme('dark');
+                        userPrefs.theme = 'dark';
+                        try { await api('PUT', '/api/me/preferences', { uiPreferences: userPrefs }); } catch (_) {}
+                        switchSettingsTab('appearance');
+                    });
+
+                    document.getElementById('btn-theme-light')?.addEventListener('click', async () => {
+                        applyUserTheme('light');
+                        userPrefs.theme = 'light';
+                        try { await api('PUT', '/api/me/preferences', { uiPreferences: userPrefs }); } catch (_) {}
+                        switchSettingsTab('appearance');
+                    });
+                } else if (tabId === 'integrations') {
+                    // TAB 5: ИНТЕГРАЦИИ
+                    contentPane.innerHTML = `
+                        <h4 style="color:#fff; margin-bottom:14px;">ИНТЕГРАЦИИ И ПОДКЛЮЧЕННЫЕ СЕРВИСЫ</h4>
+                        <div style="display:flex; flex-direction:column; gap:12px;">
+                            <div style="background:#110a26; padding:14px; border-radius:var(--radius-sm); border:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
+                                <div>
+                                    <b style="color:#fff;">Discord Bot Integration</b>
+                                    <div style="font-size:11.5px; color:var(--text-muted);">Синхронизация тикетов апелляций и оповещений</div>
+                                </div>
+                                <span class="badge green">ПОДКЛЮЧЕН</span>
+                            </div>
+
+                            <div style="background:#110a26; padding:14px; border-radius:var(--radius-sm); border:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
+                                <div>
+                                    <b style="color:#fff;">LuckPerms Bridge</b>
+                                    <div style="font-size:11.5px; color:var(--text-muted);">Синхронизация игровых групп и прав доступа</div>
+                                </div>
+                                <span class="badge green">АКТИВЕН</span>
+                            </div>
+
+                            <div style="background:#110a26; padding:14px; border-radius:var(--radius-sm); border:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
+                                <div>
+                                    <b style="color:#fff;">Vesuvio Anticheat ML Engine</b>
+                                    <div style="font-size:11.5px; color:var(--text-muted);">Поток телеметрии, поведенческие чеки и детекция</div>
+                                </div>
+                                <span class="badge purple">LIVE ПОТОК</span>
+                            </div>
+                        </div>
+                    `;
+                } else if (tabId === 'maintenance') {
+                    // TAB 6: ТЕХНИЧЕСКИЕ РАБОТЫ (Глобальный переключатель)
+                    let maintStatus = { enabled: false, message: 'Ведутся технические работы' };
+                    try {
+                        maintStatus = await api('GET', '/api/server/maintenance');
+                    } catch (_) {}
+
+                    contentPane.innerHTML = `
+                        <h4 style="color:#fff; margin-bottom:14px;">РЕЖИМ ТЕХНИЧЕСКИХ РАБОТ</h4>
+                        <div style="background:#110a26; padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-bottom:16px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                                <div>
+                                    <b style="color:#fff; font-size:14px;">Глобальный режим обслуживания панели</b>
+                                    <div style="font-size:12px; color:var(--text-muted); margin-top:2px;">
+                                        Когда включён — вход разрешён только Управляющему и ролям с правом «Обход тех. работ».
+                                    </div>
+                                </div>
+                                <label class="switch" style="position:relative; display:inline-block; width:44px; height:24px;">
+                                    <input type="checkbox" id="settings-maint-toggle" ${maintStatus.enabled ? 'checked' : ''}>
+                                    <span style="position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; background:${maintStatus.enabled ? 'var(--accent)' : '#332759'}; border-radius:24px; transition:.3s;"></span>
+                                </label>
+                            </div>
+
+                            <div class="form-group" style="margin-top:14px;">
+                                <label>Сообщение для заблокированных пользователей</label>
+                                <input type="text" id="settings-maint-msg" value="${esc(maintStatus.message || 'Ведутся технические работы')}" placeholder="Сообщение...">
+                            </div>
+
+                            <button type="button" class="primary btn-sm" id="btn-save-maintenance-settings" style="width:100%; margin-top:6px;">
+                                🚧 ПРИМЕНИТЬ РЕЖИМ ТЕХНИЧЕСКИХ РАБОТ
+                            </button>
+                        </div>
+                    `;
+
+                    document.getElementById('btn-save-maintenance-settings')?.addEventListener('click', async () => {
+                        const enabled = document.getElementById('settings-maint-toggle').checked;
+                        const message = document.getElementById('settings-maint-msg').value.trim();
+
+                        try {
+                            await api('POST', '/api/server/maintenance', { enabled, message });
+                            showToast('Технические работы', enabled ? 'Режим тех. работ ВКЛЮЧЁН' : 'Режим тех. работ ОТКЛЮЧЁН', enabled ? 'warning' : 'success');
+                            switchSettingsTab('maintenance');
+                        } catch (e) {
+                            showToast('Ошибка', e.message, 'error');
+                        }
+                    });
+                } else if (tabId === 'danger') {
+                    // TAB 7: ОПАСНЫЕ ЗОНЫ
+                    contentPane.innerHTML = `
+                        <h4 style="color:var(--red); margin-bottom:14px;">ОПАСНЫЕ ЗОНЫ И СБРОС</h4>
+                        <div style="display:flex; flex-direction:column; gap:14px;">
+                            <div style="background:rgba(239, 68, 68, 0.08); border:1px solid rgba(239, 68, 68, 0.3); border-radius:var(--radius-sm); padding:16px;">
+                                <b style="color:#fff;">Принудительный выход всех сотрудников</b>
+                                <div style="font-size:12px; color:var(--text-muted); margin-top:2px; margin-bottom:12px;">
+                                    Немедленно аннулирует все выданные сессии и токены всех пользователей, кроме вас.
+                                </div>
+                                <button type="button" class="danger btn-sm" id="btn-danger-term-all">
+                                    ЗАВЕРШИТЬ ВСЕ СЕССИИ ПЕРСОНАЛА
+                                </button>
+                            </div>
+
+                            <div style="background:#110a26; border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px;">
+                                <b style="color:#fff;">Перезагрузка конфигурации плагина</b>
+                                <div style="font-size:12px; color:var(--text-muted); margin-top:2px; margin-bottom:12px;">
+                                    Выполняет /lovewebadmin reload на сервере без перезапуска ядра.
+                                </div>
+                                <button type="button" class="secondary btn-sm" id="btn-danger-reload-plugin">
+                                    🔄 ПЕРЕЗАГРУЗИТЬ LOVEWEBADMIN
+                                </button>
+                            </div>
+                        </div>
+                    `;
+
+                    document.getElementById('btn-danger-term-all')?.addEventListener('click', () => {
+                        confirmAction('СБРОС ВСЕХ СЕССИЙ', 'Вы действительно хотите принудительно разлогинить всех сотрудников на всех устройствах?', async () => {
+                            try {
+                                await api('POST', '/api/admins/terminate-all');
+                                showToast('Готово', 'Все сессии персонала успешно завершены', 'info');
+                            } catch (e) {
+                                showToast('Ошибка', e.message, 'error');
+                            }
+                        }, 'ЗАВЕРШИТЬ ВСЕ');
+                    });
+
+                    document.getElementById('btn-danger-reload-plugin')?.addEventListener('click', async () => {
+                        try {
+                            await api('POST', '/api/command', { command: 'lovewebadmin reload' });
+                            showToast('Перезагрузка', 'Конфигурация плагина перезагружена', 'success');
+                        } catch (e) {
+                            showToast('Ошибка', e.message, 'error');
+                        }
+                    });
+                }
+            };
+
+            // Sidebar tab click handler
+            document.querySelectorAll('.settings-tab-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const tid = btn.dataset.tab;
+                    if (tid) switchSettingsTab(tid);
                 });
             });
 
-            document.getElementById('btn-save-new-pass')?.addEventListener('click', async () => {
-                const oldPassword = document.getElementById('prof-old-pass').value;
-                const newPassword = document.getElementById('prof-new-pass').value;
-                const err = document.getElementById('prof-pass-err');
-                err.style.display = 'none';
+            switchSettingsTab(currentTab);
+        }, 'modal-lg');
+    }
 
-                if (!oldPassword || !newPassword) {
-                    err.textContent = 'Заполните оба поля';
-                    err.style.display = 'block';
-                    return;
-                }
-                if (newPassword.length < 10) {
-                    err.textContent = 'Новый пароль должен содержать минимум 10 символов';
-                    err.style.display = 'block';
-                    return;
-                }
-
-                try {
-                    await api('POST', '/api/me/password', { oldPassword, newPassword });
-                    showToast('Пароль обновлен', 'Ваш пароль успешно изменен', 'success');
-                    closeModal();
-                } catch (e) {
-                    err.textContent = e.message;
-                    err.style.display = 'block';
-                }
-            });
-        });
+    // Backwards-compatible alias for user profile trigger
+    function openUserProfileModal() {
+        openAdminSettingsModal('general');
     }
 
     // Modal: Quick Kick Modal

@@ -54,5 +54,8 @@ public enum Permission {
     MANAGE_API,
 
     // Просмотр технических параметров сервера (СУБД, хеши, брутфорс-фильтр, системные сервисы)
-    VIEW_SERVER_INTERNALS
+    VIEW_SERVER_INTERNALS,
+
+    // Обход режима технических работ
+    BYPASS_MAINTENANCE
 }

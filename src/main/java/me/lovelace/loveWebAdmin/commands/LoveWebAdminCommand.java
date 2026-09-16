@@ -25,7 +25,7 @@ import java.util.Locale;
  */
 public class LoveWebAdminCommand implements CommandExecutor, TabCompleter {
 
-    private static final List<String> SUBCOMMANDS = List.of("info", "reload", "resetowner", "help");
+    private static final List<String> SUBCOMMANDS = List.of("info", "reload", "resetowner", "generatetoken", "help");
     private static final List<String> RESETOWNER_CONFIRM = List.of("confirm");
 
     private final LoveWebAdmin plugin;
@@ -50,9 +50,18 @@ public class LoveWebAdminCommand implements CommandExecutor, TabCompleter {
             case "info" -> handleInfo(sender);
             case "reload" -> handleReload(sender);
             case "resetowner" -> handleResetOwner(sender, args);
+            case "generatetoken", "token" -> handleGenerateToken(sender);
             default -> sendHelp(sender);
         }
         return true;
+    }
+
+    private void handleGenerateToken(CommandSender sender) {
+        String token = plugin.getAdminManager().generateSetupToken();
+        sender.sendMessage("§8[§bLoveWebAdmin§8] §aСгенерирован новый одноразовый токен первичной настройки:");
+        sender.sendMessage("§e§l>> " + token + " <<");
+        sender.sendMessage("§7Введите этот токен в веб-панели для создания аккаунта Управляющего.");
+        plugin.getLogger().info("[SECURITY] Командой /lovewebadmin generatetoken сгенерирован токен: " + token);
     }
 
     private void handleInfo(CommandSender sender) {
@@ -88,6 +97,7 @@ public class LoveWebAdminCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage("§8========== §bLoveWebAdmin §8==========");
         sender.sendMessage("§b/lovewebadmin info §7- Порт панели, число админов, статус LuckPerms");
         sender.sendMessage("§b/lovewebadmin reload §7- Перезагрузить конфигурацию");
+        sender.sendMessage("§b/lovewebadmin generatetoken §7- Сгенерировать токен первого входа");
         sender.sendMessage("§b/lovewebadmin resetowner confirm §7- Удалить всех Управляющих (для назначения нового)");
         sender.sendMessage("§8=========================================");
     }

@@ -123,6 +123,12 @@ public class WebServer {
             context.addServlet(devHolder, "/api/developer");
             context.addServlet(devHolder, "/api/developer/*");
 
+            ServletHolder notifHolder = new ServletHolder(new me.lovelace.loveWebAdmin.web.handlers.ApiNotificationsHandler(plugin));
+            context.addServlet(notifHolder, "/api/notifications");
+            context.addServlet(notifHolder, "/api/notifications/*");
+
+            context.addServlet(authHolder, "/api/staff/shifts");
+
             context.addServlet(new ServletHolder(new StaticHandler()), "/*");
 
             server.setHandler(context);

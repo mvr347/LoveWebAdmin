@@ -28,6 +28,14 @@ luckperms:
   owner-lp-group: "owner"
 
 security:
+  # Строгий режим сессий: принудительный логаут при смене IP адреса
+  strict-ip: false
+  # Режим технических работ
+  maintenance:
+    enabled: false
+    message: "Ведутся плановые технические работы. Панель временно доступна только руководству."
+  password:
+    min-length: 10
   login:
     # Сколько неудачных попыток входа (по IP или по нику) допускается в течение окна ниже
     max-attempts: 5

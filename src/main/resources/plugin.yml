@@ -1,5 +1,5 @@
 name: LoveWebAdmin
-version: '${version}'
+version: '1.1.0'
 
 main: me.lovelace.loveWebAdmin.LoveWebAdmin
 api-version: '26.2'

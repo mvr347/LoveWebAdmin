@@ -36,6 +36,13 @@ public class ApiServerOpsHandler extends ApiHandlerSupport {
         if (sessionOpt.isEmpty()) return;
 
         String pathInfo = req.getPathInfo();
+        if ("/maintenance".equals(pathInfo)) {
+            sendSuccess(resp, Map.of(
+                "enabled", plugin.isMaintenanceMode(),
+                "message", plugin.getMaintenanceMessage() != null ? plugin.getMaintenanceMessage() : "Ведутся технические работы"
+            ));
+            return;
+        }
         if ("/whitelist".equals(pathInfo)) {
             handleGetWhitelist(resp);
             return;
@@ -54,6 +61,12 @@ public class ApiServerOpsHandler extends ApiHandlerSupport {
         if (sessionOpt.isEmpty()) return;
         WebSession session = sessionOpt.get();
 
+        String pathInfo = req.getPathInfo();
+        if ("/maintenance".equals(pathInfo)) {
+            handlePostMaintenance(req, resp, session);
+            return;
+        }
+
         // Проверяем роль: только Администраторы
         var roleOpt = plugin.getDatabaseManager().getRoleById(session.roleId());
         boolean isAdmin = roleOpt.isPresent() && (roleOpt.get().isOwner() || "Администратор".equalsIgnoreCase(roleOpt.get().name()));
@@ -62,7 +75,6 @@ public class ApiServerOpsHandler extends ApiHandlerSupport {
             return;
         }
 
-        String pathInfo = req.getPathInfo();
         if ("/whitelist".equals(pathInfo)) {
             handlePostWhitelist(req, resp, session);
             return;
@@ -73,6 +85,44 @@ public class ApiServerOpsHandler extends ApiHandlerSupport {
         }
 
         sendError(resp, 404, "Не найдено");
+    }
+
+    private void handlePostMaintenance(HttpServletRequest req, HttpServletResponse resp, WebSession session) throws IOException {
+        var roleOpt = plugin.getDatabaseManager().getRoleById(session.roleId());
+        boolean canManage = roleOpt.isPresent() && (roleOpt.get().isOwner() || roleOpt.get().permissions().contains(Permission.MANAGE_ADMINS));
+        if (!canManage) {
+            sendError(resp, 403, "Управление режимом технических работ доступно только высшим ролям");
+            return;
+        }
+
+        Map<String, Object> body = readJsonBody(req);
+        boolean enabled = Boolean.TRUE.equals(body.get("enabled"));
+        String message = stringOrNull(body.get("message"));
+        if (message == null || message.isBlank()) {
+            message = "Ведутся технические работы на сервере. Пожалуйста, зайдите позже.";
+        }
+
+        plugin.setMaintenanceMode(enabled);
+        plugin.setMaintenanceMessage(message);
+
+        plugin.getConfig().set("security.maintenance.enabled", enabled);
+        plugin.getConfig().set("security.maintenance.message", message);
+        plugin.saveConfig();
+
+        plugin.getLogManager().logWebAction(session.adminUsername(), (enabled ? "Включил" : "Выключил") + " режим технических работ");
+        if (plugin.getNotificationManager() != null) {
+            plugin.getNotificationManager().broadcast(
+                "Технические работы",
+                (enabled ? "Включён" : "Выключен") + " режим технических работ: " + message,
+                enabled ? "WARNING" : "INFO",
+                "system"
+            );
+        }
+
+        sendSuccess(resp, Map.of(
+            "enabled", enabled,
+            "message", message
+        ));
     }
 
     private void handleGetWhitelist(HttpServletResponse resp) throws IOException {

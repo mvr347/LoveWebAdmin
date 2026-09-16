@@ -55,7 +55,10 @@ public final class LoveWebAdmin extends JavaPlugin {
     private me.lovelace.loveWebAdmin.managers.LoveEconomyTracker loveEconomyTracker;
     private me.lovelace.loveWebAdmin.managers.ApiKeyManager apiKeyManager;
     private me.lovelace.loveWebAdmin.managers.WebhookManager webhookManager;
-    private me.lovelace.loveWebAdmin.api.LoveWebAdminAPI loveWebAdminApi;
+    private me.lovelace.loveWebAdmin.managers.NotificationManager notificationManager;
+    private me.lovelace.loveWebAdmin.api.LoveWebAdminAPIImpl loveWebAdminApi;
+    private volatile boolean maintenanceMode = false;
+    private volatile String maintenanceMessage = "Ведутся плановые технические работы. Панель временно доступна только руководству.";
     private long startTimeMillis;
 
     @Override
@@ -71,6 +74,17 @@ public final class LoveWebAdmin extends JavaPlugin {
 
         this.roleManager = new RoleManager(this);
         this.adminManager = new AdminManager(this);
+        this.notificationManager = new me.lovelace.loveWebAdmin.managers.NotificationManager(this);
+
+        if (!this.adminManager.hasOwner()) {
+            String token = this.adminManager.generateSetupToken();
+            getLogger().info("==================================================================");
+            getLogger().info("[SECURITY] Первичная настройка Управляющего требует одноразовый токен:");
+            getLogger().info(">> ТОКЕН ДЛЯ ВЕБ-ПАНЕЛИ: " + token);
+            getLogger().info(">> Сгенерировать новый можно в консоли: /lovewebadmin generatetoken");
+            getLogger().info("==================================================================");
+        }
+
         this.banManager = new BanManager(this);
         this.banManager.startCleanupTask();
 
@@ -306,6 +320,35 @@ public final class LoveWebAdmin extends JavaPlugin {
 
     public me.lovelace.loveWebAdmin.api.LoveWebAdminAPI getApi() {
         return loveWebAdminApi;
+    }
+
+    public me.lovelace.loveWebAdmin.managers.NotificationManager getNotificationManager() {
+        return notificationManager;
+    }
+
+    public boolean isMaintenanceMode() {
+        return maintenanceMode;
+    }
+
+    public void setMaintenanceMode(boolean maintenanceMode) {
+        this.maintenanceMode = maintenanceMode;
+    }
+
+    public void setMaintenanceMode(boolean maintenanceMode, String message) {
+        this.maintenanceMode = maintenanceMode;
+        if (message != null && !message.isBlank()) {
+            this.maintenanceMessage = message;
+        }
+    }
+
+    public void setMaintenanceMessage(String message) {
+        if (message != null && !message.isBlank()) {
+            this.maintenanceMessage = message;
+        }
+    }
+
+    public String getMaintenanceMessage() {
+        return maintenanceMessage;
     }
 
     public static me.lovelace.loveWebAdmin.api.LoveWebAdminAPI getPluginApi() {

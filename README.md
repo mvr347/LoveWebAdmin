@@ -1,4 +1,4 @@
-# LoveWebAdmin
+# LoveWebAdmin v1.1.0
 
 Современная веб-панель администрирования для Paper/Purpur серверов (26.2 / Java 25) со встроенным веб-сервером Jetty, SPA-интерфейсом, двухфакторной аутентификацией (2FA) и интеграцией с LuckPerms.
 
@@ -34,13 +34,14 @@
 
 | Команда | Алиасы | Описание | Право |
 |---|---|---|---|
-| `/lovewebadmin` | `/lwa` | Управление веб-панелью (`info`, `reload`, `resetowner`) | `lovewebadmin.admin` (op) |
+| `/lovewebadmin` | `/lwa` | Управление веб-панелью (`info`, `reload`, `resetowner`, `generatetoken`) | `lovewebadmin.admin` (op) |
 | `/бан <игрок>` | `/ban`, `/webban`, `/lban` | Быстрое создание черновика бана для передачи в WebAdmin | `lovewebadmin.ban` (op) |
 | `/репорт <игрок>` | `/report`, `/жалоба` | Подача внутрииговой жалобы на нарушителя | `lovewebadmin.report` (все) |
 | `/разбан <игрок>` | `/unban`, `/webunban`, `/lunban`, `/pardon` | Снятие бана с игрока на сервере и в веб-панели | `lovewebadmin.unban` (op) |
 
 ### Подкоманды `/lovewebadmin`:
 - `/lovewebadmin info` — информация о веб-сервере (URL, порт, количество администраторов).
+- `/lovewebadmin generatetoken` — генерация одноразового токена для первичной настройки Управляющего.
 - `/lovewebadmin reload` — горячая перезагрузка конфигурации `config.yml`.
 - `/lovewebadmin resetowner confirm` — сброс учетной записи Управляющего для повторного онбординга.
 

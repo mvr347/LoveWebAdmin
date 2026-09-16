@@ -68,6 +68,10 @@ public class ApiAdminsHandler extends ApiHandlerSupport {
             handleReject(req, resp, sessionOpt.get());
             return;
         }
+        if (pathInfo != null && (pathInfo.contains("/terminate-sessions") || pathInfo.contains("/sessions/terminate-all"))) {
+            handleTerminateAdminSessions(req, resp, sessionOpt.get());
+            return;
+        }
 
         Map<String, Object> body = readJsonBody(req);
         String username = stringOrNull(body.get("username"));
@@ -118,6 +122,24 @@ public class ApiAdminsHandler extends ApiHandlerSupport {
             } else {
                 sendError(resp, 400, "Не удалось отклонить заявку");
             }
+        } catch (NumberFormatException e) {
+            sendError(resp, 400, "Некорректный ID");
+        }
+    }
+
+    private void handleTerminateAdminSessions(HttpServletRequest req, HttpServletResponse resp, WebSession session) throws IOException {
+        String pathInfo = req.getPathInfo();
+        String idStr = pathInfo.replace("/terminate-sessions", "").replace("/sessions/terminate-all", "").replace("/", "").trim();
+        try {
+            int targetId = Integer.parseInt(idStr);
+            Optional<WebAdmin> targetOpt = plugin.getDatabaseManager().getAdminById(targetId);
+            if (targetOpt.isEmpty()) {
+                sendError(resp, 404, "Администратор не найден");
+                return;
+            }
+            plugin.getSessionManager().invalidateSessionsForAdmin(targetId);
+            plugin.getLogManager().logWebAction(session.adminUsername(), "Принудительно завершил все сессии администратора " + targetOpt.get().username());
+            sendSuccess(resp, Map.of("message", "Все активные сессии администратора " + targetOpt.get().username() + " завершены"));
         } catch (NumberFormatException e) {
             sendError(resp, 400, "Некорректный ID");
         }

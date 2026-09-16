@@ -64,9 +64,22 @@ public class ApiLogsHandler extends ApiHandlerSupport {
         Optional<WebSession> sessionOpt = requirePermission(req, resp, Permission.VIEW_WEB_LOGS);
         if (sessionOpt.isEmpty()) return;
 
+        String staff = req.getParameter("staff");
+        String action = req.getParameter("action");
+        String fromStr = req.getParameter("from");
+        String toStr = req.getParameter("to");
+        Long fromTime = null;
+        Long toTime = null;
+        if (fromStr != null && !fromStr.isBlank()) {
+            try { fromTime = Long.parseLong(fromStr); } catch (Exception ignored) {}
+        }
+        if (toStr != null && !toStr.isBlank()) {
+            try { toTime = Long.parseLong(toStr); } catch (Exception ignored) {}
+        }
+
         int limit = parseIntOrDefault(req.getParameter("limit"), 100);
         int offset = parseIntOrDefault(req.getParameter("offset"), 0);
-        sendSuccess(resp, toLogList(plugin.getDatabaseManager().getWebLogs(limit, offset)));
+        sendSuccess(resp, toLogList(plugin.getDatabaseManager().getWebLogs(limit, offset, staff, action, fromTime, toTime)));
     }
 
     private List<Map<String, Object>> toLogList(List<LogEntry> entries) {

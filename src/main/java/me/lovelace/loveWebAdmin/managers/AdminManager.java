@@ -30,6 +30,32 @@ public class AdminManager {
         return plugin.getDatabaseManager().hasActiveOwner();
     }
 
+    private volatile String setupToken = null;
+
+    public synchronized String generateSetupToken() {
+        byte[] bytes = new byte[8];
+        new java.security.SecureRandom().nextBytes(bytes);
+        StringBuilder sb = new StringBuilder("LWA-");
+        for (byte b : bytes) {
+            sb.append(String.format("%02X", b));
+        }
+        this.setupToken = sb.toString();
+        return this.setupToken;
+    }
+
+    public synchronized String getSetupToken() {
+        return this.setupToken;
+    }
+
+    public synchronized boolean validateAndConsumeSetupToken(String token) {
+        if (this.setupToken == null || token == null) return false;
+        if (this.setupToken.equalsIgnoreCase(token.trim())) {
+            this.setupToken = null;
+            return true;
+        }
+        return false;
+    }
+
     public boolean isInitialSetupNeeded() {
         return plugin.getDatabaseManager().isInitialSetupNeeded();
     }

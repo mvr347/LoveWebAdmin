@@ -33,11 +33,14 @@ public class CorsFilter implements Filter {
 
         String origin = httpRequest.getHeader("Origin");
         List<String> allowedOrigins = plugin.getConfig().getStringList("security.cors.allowed-origins");
-        if (origin != null && !allowedOrigins.isEmpty() && allowedOrigins.contains(origin)) {
-            httpResponse.setHeader("Access-Control-Allow-Origin", origin);
+        boolean allowAll = allowedOrigins.contains("*");
+        boolean isAllowed = origin != null && (allowAll || allowedOrigins.isEmpty() || allowedOrigins.contains(origin));
+
+        if (isAllowed) {
+            httpResponse.setHeader("Access-Control-Allow-Origin", origin != null ? origin : "*");
             httpResponse.setHeader("Vary", "Origin");
             httpResponse.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-            httpResponse.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key");
+            httpResponse.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key, Accept, Origin, X-Requested-With");
         }
 
         // Security headers
@@ -50,6 +53,7 @@ public class CorsFilter implements Filter {
             "font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self'; frame-ancestors 'none'");
 
         if ("OPTIONS".equalsIgnoreCase(httpRequest.getMethod())) {
+            httpResponse.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key, Accept, Origin, X-Requested-With");
             httpResponse.setStatus(HttpServletResponse.SC_OK);
             return;
         }

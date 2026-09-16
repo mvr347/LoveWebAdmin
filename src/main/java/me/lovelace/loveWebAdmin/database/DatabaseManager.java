@@ -76,7 +76,8 @@ public class DatabaseManager {
                         name TEXT NOT NULL UNIQUE,
                         lp_group TEXT,
                         permissions TEXT NOT NULL,
-                        is_owner INTEGER DEFAULT 0
+                        is_owner INTEGER DEFAULT 0,
+                        color TEXT DEFAULT '#8b5cf6'
                     )
                     """);
                 statement.execute("""
@@ -94,6 +95,8 @@ public class DatabaseManager {
                         status TEXT DEFAULT 'ACTIVE',
                         ui_preferences TEXT DEFAULT '{}',
                         backup_codes TEXT DEFAULT '[]',
+                        is_on_shift INTEGER DEFAULT 0,
+                        shift_started_at INTEGER DEFAULT 0,
                         FOREIGN KEY (role_id) REFERENCES web_roles(id)
                     )
                     """);
@@ -344,8 +347,20 @@ public class DatabaseManager {
                     )
                     """);
                 statement.execute("CREATE INDEX IF NOT EXISTS idx_appeal_messages_appeal ON appeal_messages(appeal_id)");
+                statement.execute("""
+                    CREATE TABLE IF NOT EXISTS staff_panel_notifications (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        title TEXT NOT NULL,
+                        message TEXT NOT NULL,
+                        type TEXT NOT NULL DEFAULT 'INFO',
+                        created_by TEXT NOT NULL DEFAULT 'SYSTEM',
+                        created_at INTEGER DEFAULT (strftime('%s', 'now')),
+                        read_by TEXT DEFAULT '[]'
+                    )
+                    """);
             }
 
+            migrateWebRoles();
             migrateWebAdmins();
             migrateWebSessions();
             migrateWebBans();
@@ -390,8 +405,29 @@ public class DatabaseManager {
             if (!columns.contains("role_expires_at")) {
                 statement.execute("ALTER TABLE web_admins ADD COLUMN role_expires_at INTEGER DEFAULT 0");
             }
+            if (!columns.contains("is_on_shift")) {
+                statement.execute("ALTER TABLE web_admins ADD COLUMN is_on_shift INTEGER DEFAULT 0");
+            }
+            if (!columns.contains("shift_started_at")) {
+                statement.execute("ALTER TABLE web_admins ADD COLUMN shift_started_at INTEGER DEFAULT 0");
+            }
         } catch (SQLException e) {
             plugin.getLogger().warning("Ошибка проверки/миграции колонок web_admins: " + e.getMessage());
+        }
+    }
+
+    private void migrateWebRoles() {
+        try (Statement statement = connection.createStatement();
+             ResultSet rs = statement.executeQuery("PRAGMA table_info(web_roles)")) {
+            Set<String> columns = new HashSet<>();
+            while (rs.next()) {
+                columns.add(rs.getString("name").toLowerCase());
+            }
+            if (!columns.contains("color")) {
+                statement.execute("ALTER TABLE web_roles ADD COLUMN color TEXT DEFAULT '#8b5cf6'");
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().warning("Ошибка проверки/миграции колонок web_roles: " + e.getMessage());
         }
     }
 
@@ -599,24 +635,27 @@ public class DatabaseManager {
 
     public synchronized void saveRole(WebRole role) {
         String permissionsJson = JsonUtils.toJson(role.permissions().stream().map(Enum::name).toList());
+        String color = role.color() != null && !role.color().isBlank() ? role.color() : "#8b5cf6";
         try {
             if (role.id() == 0) {
-                String sql = "INSERT INTO web_roles (name, lp_group, permissions, is_owner) VALUES (?, ?, ?, ?)";
+                String sql = "INSERT INTO web_roles (name, lp_group, permissions, is_owner, color) VALUES (?, ?, ?, ?, ?)";
                 try (PreparedStatement ps = connection.prepareStatement(sql)) {
                     ps.setString(1, role.name());
                     ps.setString(2, role.lpGroup());
                     ps.setString(3, permissionsJson);
                     ps.setInt(4, role.isOwner() ? 1 : 0);
+                    ps.setString(5, color);
                     ps.executeUpdate();
                 }
             } else {
-                String sql = "UPDATE web_roles SET name = ?, lp_group = ?, permissions = ?, is_owner = ? WHERE id = ?";
+                String sql = "UPDATE web_roles SET name = ?, lp_group = ?, permissions = ?, is_owner = ?, color = ? WHERE id = ?";
                 try (PreparedStatement ps = connection.prepareStatement(sql)) {
                     ps.setString(1, role.name());
                     ps.setString(2, role.lpGroup());
                     ps.setString(3, permissionsJson);
                     ps.setInt(4, role.isOwner() ? 1 : 0);
-                    ps.setInt(5, role.id());
+                    ps.setString(5, color);
+                    ps.setInt(6, role.id());
                     ps.executeUpdate();
                 }
             }
@@ -681,6 +720,11 @@ public class DatabaseManager {
         String lpGroup = rs.getString("lp_group");
         String permissionsJson = rs.getString("permissions");
         boolean isOwner = rs.getInt("is_owner") != 0;
+        String color = "#8b5cf6";
+        try {
+            String c = rs.getString("color");
+            if (c != null && !c.isBlank()) color = c;
+        } catch (SQLException ignored) {}
 
         Set<Permission> permissions = new LinkedHashSet<>();
         Object parsed = JsonUtils.parse(permissionsJson);
@@ -691,7 +735,7 @@ public class DatabaseManager {
                 } catch (IllegalArgumentException ignored) {}
             }
         }
-        return new WebRole(id, name, lpGroup, permissions, isOwner);
+        return new WebRole(id, name, lpGroup, permissions, isOwner, color);
     }
 
     // ---------- Управляющий и статус ----------
@@ -1107,6 +1151,16 @@ public class DatabaseManager {
         }
     }
 
+    public synchronized void deleteAllSessionsExcept(String currentToken) {
+        String sql = "DELETE FROM web_sessions WHERE token != ?";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setString(1, currentToken != null ? currentToken : "");
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            plugin.getLogger().warning("Ошибка сброса всех сессий: " + e.getMessage());
+        }
+    }
+
     public synchronized void updateSessionLastUsed(String token, long now) {
         String sql = "UPDATE web_sessions SET last_used_at = ? WHERE token = ?";
         try (PreparedStatement ps = connection.prepareStatement(sql)) {
@@ -1514,16 +1568,25 @@ public class DatabaseManager {
         Map<String, Object> result = new LinkedHashMap<>();
         Optional<Map<String, Object>> targetStatsOpt = getPlayerStats(query);
         if (targetStatsOpt.isEmpty()) {
+            result.put("target", null);
+            result.put("primaryIp", "—");
+            result.put("sharedIps", List.of());
+            result.put("allAlts", List.of());
+            result.put("alts", List.of());
+            result.put("directAlts", List.of());
+            result.put("subnetAlts", List.of());
             return result;
         }
 
         Map<String, Object> targetStats = targetStatsOpt.get();
         String targetUuid = (String) targetStats.get("uuid");
+        String targetName = (String) targetStats.get("name");
         result.put("target", targetStats);
 
         Set<String> knownIps = new LinkedHashSet<>();
-        if (targetStats.get("lastIp") != null && !((String) targetStats.get("lastIp")).isBlank()) {
-            knownIps.add((String) targetStats.get("lastIp"));
+        String primaryIp = (String) targetStats.get("lastIp");
+        if (primaryIp != null && !primaryIp.isBlank()) {
+            knownIps.add(primaryIp);
         }
 
         String ipSql = "SELECT DISTINCT ip FROM server_player_ip_history WHERE uuid = ?";
@@ -1534,19 +1597,27 @@ public class DatabaseManager {
                     String ip = rs.getString("ip");
                     if (ip != null && !ip.isBlank()) {
                         knownIps.add(ip);
+                        if (primaryIp == null || primaryIp.isBlank()) primaryIp = ip;
                     }
                 }
             }
         } catch (SQLException ignored) {}
 
+        if (primaryIp == null || primaryIp.isBlank()) primaryIp = "—";
+        result.put("primaryIp", primaryIp);
+
         if (knownIps.isEmpty()) {
             result.put("sharedIps", List.of());
             result.put("allAlts", List.of());
+            result.put("alts", List.of());
+            result.put("directAlts", List.of());
+            result.put("subnetAlts", List.of());
             return result;
         }
 
         List<Map<String, Object>> sharedIpsList = new ArrayList<>();
         Map<String, Map<String, Object>> altMap = new LinkedHashMap<>();
+        Set<String> directAltNames = new LinkedHashSet<>();
 
         for (String ip : knownIps) {
             Map<String, Object> ipGroup = new LinkedHashMap<>();
@@ -1570,19 +1641,26 @@ public class DatabaseManager {
                     while (rs.next()) {
                         String altUuid = rs.getString("uuid");
                         String altName = rs.getString("name");
+                        if (altName == null || altName.equalsIgnoreCase(targetName)) continue;
+
                         long lastSeen = rs.getLong("last_seen_at");
                         long playtime = rs.getLong("total_playtime_seconds");
                         boolean isOnline = false;
                         try {
                             isOnline = Bukkit.getPlayer(UUID.fromString(altUuid)) != null;
                         } catch (Exception ignored) {}
+                        boolean isBanned = isPlayerBanned(altName);
+
+                        directAltNames.add(altName);
 
                         Map<String, Object> altAcc = new LinkedHashMap<>();
                         altAcc.put("uuid", altUuid);
                         altAcc.put("name", altName);
                         altAcc.put("lastSeenAt", lastSeen);
+                        altAcc.put("lastSeen", lastSeen);
                         altAcc.put("playtimeSeconds", playtime);
                         altAcc.put("isOnline", isOnline);
+                        altAcc.put("isBanned", isBanned);
                         accounts.add(altAcc);
 
                         Map<String, Object> globalAlt = altMap.computeIfAbsent(altUuid, k -> {
@@ -1590,8 +1668,10 @@ public class DatabaseManager {
                             m.put("uuid", altUuid);
                             m.put("name", altName);
                             m.put("lastSeenAt", lastSeen);
+                            m.put("lastSeen", lastSeen);
                             m.put("playtimeSeconds", playtime);
                             m.put("isOnline", Bukkit.getPlayer(UUID.fromString(altUuid)) != null);
+                            m.put("isBanned", isPlayerBanned(altName));
                             m.put("sharedIps", new ArrayList<String>());
                             return m;
                         });
@@ -1610,8 +1690,43 @@ public class DatabaseManager {
             sharedIpsList.add(ipGroup);
         }
 
+        // Subnet detection (same /24 prefix: A.B.C.)
+        Set<String> subnetAltNames = new LinkedHashSet<>();
+        if (!primaryIp.equals("—") && primaryIp.contains(".")) {
+            int lastDot = primaryIp.lastIndexOf('.');
+            if (lastDot > 0) {
+                String subnetPattern = primaryIp.substring(0, lastDot + 1) + "%";
+                String subnetSql = """
+                    SELECT DISTINCT s.name
+                    FROM server_player_stats s
+                    WHERE s.uuid != ? AND (
+                        s.last_ip LIKE ?
+                        OR s.uuid IN (SELECT uuid FROM server_player_ip_history WHERE ip LIKE ?)
+                    )
+                    LIMIT 30
+                    """;
+                try (PreparedStatement ps = connection.prepareStatement(subnetSql)) {
+                    ps.setString(1, targetUuid);
+                    ps.setString(2, subnetPattern);
+                    ps.setString(3, subnetPattern);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        while (rs.next()) {
+                            String name = rs.getString("name");
+                            if (name != null && !name.equalsIgnoreCase(targetName) && !directAltNames.contains(name)) {
+                                subnetAltNames.add(name);
+                            }
+                        }
+                    }
+                } catch (SQLException ignored) {}
+            }
+        }
+
+        List<Map<String, Object>> allAltsList = new ArrayList<>(altMap.values());
         result.put("sharedIps", sharedIpsList);
-        result.put("allAlts", new ArrayList<>(altMap.values()));
+        result.put("allAlts", allAltsList);
+        result.put("alts", allAltsList);
+        result.put("directAlts", new ArrayList<>(directAltNames));
+        result.put("subnetAlts", new ArrayList<>(subnetAltNames));
         return result;
     }
 
@@ -1759,11 +1874,41 @@ public class DatabaseManager {
     }
 
     public synchronized List<LogEntry> getWebLogs(int limit, int offset) {
+        return getWebLogs(limit, offset, null, null, null, null);
+    }
+
+    public synchronized List<LogEntry> getWebLogs(int limit, int offset, String staff, String actionQuery, Long fromTime, Long toTime) {
         List<LogEntry> logs = new ArrayList<>();
-        String sql = "SELECT * FROM web_logs ORDER BY id DESC LIMIT ? OFFSET ?";
-        try (PreparedStatement ps = connection.prepareStatement(sql)) {
-            ps.setInt(1, limit);
-            ps.setInt(2, offset);
+        StringBuilder sql = new StringBuilder("SELECT * FROM web_logs WHERE 1=1 ");
+        List<Object> params = new ArrayList<>();
+
+        if (staff != null && !staff.isBlank()) {
+            sql.append("AND LOWER(actor) = LOWER(?) ");
+            params.add(staff.trim());
+        }
+        if (actionQuery != null && !actionQuery.isBlank()) {
+            sql.append("AND LOWER(action) LIKE ? ");
+            params.add("%" + actionQuery.trim().toLowerCase() + "%");
+        }
+        if (fromTime != null && fromTime > 0) {
+            sql.append("AND timestamp >= ? ");
+            params.add(fromTime);
+        }
+        if (toTime != null && toTime > 0) {
+            sql.append("AND timestamp <= ? ");
+            params.add(toTime);
+        }
+        sql.append("ORDER BY id DESC LIMIT ? OFFSET ?");
+        params.add(limit);
+        params.add(offset);
+
+        try (PreparedStatement ps = connection.prepareStatement(sql.toString())) {
+            for (int i = 0; i < params.size(); i++) {
+                Object p = params.get(i);
+                if (p instanceof Integer val) ps.setInt(i + 1, val);
+                else if (p instanceof Long val) ps.setLong(i + 1, val);
+                else ps.setString(i + 1, String.valueOf(p));
+            }
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     logs.add(new LogEntry(
@@ -1776,7 +1921,7 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка получения логов панели: " + e.getMessage());
+            plugin.getLogger().warning("Ошибка получения логов панели с фильтрами: " + e.getMessage());
         }
         return logs;
     }
@@ -3147,5 +3292,170 @@ public class DatabaseManager {
             rs.getString("message"),
             rs.getLong("created_at")
         );
+    }
+
+    // ---------- Уведомления персонала (колокольчик) ----------
+
+    public synchronized void saveStaffNotification(String title, String message, String type, String createdBy) {
+        long now = System.currentTimeMillis() / 1000L;
+        String sql = "INSERT INTO staff_panel_notifications (title, message, type, created_by, created_at, read_by) VALUES (?, ?, ?, ?, ?, '[]')";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setString(1, title);
+            ps.setString(2, message);
+            ps.setString(3, type != null ? type : "INFO");
+            ps.setString(4, createdBy != null ? createdBy : "SYSTEM");
+            ps.setLong(5, now);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            plugin.getLogger().warning("Ошибка сохранения уведомления: " + e.getMessage());
+        }
+    }
+
+    public synchronized List<Map<String, Object>> getStaffNotifications(int limit, int offset, int currentAdminId) {
+        List<Map<String, Object>> list = new ArrayList<>();
+        String sql = "SELECT * FROM staff_panel_notifications ORDER BY id DESC LIMIT ? OFFSET ?";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setInt(1, limit);
+            ps.setInt(2, offset);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    int id = rs.getInt("id");
+                    String title = rs.getString("title");
+                    String message = rs.getString("message");
+                    String type = rs.getString("type");
+                    String createdBy = rs.getString("created_by");
+                    long createdAt = rs.getLong("created_at");
+                    String readByJson = rs.getString("read_by");
+                    boolean isRead = false;
+                    if (readByJson != null && (readByJson.contains("\"" + currentAdminId + "\"") || readByJson.contains(String.valueOf(currentAdminId)))) {
+                        isRead = true;
+                    }
+                    Map<String, Object> map = new LinkedHashMap<>();
+                    map.put("id", id);
+                    map.put("title", title);
+                    map.put("message", message);
+                    map.put("type", type);
+                    map.put("createdBy", createdBy);
+                    map.put("createdAt", createdAt);
+                    map.put("isRead", isRead);
+                    list.add(map);
+                }
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().warning("Ошибка выборки уведомлений: " + e.getMessage());
+        }
+        return list;
+    }
+
+    public synchronized int getStaffUnreadCount(int currentAdminId) {
+        int count = 0;
+        String sql = "SELECT id, read_by FROM staff_panel_notifications ORDER BY id DESC LIMIT 100";
+        try (PreparedStatement ps = connection.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                String readBy = rs.getString("read_by");
+                if (readBy == null || (!readBy.contains("\"" + currentAdminId + "\"") && !readBy.contains(String.valueOf(currentAdminId)))) {
+                    count++;
+                }
+            }
+        } catch (SQLException ignored) {}
+        return count;
+    }
+
+    public synchronized void markStaffNotificationRead(int notificationId, int currentAdminId) {
+        String selectSql = "SELECT read_by FROM staff_panel_notifications WHERE id = ?";
+        try (PreparedStatement ps = connection.prepareStatement(selectSql)) {
+            ps.setInt(1, notificationId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    String readBy = rs.getString("read_by");
+                    List<Object> ids = new ArrayList<>();
+                    Object parsed = JsonUtils.parse(readBy);
+                    if (parsed instanceof List<?> l) {
+                        ids.addAll(l);
+                    }
+                    if (!ids.contains(currentAdminId) && !ids.contains(String.valueOf(currentAdminId))) {
+                        ids.add(currentAdminId);
+                        String updateSql = "UPDATE staff_panel_notifications SET read_by = ? WHERE id = ?";
+                        try (PreparedStatement ups = connection.prepareStatement(updateSql)) {
+                            ups.setString(1, JsonUtils.toJson(ids));
+                            ups.setInt(2, notificationId);
+                            ups.executeUpdate();
+                        }
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().warning("Ошибка отметки уведомления прочитанным: " + e.getMessage());
+        }
+    }
+
+    public synchronized void markAllStaffNotificationsRead(int currentAdminId) {
+        String sql = "SELECT id, read_by FROM staff_panel_notifications";
+        try (PreparedStatement ps = connection.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                int id = rs.getInt("id");
+                String readBy = rs.getString("read_by");
+                List<Object> ids = new ArrayList<>();
+                Object parsed = JsonUtils.parse(readBy);
+                if (parsed instanceof List<?> l) {
+                    ids.addAll(l);
+                }
+                if (!ids.contains(currentAdminId) && !ids.contains(String.valueOf(currentAdminId))) {
+                    ids.add(currentAdminId);
+                    String updateSql = "UPDATE staff_panel_notifications SET read_by = ? WHERE id = ?";
+                    try (PreparedStatement ups = connection.prepareStatement(updateSql)) {
+                        ups.setString(1, JsonUtils.toJson(ids));
+                        ups.setInt(2, id);
+                        ups.executeUpdate();
+                    }
+                }
+            }
+        } catch (SQLException ignored) {}
+    }
+
+    // ---------- Статус смены («Я на смене») ----------
+
+    public synchronized void setAdminShiftStatus(int adminId, boolean onShift) {
+        long now = System.currentTimeMillis() / 1000L;
+        String sql = "UPDATE web_admins SET is_on_shift = ?, shift_started_at = ? WHERE id = ?";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setInt(1, onShift ? 1 : 0);
+            ps.setLong(2, onShift ? now : 0);
+            ps.setInt(3, adminId);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            plugin.getLogger().warning("Ошибка обновления статуса смены: " + e.getMessage());
+        }
+    }
+
+    public synchronized List<Map<String, Object>> getStaffOnShift() {
+        List<Map<String, Object>> list = new ArrayList<>();
+        String sql = """
+            SELECT a.id, a.username, a.is_on_shift, a.shift_started_at, r.name AS role_name, r.color AS role_color
+            FROM web_admins a
+            JOIN web_roles r ON a.role_id = r.id
+            WHERE a.is_on_shift = 1 AND a.status = 'ACTIVE'
+            ORDER BY a.shift_started_at ASC
+            """;
+        try (PreparedStatement ps = connection.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            long now = System.currentTimeMillis() / 1000L;
+            while (rs.next()) {
+                Map<String, Object> map = new LinkedHashMap<>();
+                map.put("id", rs.getInt("id"));
+                map.put("username", rs.getString("username"));
+                map.put("roleName", rs.getString("role_name"));
+                map.put("roleColor", rs.getString("role_color") != null ? rs.getString("role_color") : "#8b5cf6");
+                long startedAt = rs.getLong("shift_started_at");
+                map.put("shiftStartedAt", startedAt);
+                map.put("durationMinutes", Math.max(0, (now - startedAt) / 60));
+                list.add(map);
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().warning("Ошибка получения списка персонала на смене: " + e.getMessage());
+        }
+        return list;
     }
 }

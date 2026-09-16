@@ -70,6 +70,55 @@
     --transition-normal: 0.20s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+body.theme-light, html.theme-light {
+    --bg-base: #F4F6FB;
+    --bg-surface: #FFFFFF;
+    --bg-sidebar: #FFFFFF;
+    --bg-sidebar-active: #EEF2FC;
+    --card-bg: #FFFFFF;
+    --card-bg-hover: #F8F9FE;
+    --card-bg-elevated: #FFFFFF;
+    --card-bg-subtle: rgba(255, 255, 255, 0.95);
+
+    --border: #D8DEEE;
+    --border-light: #C4CCE4;
+    --border-focus: #7C3AED;
+    --border-subtle: rgba(124, 58, 237, 0.12);
+
+    --accent: #7C3AED;
+    --accent-hover: #6D28D9;
+    --accent-active: #5B21B6;
+    --accent-light: #8B5CF6;
+    --accent-glow: rgba(124, 58, 237, 0.12);
+    --accent-muted: rgba(124, 58, 237, 0.08);
+
+    --text: #1E2338;
+    --text-secondary: #475070;
+    --text-muted: #6B7599;
+    --text-dim: #929DBA;
+    --text-heading: #0F1222;
+
+    --green: #16A34A;
+    --green-bg: rgba(22, 163, 74, 0.12);
+    --green-border: rgba(22, 163, 74, 0.3);
+
+    --yellow: #D97706;
+    --yellow-bg: rgba(217, 119, 6, 0.12);
+    --yellow-border: rgba(217, 119, 6, 0.3);
+
+    --red: #DC2626;
+    --red-bg: rgba(220, 38, 38, 0.12);
+    --red-border: rgba(220, 38, 38, 0.3);
+
+    --cyan: #0284C7;
+    --cyan-bg: rgba(2, 132, 199, 0.12);
+    --cyan-border: rgba(2, 132, 199, 0.3);
+
+    --blue: #2563EB;
+    --blue-bg: rgba(37, 99, 235, 0.12);
+    --blue-border: rgba(37, 99, 235, 0.3);
+}
+
 *, *::before, *::after {
     box-sizing: border-box;
     margin: 0;
@@ -428,7 +477,33 @@ code, pre, .font-mono {
     color: var(--text-dim);
 }
 
+.app-sidebar.collapsed .sidebar-user-block {
+    flex-direction: column;
+    padding: 6px 2px;
+    gap: 4px;
+    text-align: center;
+    justify-content: center;
+}
+
 .app-sidebar.collapsed .sidebar-user-meta {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    max-width: 60px;
+}
+
+.app-sidebar.collapsed .sidebar-user-name {
+    font-size: 9.5px;
+    letter-spacing: -0.02em;
+    max-width: 58px;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text);
+}
+
+.app-sidebar.collapsed .sidebar-user-role {
     display: none;
 }
 
@@ -3026,6 +3101,284 @@ tr:hover td {
     user-select: all;
     max-height: 160px;
     overflow-y: auto;
+}
+
+/* ---------- Topbar Icons & Action Buttons ---------- */
+.topbar-icon-btn {
+    width: 36px;
+    height: 36px;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    position: relative;
+    transition: all var(--transition-fast);
+    padding: 0;
+}
+
+.topbar-icon-btn:hover {
+    background: var(--card-bg-hover);
+    border-color: var(--accent);
+    color: #fff;
+}
+
+.topbar-shift-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.topbar-shift-btn:hover {
+    border-color: var(--border-light);
+    color: var(--text);
+}
+
+.topbar-shift-btn.shift-active {
+    background: var(--green-bg);
+    border-color: var(--green-border);
+    color: #4ade80;
+}
+
+.notif-badge {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    background: var(--red);
+    color: #fff;
+    font-size: 9px;
+    font-weight: 800;
+    min-width: 16px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 4px;
+    line-height: 1;
+}
+
+/* ---------- Drag & Drop Dashboard Tiles ---------- */
+.tile[draggable="true"] {
+    cursor: grab;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.tile[draggable="true"]:active {
+    cursor: grabbing;
+}
+
+.tile.dragging {
+    opacity: 0.45;
+    border: 2px dashed var(--accent);
+    transform: scale(0.98);
+}
+
+.tile.drag-over {
+    border: 2px solid var(--accent-light) !important;
+    background: var(--card-bg-hover);
+    box-shadow: 0 0 16px var(--accent-glow);
+}
+
+/* ---------- Admin Settings 7-Tabs Layout ---------- */
+.settings-modal-layout {
+    display: flex;
+    min-height: 520px;
+    max-height: 75vh;
+    border: 1px solid var(--border);
+}
+
+.settings-nav-sidebar {
+    width: 210px;
+    min-width: 210px;
+    background: var(--bg-sidebar);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    padding: 10px 0;
+    gap: 4px;
+    overflow-y: auto;
+}
+
+.settings-tab-btn {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-muted);
+    background: transparent;
+    border: none;
+    border-left: 3px solid transparent;
+    cursor: pointer;
+    text-align: left;
+    width: 100%;
+    transition: all var(--transition-fast);
+}
+
+.settings-tab-btn:hover {
+    background: var(--card-bg);
+    color: var(--text);
+}
+
+.settings-tab-btn.active {
+    background: var(--bg-sidebar-active);
+    color: #fff;
+    border-left-color: var(--accent);
+    font-weight: 700;
+}
+
+.settings-content-area {
+    flex: 1;
+    padding: 24px;
+    overflow-y: auto;
+    background: var(--card-bg);
+}
+
+.settings-tab-pane {
+    display: none;
+}
+
+.settings-tab-pane.active {
+    display: block;
+}
+
+/* ---------- Maintenance Mode View ---------- */
+.maintenance-screen {
+    min-height: 100vh;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-base);
+    padding: 20px;
+}
+
+.maintenance-card {
+    max-width: 520px;
+    width: 100%;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    padding: 36px 30px;
+    text-align: center;
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6);
+}
+
+.maintenance-icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+    display: inline-block;
+}
+
+/* ---------- Mobile Adaptation (< 768px) ---------- */
+.mobile-menu-btn {
+    display: none;
+    width: 36px;
+    height: 36px;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    cursor: pointer;
+}
+
+.sidebar-mobile-backdrop {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.75);
+    z-index: 99;
+}
+
+@media (max-width: 768px) {
+    .mobile-menu-btn {
+        display: inline-flex;
+    }
+
+    .app-sidebar {
+        position: fixed;
+        top: 0;
+        left: -280px;
+        bottom: 0;
+        z-index: 1000;
+        width: 260px !important;
+        min-width: 260px !important;
+        transition: left 0.25s ease;
+        box-shadow: 4px 0 24px rgba(0, 0, 0, 0.8);
+    }
+
+    .app-sidebar.mobile-open {
+        left: 0;
+    }
+
+    .sidebar-mobile-backdrop.open {
+        display: block;
+    }
+
+    .topbar-center {
+        display: none;
+    }
+
+    .topbar {
+        padding: 0 12px;
+        gap: 8px;
+    }
+
+    .dashboard-tiles-grid {
+        grid-template-columns: 1fr !important;
+    }
+
+    .tile-lg, .tile-sm {
+        grid-column: span 1 !important;
+    }
+
+    .settings-modal-layout {
+        flex-direction: column;
+        max-height: 85vh;
+    }
+
+    .settings-nav-sidebar {
+        width: 100%;
+        min-width: 100%;
+        flex-direction: row;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+        overflow-x: auto;
+        padding: 6px;
+    }
+
+    .settings-tab-btn {
+        border-left: none;
+        border-bottom: 2px solid transparent;
+        padding: 8px 12px;
+        white-space: nowrap;
+    }
+
+    .settings-tab-btn.active {
+        border-left-color: transparent;
+        border-bottom-color: var(--accent);
+    }
+
+    .table-wrap {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
 }
 
 

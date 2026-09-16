@@ -100,6 +100,20 @@ public class SessionManager {
         return Optional.of(session);
     }
 
+    public Optional<WebSession> validate(String token, String currentIp) {
+        Optional<WebSession> sessionOpt = validate(token);
+        if (sessionOpt.isPresent() && currentIp != null && !currentIp.isBlank()) {
+            boolean strictIp = plugin.getConfig().getBoolean("security.strict-ip", false);
+            WebSession session = sessionOpt.get();
+            if (strictIp && session.ip() != null && !session.ip().isBlank() && !session.ip().equals(currentIp)) {
+                plugin.getLogger().warning("[SECURITY] Сессия " + session.adminUsername() + " аннулирована: обнаружена смена IP с " + session.ip() + " на " + currentIp);
+                invalidate(token);
+                return Optional.empty();
+            }
+        }
+        return sessionOpt;
+    }
+
     public void invalidate(String token) {
         cache.remove(token);
         plugin.getDatabaseManager().deleteSession(token);
@@ -108,6 +122,11 @@ public class SessionManager {
     public void invalidateSessionsForAdmin(int adminId) {
         cache.values().removeIf(session -> session.adminId() == adminId);
         plugin.getDatabaseManager().deleteSessionsForAdmin(adminId);
+    }
+
+    public void terminateAllSessionsExcept(String currentToken) {
+        cache.values().removeIf(session -> !session.token().equals(currentToken));
+        plugin.getDatabaseManager().deleteAllSessionsExcept(currentToken);
     }
 
     public java.util.List<WebSession> getSessionsForAdmin(int adminId) {

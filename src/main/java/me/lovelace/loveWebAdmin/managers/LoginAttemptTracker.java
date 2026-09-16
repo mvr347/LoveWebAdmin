@@ -74,11 +74,12 @@ public class LoginAttemptTracker {
         return getLockedRemainingSeconds(keys) > 0;
     }
 
-    public synchronized void recordFailure(String... keys) {
+    public synchronized boolean recordFailureAndCheckNewlyLocked(String... keys) {
         long now = System.currentTimeMillis();
         int max = maxAttempts();
         long window = lockoutMillis();
         long lockout = lockoutMillis();
+        boolean newlyLocked = false;
         for (String key : keys) {
             if (key == null) continue;
             Attempts attempts = attemptsByKey.computeIfAbsent(key, k -> new Attempts());
@@ -87,10 +88,16 @@ public class LoginAttemptTracker {
                 attempts.count = 0;
             }
             attempts.count++;
-            if (attempts.count >= max) {
+            if (attempts.count >= max && attempts.lockedUntil <= now) {
                 attempts.lockedUntil = now + lockout;
+                newlyLocked = true;
             }
         }
+        return newlyLocked;
+    }
+
+    public synchronized void recordFailure(String... keys) {
+        recordFailureAndCheckNewlyLocked(keys);
     }
 
     public synchronized void recordSuccess(String... keys) {

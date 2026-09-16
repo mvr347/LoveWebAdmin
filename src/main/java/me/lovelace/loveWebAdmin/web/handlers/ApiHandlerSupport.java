@@ -73,7 +73,7 @@ public abstract class ApiHandlerSupport extends HttpServlet {
                     return Optional.of(createApiKeySession(opt.get(), req));
                 }
             }
-            return plugin.getSessionManager().validate(token);
+            return plugin.getSessionManager().validate(token, req.getRemoteAddr());
         }
         return Optional.empty();
     }
@@ -111,7 +111,17 @@ public abstract class ApiHandlerSupport extends HttpServlet {
         Optional<WebSession> session = authenticate(req);
         if (session.isEmpty()) {
             sendError(resp, 401, "Требуется авторизация");
+            return Optional.empty();
         }
+
+        if (plugin.isMaintenanceMode()) {
+            boolean bypass = hasPermission(session.get(), Permission.BYPASS_MAINTENANCE) || hasPermission(session.get(), Permission.MANAGE_ADMINS);
+            if (!bypass) {
+                sendError(resp, 503, "MAINTENANCE: " + plugin.getMaintenanceMessage());
+                return Optional.empty();
+            }
+        }
+
         return session;
     }
 
