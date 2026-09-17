@@ -36,6 +36,10 @@ public class ApiServerOpsHandler extends ApiHandlerSupport {
         if (sessionOpt.isEmpty()) return;
 
         String pathInfo = req.getPathInfo();
+        if ("/config".equals(pathInfo)) {
+            handleGetConfig(resp);
+            return;
+        }
         if ("/maintenance".equals(pathInfo)) {
             sendSuccess(resp, Map.of(
                 "enabled", plugin.isMaintenanceMode(),
@@ -62,6 +66,10 @@ public class ApiServerOpsHandler extends ApiHandlerSupport {
         WebSession session = sessionOpt.get();
 
         String pathInfo = req.getPathInfo();
+        if ("/config".equals(pathInfo)) {
+            handlePostConfig(req, resp, session);
+            return;
+        }
         if ("/maintenance".equals(pathInfo)) {
             handlePostMaintenance(req, resp, session);
             return;
@@ -123,6 +131,119 @@ public class ApiServerOpsHandler extends ApiHandlerSupport {
             "enabled", enabled,
             "message", message
         ));
+    }
+
+    private void handleGetConfig(HttpServletResponse resp) throws IOException {
+        var cfg = plugin.getConfig();
+        Map<String, Object> data = new LinkedHashMap<>();
+
+        // Web
+        data.put("webPort", cfg.getInt("web.port", 8080));
+        data.put("webHost", cfg.getString("web.host", "0.0.0.0"));
+        data.put("sessionLifetimeMinutes", cfg.getLong("web.session-lifetime-minutes", 60));
+
+        // System
+        data.put("debugMode", plugin.isDebugMode());
+        data.put("keepLogCount", cfg.getInt("logs.keep-count", 5000));
+
+        // Security
+        data.put("strictIp", cfg.getBoolean("security.strict-ip", false));
+        data.put("minPasswordLength", cfg.getInt("security.password.min-length", 10));
+        data.put("loginMaxAttempts", cfg.getInt("security.login.max-attempts", 5));
+        data.put("loginLockoutMinutes", cfg.getLong("security.login.lockout-minutes", 15));
+        data.put("commandBlacklist", cfg.getStringList("security.command-blacklist"));
+        data.put("corsAllowedOrigins", cfg.getStringList("security.cors.allowed-origins"));
+
+        // Webhooks
+        data.put("webhooksEnabled", cfg.getBoolean("security.webhooks.enabled", false));
+        data.put("discordWebhookUrl", cfg.getString("security.webhooks.discord.webhook-url", cfg.getString("security.webhooks.discord-url", "")));
+        data.put("telegramEnabled", cfg.getBoolean("security.webhooks.telegram.enabled", false));
+        data.put("telegramBotToken", cfg.getString("security.webhooks.telegram.bot-token", ""));
+        data.put("telegramChatId", cfg.getString("security.webhooks.telegram.chat-id", ""));
+
+        // Maintenance
+        data.put("maintenanceEnabled", plugin.isMaintenanceMode());
+        data.put("maintenanceMessage", plugin.getMaintenanceMessage() != null ? plugin.getMaintenanceMessage() : "Ведутся технические работы");
+
+        sendSuccess(resp, data);
+    }
+
+    private void handlePostConfig(HttpServletRequest req, HttpServletResponse resp, WebSession session) throws IOException {
+        var roleOpt = plugin.getDatabaseManager().getRoleById(session.roleId());
+        boolean canManage = roleOpt.isPresent() && (roleOpt.get().isOwner() || roleOpt.get().permissions().contains(Permission.MANAGE_ADMINS));
+        if (!canManage) {
+            sendError(resp, 403, "Управление настройками сервера доступно только управляющему или администраторам");
+            return;
+        }
+
+        Map<String, Object> body = readJsonBody(req);
+        var cfg = plugin.getConfig();
+
+        if (body.containsKey("webPort") && body.get("webPort") instanceof Number n) {
+            int port = n.intValue();
+            if (port > 0 && port <= 65535) cfg.set("web.port", port);
+        }
+        if (body.containsKey("webHost") && body.get("webHost") instanceof String h && !h.isBlank()) {
+            cfg.set("web.host", h.trim());
+        }
+        if (body.containsKey("sessionLifetimeMinutes") && body.get("sessionLifetimeMinutes") instanceof Number n) {
+            long mins = Math.max(5, n.longValue());
+            cfg.set("web.session-lifetime-minutes", mins);
+        }
+        if (body.containsKey("keepLogCount") && body.get("keepLogCount") instanceof Number n) {
+            int count = Math.max(500, Math.min(50000, n.intValue()));
+            cfg.set("logs.keep-count", count);
+        }
+        if (body.containsKey("debugMode")) {
+            boolean dbg = Boolean.TRUE.equals(body.get("debugMode"));
+            cfg.set("debug-mode", dbg);
+        }
+        if (body.containsKey("strictIp")) {
+            boolean strict = Boolean.TRUE.equals(body.get("strictIp"));
+            cfg.set("security.strict-ip", strict);
+        }
+        if (body.containsKey("minPasswordLength") && body.get("minPasswordLength") instanceof Number n) {
+            int len = Math.max(8, Math.min(32, n.intValue()));
+            cfg.set("security.password.min-length", len);
+        }
+        if (body.containsKey("loginMaxAttempts") && body.get("loginMaxAttempts") instanceof Number n) {
+            int att = Math.max(1, Math.min(20, n.intValue()));
+            cfg.set("security.login.max-attempts", att);
+        }
+        if (body.containsKey("loginLockoutMinutes") && body.get("loginLockoutMinutes") instanceof Number n) {
+            long lock = Math.max(1, Math.min(1440, n.longValue()));
+            cfg.set("security.login.lockout-minutes", lock);
+        }
+        if (body.containsKey("commandBlacklist") && body.get("commandBlacklist") instanceof List<?> list) {
+            List<String> strList = new ArrayList<>();
+            for (Object item : list) {
+                if (item != null && !item.toString().isBlank()) strList.add(item.toString().trim().toLowerCase());
+            }
+            cfg.set("security.command-blacklist", strList);
+        }
+        if (body.containsKey("webhooksEnabled")) {
+            cfg.set("security.webhooks.enabled", Boolean.TRUE.equals(body.get("webhooksEnabled")));
+        }
+        if (body.containsKey("discordWebhookUrl")) {
+            String url = stringOrNull(body.get("discordWebhookUrl"));
+            cfg.set("security.webhooks.discord-url", url != null ? url : "");
+            cfg.set("security.webhooks.discord.webhook-url", url != null ? url : "");
+            cfg.set("security.webhooks.discord.enabled", url != null && !url.isBlank());
+        }
+        if (body.containsKey("telegramBotToken")) {
+            String tok = stringOrNull(body.get("telegramBotToken"));
+            cfg.set("security.webhooks.telegram.bot-token", tok != null ? tok : "");
+        }
+        if (body.containsKey("telegramChatId")) {
+            String cid = stringOrNull(body.get("telegramChatId"));
+            cfg.set("security.webhooks.telegram.chat-id", cid != null ? cid : "");
+            cfg.set("security.webhooks.telegram.enabled", cid != null && !cid.isBlank());
+        }
+
+        plugin.saveConfig();
+        plugin.getLogManager().logWebAction(session.adminUsername(), "Обновил параметры конфигурации сервера (config.yml)");
+
+        handleGetConfig(resp);
     }
 
     private void handleGetWhitelist(HttpServletResponse resp) throws IOException {

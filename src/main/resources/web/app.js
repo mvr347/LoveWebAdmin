@@ -135,6 +135,92 @@
         BYPASS_MAINTENANCE: 'Позволяет входить в веб-панель во время технических работ'
     };
 
+    const PERMISSION_NAMES = {
+        VIEW_STATS: 'Просмотр метрик сервера',
+        VIEW_ANALYTICS: 'Аналитика активности',
+        VIEW_PLAYERS: 'Просмотр игроков',
+        MANAGE_PLAYERS: 'Управление игроками',
+        VIEW_BANS: 'Просмотр банов',
+        MANAGE_BANS: 'Выдача и снятие банов',
+        VIEW_APPEALS: 'Просмотр апелляций',
+        MANAGE_APPEALS: 'Управление апелляциями',
+        VIEW_REPORTS: 'Просмотр жалоб',
+        MANAGE_REPORTS: 'Обработка жалоб',
+        VIEW_VESUVIO: 'Античит: базовый мониторинг',
+        VIEW_VESUVIO_ADVANCED: 'Античит: детальная телеметрия',
+        MANAGE_VESUVIO: 'Античит: управление и сброс VL',
+        VIEW_SERVER_LOGS: 'Серверный журнал',
+        VIEW_WEB_LOGS: 'Веб журнал аудита',
+        EXECUTE_COMMANDS: 'Консоль и команды',
+        MANAGE_LOVEAUTH: 'Управление аккаунтами LoveAuth',
+        MANAGE_ADMINS: 'Управление сотрудниками',
+        MANAGE_ROLES: 'Управление ролями',
+        MANAGE_PASSWORDS: 'Сброс паролей персонала',
+        MANAGE_LOCKDOWN: 'Режим изоляции сервера (ЧС)',
+        VIEW_STAFF_AUDIT: 'Аудит действий персонала',
+        VIEW_ECONOMY: 'Просмотр экономики',
+        MANAGE_ECONOMY: 'Управление балансами',
+        MANAGE_API: 'Управление API-ключами',
+        VIEW_SERVER_INTERNALS: 'Техническая информация и ошибки',
+        BYPASS_MAINTENANCE: 'Обход тех. работ панели'
+    };
+
+    function renderSvgIcon(name, colorType = 'gray', size = 16) {
+        let color = 'currentColor';
+        if (colorType === 'violet' || colorType === 'purple') color = 'var(--accent, #a855f7)';
+        else if (colorType === 'white') color = '#ffffff';
+        else if (colorType === 'gray') color = 'var(--text-muted, #94a3b8)';
+        else if (colorType === 'green') color = 'var(--green, #22c55e)';
+        else if (colorType === 'red') color = 'var(--red, #ef4444)';
+        else if (colorType === 'yellow') color = 'var(--yellow, #f59e0b)';
+        else if (colorType && colorType.startsWith('#')) color = colorType;
+
+        const sw = 1.8;
+        const iconPaths = {
+            gear: `<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>`,
+            shield: `<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>`,
+            bell: `<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>`,
+            palette: `<circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/>`,
+            plug: `<path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8z"/>`,
+            wrench: `<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>`,
+            alert: `<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>`,
+            globe: `<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>`,
+            server: `<rect x="2" y="2" width="20" height="8"/><rect x="2" y="14" width="20" height="8"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/>`,
+            terminal: `<polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>`,
+            search: `<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>`,
+            users: `<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>`,
+            user: `<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>`,
+            scales: `<path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/>`,
+            zap: `<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>`,
+            moon: `<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>`,
+            sun: `<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>`,
+            save: `<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>`,
+            copy: `<rect width="14" height="14" x="8" y="8"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>`,
+            check: `<polyline points="20 6 9 17 4 12"/>`,
+            key: `<path d="m21 2-2 2m-1.5 1.5L16 7l-1.5-1.5M16 7l-3 3M8 14a5 5 0 1 0-6 6 5 5 0 0 0 6-6Z"/>`,
+            lock: `<rect x="3" y="11" width="18" height="11"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>`,
+            refresh: `<path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/>`,
+            message: `<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>`,
+            phone: `<rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/>`,
+            ban: `<circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>`,
+            close: `<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>`,
+            menu: `<line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/>`,
+            dot: `<circle cx="12" cy="12" r="5" fill="${color}"/>`,
+            fileText: `<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>`,
+            download: `<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>`,
+            trash: `<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>`,
+            plus: `<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>`,
+            volumeX: `<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/>`,
+            userMinus: `<path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="23" y1="11" x2="17" y2="11"/>`,
+            clock: `<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>`,
+            tag: `<path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/>`,
+            shieldAlert: `<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>`
+        };
+
+        const path = iconPaths[name] || iconPaths['gear'];
+        return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="${color}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block; vertical-align:middle; flex-shrink:0;">${path}</svg>`;
+    }
+
     // ---------- Helpers ----------
     function esc(s) {
         const div = document.createElement('div');
@@ -326,7 +412,7 @@
         openModal(`
             <div class="modal-header">
                 <h3>${esc(title)}</h3>
-                <button type="button" class="close-btn" data-modal-close="true">✕</button>
+                <button type="button" class="close-btn" data-modal-close="true">${renderSvgIcon('close', 'gray', 16)}</button>
             </div>
             <div class="modal-body">
                 <p style="font-size:14px; line-height:1.6; color:var(--text-secondary);">${esc(message)}</p>
@@ -449,7 +535,7 @@
         openModal(`
             <div class="modal-header">
                 <h3>ВЫБОР ЖАЛОБЫ ДЛЯ ПРИКРЕПЛЕНИЯ К БАНУ</h3>
-                <button type="button" class="close-btn" data-modal-close="true">✕</button>
+                <button type="button" class="close-btn" data-modal-close="true">${renderSvgIcon('close', 'gray', 16)}</button>
             </div>
             <div class="modal-body">
                 <div style="margin-bottom:14px; display:flex; gap:10px; flex-wrap:wrap;">
@@ -500,7 +586,7 @@
                             <div>
                                 <div style="display:flex; align-items:center; gap:8px;">
                                     <span class="badge purple">#${r.id}</span>
-                                    <b style="color:#fff; font-size:14px;">${esc(r.targetName)}</b>
+                                    <b style="color:var(--text-heading); font-size:14px;">${esc(r.targetName)}</b>
                                     <span style="font-size:11.5px; color:var(--text-muted);">от ${esc(r.reporterName)}</span>
                                 </div>
                                 <div style="font-size:12px; color:var(--text-secondary); margin-top:3px;">
@@ -651,7 +737,7 @@
         openModal(`
             <div class="search-modal">
                 <div class="search-input-header">
-                    <span style="font-size:18px; color:var(--accent-light);">🔍</span>
+                    <span style="display:inline-flex; align-items:center;">${renderSvgIcon('search', 'violet', 18)}</span>
                     <input type="text" id="global-search-input" placeholder="Поиск по игрокам, банам, логам журнала... (Esc для выхода)" autofocus>
                     <span class="search-shortcut-badge">ESC</span>
                 </div>
@@ -695,7 +781,7 @@
                                     <div class="search-result-item" onclick="window.viewPlayerProfile('${esc(p.name)}');">
                                         <img src="https://mc-heads.net/avatar/${encodeURIComponent(p.name)}/24" class="player-avatar-sm" alt="">
                                         <div style="flex:1;">
-                                            <div style="font-weight:700; color:#fff;">${esc(p.name)}</div>
+                                            <div style="font-weight:700; color:var(--text-main);">${esc(p.name)}</div>
                                             <div style="font-size:11px; color:var(--text-muted);">${p.isOnline ? '<span style="color:var(--green)">● В сети</span>' : 'Оффлайн'} • Наиграно: ${fmtDuration(p.totalPlaytimeSeconds || 0)}</div>
                                         </div>
                                         <button type="button" class="secondary btn-sm" onclick="event.stopPropagation(); window.viewPlayerProfile('${esc(p.name)}');">ДОСЬЕ</button>
@@ -708,9 +794,9 @@
                             matchingBans.forEach(b => {
                                 html += `
                                     <div class="search-result-item" onclick="window.closeCurrentModal(); window.navigateTo('punishments');">
-                                        <span style="color:var(--red); font-weight:700;">⚑</span>
+                                        <span style="display:inline-flex; align-items:center;">${renderSvgIcon('ban', 'red', 16)}</span>
                                         <div style="flex:1;">
-                                            <div style="font-weight:700; color:#fff;">${esc(b.targetName)} <span class="badge red">${esc(b.ruleReason)}</span></div>
+                                            <div style="font-weight:700; color:var(--text-main);">${esc(b.targetName)} <span class="badge red">${esc(b.ruleReason)}</span></div>
                                             <div style="font-size:11px; color:var(--text-muted);">Администратор: ${esc(b.creatorName)} • ${fmtTime(b.createdAt)}</div>
                                         </div>
                                     </div>`;
@@ -836,7 +922,7 @@
 
         containerEl.innerHTML = `
             <div style="color:#111; font-size:12px; text-align:center; padding:24px 10px; font-weight:600; line-height:1.5;">
-                <div style="font-size:24px; margin-bottom:6px;">🔑</div>
+                <div style="margin-bottom:8px; display:flex; justify-content:center;">${renderSvgIcon('key', 'violet', 24)}</div>
                 Используйте вкладку <b>«Секретный код»</b><br>для ввода ключа в Authenticator.
             </div>`;
     }
@@ -859,7 +945,7 @@
                     document.execCommand('copy');
                     document.body.removeChild(ta);
                 }
-                btn.innerHTML = '✓ Скопировано!';
+                btn.innerHTML = `${renderSvgIcon('check', 'green', 12)} Скопировано!`;
                 btn.classList.add('copied');
                 setTimeout(() => {
                     btn.innerHTML = originalText;
@@ -876,7 +962,7 @@
         app.innerHTML = `
             <div class="auth-screen">
                 <div class="auth-card" style="max-width:520px;">
-                    <div class="logo"><span style="color:var(--green);">✓</span> 2FA Настроена</div>
+                    <div class="logo"><span style="color:var(--green); display:inline-flex; vertical-align:middle; margin-right:6px;">${renderSvgIcon('check', 'green', 18)}</span> 2FA Настроена</div>
                     <div class="sub">Аккаунт <b>${esc(username)}</b> успешно привязан! Сохраните эти <b>8 резервных кодов</b>. Каждый код можно использовать один раз для входа, если у вас не будет доступа к приложению аутентификатора:</div>
 
                     <div class="backup-codes-grid">
@@ -884,8 +970,8 @@
                     </div>
 
                     <div style="display:flex; gap:10px; margin-bottom:16px;">
-                        <button type="button" class="secondary" id="btn-copy-backup-codes" style="flex:1;">📋 Скопировать все</button>
-                        <button type="button" class="secondary" id="btn-download-backup-codes" style="flex:1;">💾 Скачать (.txt)</button>
+                        <button type="button" class="secondary" id="btn-copy-backup-codes" style="flex:1; display:inline-flex; align-items:center; justify-content:center; gap:6px;">${renderSvgIcon('copy', 'gray', 14)} Скопировать все</button>
+                        <button type="button" class="secondary" id="btn-download-backup-codes" style="flex:1; display:inline-flex; align-items:center; justify-content:center; gap:6px;">${renderSvgIcon('download', 'gray', 14)} Скачать (.txt)</button>
                     </div>
 
                     <label style="display:flex; align-items:center; gap:8px; font-size:12px; color:var(--text-muted); cursor:pointer; margin-bottom:16px; user-select:none;">
@@ -919,8 +1005,8 @@
                     document.execCommand('copy');
                     document.body.removeChild(ta);
                 }
-                btn.textContent = '✓ Коды скопированы!';
-                setTimeout(() => { btn.textContent = '📋 Скопировать все'; }, 2000);
+                btn.innerHTML = `${renderSvgIcon('check', 'green', 14)} Коды скопированы!`;
+                setTimeout(() => { btn.innerHTML = `${renderSvgIcon('copy', 'gray', 14)} Скопировать все`; }, 2000);
             } catch (_) {}
         });
 
@@ -947,7 +1033,7 @@
                 <div class="auth-card">
                     <div class="logo"><span style="color:var(--accent);">◈</span> WebAdmin</div>
                     <div class="sub">Панель управления Minecraft-сервером</div>
-                    ${isDebug ? '<div class="auth-debug-badge">⚡ Режим отладки: 2FA / QR не требуется</div>' : ''}
+                    ${isDebug ? `<div class="auth-debug-badge" style="display:inline-flex; align-items:center; gap:6px;">${renderSvgIcon('zap', 'violet', 13)} Режим отладки: 2FA / QR не требуется</div>` : ''}
                     <form id="login-form">
                         <div class="form-group">
                             <label>Никнейм сотрудника</label>
@@ -1006,7 +1092,7 @@
                 <div class="auth-card" style="max-width:480px;">
                     <div class="logo"><span style="color:var(--accent);">◈</span> Регистрация сотрудника</div>
                     <div class="sub">Подача заявки на доступ к панели WebAdmin. Главный администратор утвердит вашу заявку.</div>
-                    ${isDebug ? '<div class="auth-debug-badge">⚡ Режим отладки: можно подать заявку без сканирования QR</div>' : ''}
+                    ${isDebug ? `<div class="auth-debug-badge" style="display:inline-flex; align-items:center; gap:6px;">${renderSvgIcon('zap', 'violet', 13)} Режим отладки: можно подать заявку без сканирования QR</div>` : ''}
 
                     <div class="stepper">
                         <div class="step-item active">
@@ -1035,7 +1121,7 @@
                         </div>
                         <div id="cand-reg-err" class="error" style="display:none;"></div>
                         <button type="submit" class="primary" id="btn-cand-next" style="width:100%; margin-top:10px;">ПРОДОЛЖИТЬ (2FA)</button>
-                        ${isDebug ? '<button type="button" class="btn-debug-bypass" id="btn-cand-debug-direct" style="width:100%; margin-top:8px;">⚡ ПОДАТЬ ЗАЯВКУ БЕЗ 2FA / QR (ДЕБАГ)</button>' : ''}
+                        ${isDebug ? `<button type="button" class="btn-debug-bypass" id="btn-cand-debug-direct" style="width:100%; margin-top:8px; display:inline-flex; align-items:center; justify-content:center; gap:6px;">${renderSvgIcon('zap', 'violet', 13)} ПОДАТЬ ЗАЯВКУ БЕЗ 2FA / QR (ДЕБАГ)</button>` : ''}
                         <button type="button" class="secondary" id="btn-cand-cancel" style="width:100%; margin-top:8px;">← ВЕРНУТЬСЯ КО ВХОДУ</button>
                     </form>
                 </div>
@@ -1127,10 +1213,10 @@
             <div class="auth-screen">
                 <div class="auth-card" style="max-width:500px;">
                     <div class="logo"><span style="color:var(--accent);">◈</span> Привязка 2FA</div>
-                    ${isDebug ? '<div class="auth-debug-badge">⚡ Режим отладки: QR код необязателен</div>' : ''}
+                    ${isDebug ? `<div class="auth-debug-badge" style="display:inline-flex; align-items:center; gap:6px;">${renderSvgIcon('zap', 'violet', 13)} Режим отладки: QR код необязателен</div>` : ''}
                     <div class="stepper">
                         <div class="step-item completed">
-                            <span class="step-badge">✓</span>
+                            <span class="step-badge">${renderSvgIcon('check', 'green', 11)}</span>
                             <span>Данные</span>
                         </div>
                         <div class="step-connector"></div>
@@ -1141,16 +1227,16 @@
                     </div>
 
                     <div class="totp-method-toggle">
-                        <button type="button" class="totp-toggle-btn active" id="cand-toggle-qr">📱 QR-код</button>
-                        <button type="button" class="totp-toggle-btn" id="cand-toggle-code">🔑 Секретный код</button>
+                        <button type="button" class="totp-toggle-btn active" id="cand-toggle-qr" style="display:inline-flex; align-items:center; justify-content:center; gap:6px;">${renderSvgIcon('phone', 'violet', 13)} QR-код</button>
+                        <button type="button" class="totp-toggle-btn" id="cand-toggle-code" style="display:inline-flex; align-items:center; justify-content:center; gap:6px;">${renderSvgIcon('key', 'violet', 13)} Секретный код</button>
                     </div>
 
                     <div id="cand-pane-qr" class="totp-method-pane">
                         <div class="sub" style="margin-bottom:12px;">Отсканируйте QR-код в <b>Google Authenticator</b> или <b>Aegis</b>:</div>
                         <div class="totp-qr-wrapper">
                             <div class="totp-qr-box" id="cand-qrcode-box"></div>
-                            <a href="${esc(otpUrl)}" class="totp-copy-btn" style="text-decoration:none; margin-top:2px;">
-                                ⚡ Открыть в приложении Authenticator
+                            <a href="${esc(otpUrl)}" class="totp-copy-btn" style="text-decoration:none; margin-top:2px; display:inline-flex; align-items:center; gap:6px;">
+                                ${renderSvgIcon('zap', 'violet', 13)} Открыть в приложении Authenticator
                             </a>
                         </div>
                     </div>
@@ -1159,7 +1245,7 @@
                         <div class="sub" style="margin-bottom:12px;">Введите ключ вручную в приложении Authenticator:</div>
                         <div class="totp-secret-box" style="margin-bottom:16px;">
                             <span class="totp-secret-code" title="${esc(totpSecret)}">${esc(totpSecret)}</span>
-                            <button type="button" class="totp-copy-btn" id="btn-copy-cand-secret">📋 Скопировать</button>
+                            <button type="button" class="totp-copy-btn" id="btn-copy-cand-secret" style="display:inline-flex; align-items:center; gap:6px;">${renderSvgIcon('copy', 'gray', 13)} Скопировать</button>
                         </div>
                     </div>
 
@@ -1171,7 +1257,7 @@
                         </div>
                         <div id="cand-2fa-err" class="error" style="display:none;"></div>
                         <button type="submit" class="primary" id="btn-cand-submit" style="width:100%; margin-top:10px;">ОТПРАВИТЬ ЗАЯВКУ</button>
-                        ${isDebug ? '<button type="button" class="btn-debug-bypass" id="btn-cand-debug-submit" style="width:100%; margin-top:8px;">⚡ ОТПРАВИТЬ ЗАЯВКУ БЕЗ 2FA (ДЕБАГ)</button>' : ''}
+                        ${isDebug ? `<button type="button" class="btn-debug-bypass" id="btn-cand-debug-submit" style="width:100%; margin-top:8px; display:inline-flex; align-items:center; justify-content:center; gap:6px;">${renderSvgIcon('zap', 'violet', 13)} ОТПРАВИТЬ ЗАЯВКУ БЕЗ 2FA (ДЕБАГ)</button>` : ''}
                         <button type="button" class="secondary" id="btn-cand-back" style="width:100%; margin-top:8px;">← НАЗАД К ДАННЫМ</button>
                     </form>
                 </div>
@@ -1245,10 +1331,10 @@
         app.innerHTML = `
             <div class="auth-screen">
                 <div class="auth-card" style="max-width:520px;">
-                    <div class="logo"><span style="color:var(--green);">✓</span> Заявка отправлена</div>
+                    <div class="logo"><span style="color:var(--green); display:inline-flex; align-items:center;">${renderSvgIcon('check', 'green', 18)}</span> Заявка отправлена</div>
                     <div class="sub">Заявка для аккаунта <b>${esc(username)}</b> успешно зарегистрирована и ожидает утверждения главным администратором сервера.</div>
 
-                    <div style="font-size:12px; font-weight:600; color:#fff; margin-top:16px;">Ваши резервные коды 2FA:</div>
+                    <div style="font-size:12px; font-weight:600; color:var(--text-main); margin-top:16px;">Ваши резервные коды 2FA:</div>
                     <div class="sub" style="font-size:11px; margin-bottom:10px;">Обязательно сохраните их прямо сейчас!</div>
 
                     <div class="backup-codes-grid">
@@ -1256,7 +1342,7 @@
                     </div>
 
                     <div style="display:flex; gap:10px; margin-bottom:16px;">
-                        <button type="button" class="secondary" id="btn-copy-cand-codes" style="flex:1;">📋 Скопировать коды</button>
+                        <button type="button" class="secondary" id="btn-copy-cand-codes" style="flex:1; display:inline-flex; align-items:center; justify-content:center; gap:6px;">${renderSvgIcon('copy', 'gray', 13)} Скопировать коды</button>
                     </div>
 
                     <button type="button" class="primary" id="btn-back-to-login" style="width:100%; margin-top:10px;">
@@ -1279,8 +1365,8 @@
                     document.execCommand('copy');
                     document.body.removeChild(ta);
                 }
-                btn.textContent = '✓ Коды скопированы!';
-                setTimeout(() => { btn.textContent = '📋 Скопировать коды'; }, 2000);
+                btn.innerHTML = `${renderSvgIcon('check', 'green', 13)} Коды скопированы!`;
+                setTimeout(() => { btn.innerHTML = `${renderSvgIcon('copy', 'gray', 13)} Скопировать коды`; }, 2000);
             } catch (_) {}
         });
 
@@ -1296,7 +1382,7 @@
                 <div class="auth-card">
                     <div class="logo"><span style="color:var(--accent);">◈</span> 2FA Подтверждение</div>
                     <div class="sub">Вход для аккаунта <b>${esc(username)}</b>. Введите 6 цифр из приложения Google Authenticator или 8-значный резервной код:</div>
-                    ${isDebug ? '<div class="auth-debug-badge">⚡ Режим отладки: можно войти без ввода кода из приложения</div>' : ''}
+                    ${isDebug ? `<div class="auth-debug-badge" style="display:inline-flex; align-items:center; gap:6px;">${renderSvgIcon('zap', 'violet', 13)} Режим отладки: можно войти без ввода кода из приложения</div>` : ''}
                     <form id="form-2fa">
                         <div class="form-group">
                             <label>Код подтверждения</label>
@@ -1305,7 +1391,7 @@
                         </div>
                         <div id="err-2fa" class="error" style="display:none;"></div>
                         <button type="submit" class="primary" style="width:100%; margin-top:10px;">ПОДТВЕРДИТЬ</button>
-                        ${isDebug ? '<button type="button" class="btn-debug-bypass" id="btn-debug-bypass-2fa" style="width:100%; margin-top:8px;">⚡ ВОЙТИ БЕЗ 2FA / QR (РЕЖИМ ОТЛАДКИ)</button>' : ''}
+                        ${isDebug ? `<button type="button" class="btn-debug-bypass" id="btn-debug-bypass-2fa" style="width:100%; margin-top:8px; display:inline-flex; align-items:center; justify-content:center; gap:6px;">${renderSvgIcon('zap', 'violet', 13)} ВОЙТИ БЕЗ 2FA / QR (РЕЖИМ ОТЛАДКИ)</button>` : ''}
                         <button type="button" class="secondary" onclick="location.reload()" style="width:100%; margin-top:8px;">ОТМЕНА</button>
                     </form>
                 </div>
@@ -1352,7 +1438,7 @@
                 <div class="auth-card" style="max-width:500px;">
                     <div class="logo"><span style="color:var(--accent);">◈</span> Первичная настройка</div>
                     <div class="sub">Добро пожаловать в WebAdmin! Создайте учетную запись главного администратора.</div>
-                    ${isDebug ? '<div class="auth-debug-badge">⚡ Режим отладки: можно войти без сканирования QR-кода</div>' : ''}
+                    ${isDebug ? `<div class="auth-debug-badge" style="display:inline-flex; align-items:center; gap:6px;">${renderSvgIcon('zap', 'violet', 13)} Режим отладки: можно войти без сканирования QR-кода</div>` : ''}
 
                     <div class="stepper">
                         <div class="step-item active">
@@ -1384,7 +1470,7 @@
                         </div>
                         <div id="ob-err" class="error" style="display:none;"></div>
                         <button type="submit" class="primary" style="width:100%; margin-top:10px;">ПРОДОЛЖИТЬ (2FA)</button>
-                        ${isDebug ? '<button type="button" class="btn-debug-bypass" id="btn-ob-debug-direct" style="width:100%; margin-top:8px;">⚡ СОЗДАТЬ И ВОЙТИ БЕЗ QR (ДЕБАГ)</button>' : ''}
+                        ${isDebug ? `<button type="button" class="btn-debug-bypass" id="btn-ob-debug-direct" style="width:100%; margin-top:8px; display:inline-flex; align-items:center; justify-content:center; gap:6px;">${renderSvgIcon('zap', 'violet', 13)} СОЗДАТЬ И ВОЙТИ БЕЗ QR (ДЕБАГ)</button>` : ''}
                     </form>
                 </div>
             </div>`;
@@ -1469,10 +1555,10 @@
             <div class="auth-screen">
                 <div class="auth-card" style="max-width:500px;">
                     <div class="logo"><span style="color:var(--accent);">◈</span> Привязка 2FA</div>
-                    ${isDebug ? '<div class="auth-debug-badge">⚡ Режим отладки: QR код необязателен</div>' : ''}
+                    ${isDebug ? `<div class="auth-debug-badge" style="display:inline-flex; align-items:center; gap:6px;">${renderSvgIcon('zap', 'violet', 13)} Режим отладки: QR код необязателен</div>` : ''}
                     <div class="stepper">
                         <div class="step-item completed">
-                            <span class="step-badge">✓</span>
+                            <span class="step-badge">${renderSvgIcon('check', 'green', 11)}</span>
                             <span>Аккаунт</span>
                         </div>
                         <div class="step-connector"></div>
@@ -1483,16 +1569,16 @@
                     </div>
 
                     <div class="totp-method-toggle">
-                        <button type="button" class="totp-toggle-btn active" id="ob-toggle-qr">📱 QR-код</button>
-                        <button type="button" class="totp-toggle-btn" id="ob-toggle-code">🔑 Секретный код</button>
+                        <button type="button" class="totp-toggle-btn active" id="ob-toggle-qr" style="display:inline-flex; align-items:center; justify-content:center; gap:6px;">${renderSvgIcon('phone', 'violet', 13)} QR-код</button>
+                        <button type="button" class="totp-toggle-btn" id="ob-toggle-code" style="display:inline-flex; align-items:center; justify-content:center; gap:6px;">${renderSvgIcon('key', 'violet', 13)} Секретный код</button>
                     </div>
 
                     <div id="ob-pane-qr" class="totp-method-pane">
                         <div class="sub" style="margin-bottom:12px;">Отсканируйте QR-код в <b>Google Authenticator</b> или <b>Aegis</b>:</div>
                         <div class="totp-qr-wrapper">
                             <div class="totp-qr-box" id="ob-qrcode-box"></div>
-                            <a href="${esc(otpUrl)}" class="totp-copy-btn" style="text-decoration:none; margin-top:2px;">
-                                ⚡ Открыть в приложении Authenticator
+                            <a href="${esc(otpUrl)}" class="totp-copy-btn" style="text-decoration:none; margin-top:2px; display:inline-flex; align-items:center; gap:6px;">
+                                ${renderSvgIcon('zap', 'violet', 13)} Открыть в приложении Authenticator
                             </a>
                         </div>
                     </div>
@@ -1501,7 +1587,7 @@
                         <div class="sub" style="margin-bottom:12px;">Введите ключ вручную в приложении Authenticator:</div>
                         <div class="totp-secret-box" style="margin-bottom:16px;">
                             <span class="totp-secret-code" title="${esc(totpSecret)}">${esc(totpSecret)}</span>
-                            <button type="button" class="totp-copy-btn" id="btn-copy-ob-secret">📋 Скопировать</button>
+                            <button type="button" class="totp-copy-btn" id="btn-copy-ob-secret" style="display:inline-flex; align-items:center; gap:6px;">${renderSvgIcon('copy', 'gray', 13)} Скопировать</button>
                         </div>
                     </div>
 
@@ -1513,7 +1599,7 @@
                         </div>
                         <div id="ob-2fa-err" class="error" style="display:none;"></div>
                         <button type="submit" class="primary" id="btn-ob-finish" style="width:100%; margin-top:10px;">ЗАВЕРШИТЬ НАСТРОЙКУ</button>
-                        ${isDebug ? '<button type="button" class="btn-debug-bypass" id="btn-ob-debug-finish" style="width:100%; margin-top:8px;">⚡ ЗАВЕРШИТЬ БЕЗ ВВОДА QR (РЕЖИМ ОТЛАДКИ)</button>' : ''}
+                        ${isDebug ? `<button type="button" class="btn-debug-bypass" id="btn-ob-debug-finish" style="width:100%; margin-top:8px; display:inline-flex; align-items:center; justify-content:center; gap:6px;">${renderSvgIcon('zap', 'violet', 13)} ЗАВЕРШИТЬ БЕЗ ВВОДА QR (РЕЖИМ ОТЛАДКИ)</button>` : ''}
                         <button type="button" class="secondary" id="btn-ob-back" style="width:100%; margin-top:8px;">← НАЗАД К ШАГУ 1</button>
                     </form>
                 </div>
@@ -1661,7 +1747,7 @@
                     <!-- Topbar -->
                     <header class="topbar">
                         <div class="topbar-left" style="display:flex; align-items:center; gap:10px;">
-                            <button type="button" class="mobile-menu-btn" id="mobile-menu-toggle" title="Открыть меню">☰</button>
+                            <button type="button" class="mobile-menu-btn" id="mobile-menu-toggle" title="Открыть меню">${renderSvgIcon('menu', 'gray', 16)}</button>
                             <h1 class="topbar-page-title" id="topbar-page-title">Дашборд</h1>
                         </div>
 
@@ -1677,11 +1763,11 @@
                             <!-- Shift Status Toggle -->
                             <div style="display:flex; align-items:center; gap:2px;">
                                 <button type="button" class="topbar-shift-btn" id="topbar-shift-btn" data-tooltip="Ваш статус: Нажмите для переключения смены">
-                                    <span id="shift-btn-dot">⚪</span>
+                                    <span id="shift-btn-dot">${renderSvgIcon('dot', 'gray', 10)}</span>
                                     <span id="shift-btn-text">ВНЕ СМЕНЫ</span>
                                 </button>
-                                <button type="button" class="topbar-icon-btn" id="topbar-shift-list-btn" data-tooltip="Кто сейчас на смене из персонала" style="width:28px; height:31px; font-size:12px;">
-                                    👥
+                                <button type="button" class="topbar-icon-btn" id="topbar-shift-list-btn" data-tooltip="Кто сейчас на смене из персонала" style="width:28px; height:31px;">
+                                    ${renderSvgIcon('users', 'violet', 14)}
                                 </button>
                             </div>
 
@@ -1693,7 +1779,7 @@
 
                             <!-- Theme Toggle Button -->
                             <button type="button" class="topbar-icon-btn" id="topbar-theme-btn" data-tooltip="Сменить тему (Тёмная / Светлая)">
-                                <span id="theme-btn-icon">🌙</span>
+                                <span id="theme-btn-icon">${renderSvgIcon('moon', 'violet', 15)}</span>
                             </button>
 
                             <!-- Admin Settings Button -->
@@ -1909,14 +1995,6 @@
             color: '#F87171',
             action: "window.openQuickKickModal()"
         },
-        freeze: {
-            id: 'freeze',
-            label: 'ЗАМОРОЗКА',
-            sub: 'Проверка на читы',
-            icon: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`,
-            color: 'var(--cyan)',
-            action: "window.openQuickFreezeModal()"
-        },
         vanish: {
             id: 'vanish',
             label: 'VANISH',
@@ -1952,7 +2030,7 @@
                 if (valid.length > 0) return valid;
             }
         } catch (e) {}
-        return ['ban', 'mute', 'kick', 'freeze', 'vanish', 'clear_chat', 'dossier'];
+        return ['ban', 'mute', 'kick', 'vanish', 'clear_chat', 'dossier'];
     }
 
     function saveActiveQuickActions(keys) {
@@ -1964,7 +2042,7 @@
         openModal(`
             <div class="modal-header">
                 <h3>НАСТРОЙКА БЫСТРЫХ ДЕЙСТВИЙ</h3>
-                <button type="button" class="close-btn" data-modal-close="true">✕</button>
+                <button type="button" class="close-btn" data-modal-close="true">${renderSvgIcon('close', 'gray', 16)}</button>
             </div>
             <div class="modal-body">
                 <div style="font-size:12px; color:var(--text-muted); margin-bottom:14px;">
@@ -1976,7 +2054,7 @@
                             <div style="display:flex; align-items:center; gap:10px;">
                                 <span style="font-size:18px; color:${a.color}; display:flex; align-items:center;">${a.icon}</span>
                                 <div>
-                                    <b style="color:#fff; font-size:13px;">${esc(a.label)}</b>
+                                    <b style="color:var(--text-heading); font-size:13px;">${esc(a.label)}</b>
                                     <div style="font-size:11px; color:var(--text-dim);">${esc(a.sub)}</div>
                                 </div>
                             </div>
@@ -2005,7 +2083,7 @@
         openModal(`
             <div class="modal-header">
                 <h3>ПОИСК ДОСЬЕ ИГРОКА</h3>
-                <button type="button" class="close-btn" data-modal-close="true">✕</button>
+                <button type="button" class="close-btn" data-modal-close="true">${renderSvgIcon('close', 'gray', 16)}</button>
             </div>
             <div class="modal-body">
                 <div class="form-group">
@@ -2090,7 +2168,7 @@
                     <p>Оперативная панель мониторинга сервера и быстрого реагирования (перетаскивайте плитки для настройки порядка)</p>
                 </div>
                 <div class="view-actions">
-                    <button type="button" class="secondary" id="dash-customize-btn">⚙ НАСТРОЙКА ПЛИТОК</button>
+                    <button type="button" class="secondary" id="dash-customize-btn" style="display:inline-flex; align-items:center; gap:6px;">${renderSvgIcon('gear', 'gray', 14)} НАСТРОЙКА ПЛИТОК</button>
                 </div>
             </div>
 
@@ -2171,7 +2249,7 @@
                 return `
                     <div class="tile tile-lg" id="tile-server_stats">
                         <div class="tile-header">
-                            <span class="tile-title">▦ СТАТИСТИКА СЕРВЕРА</span>
+                            <span class="tile-title" style="display:flex; align-items:center; gap:8px;">${renderSvgIcon('server', 'violet', 16)} СТАТИСТИКА СЕРВЕРА</span>
                             <span class="badge purple">LIVE 3S</span>
                         </div>
                         <div class="tile-body" id="tile-body-server_stats">Загрузка метрик...</div>
@@ -2181,8 +2259,8 @@
                 return `
                     <div class="tile tile-sm" id="tile-quick_actions">
                         <div class="tile-header">
-                            <span class="tile-title">
-                                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#9B5CFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                            <span class="tile-title" style="display:flex; align-items:center; gap:8px;">
+                                ${renderSvgIcon('zap', 'violet', 16)}
                                 БЫСТРЫЕ ДЕЙСТВИЯ
                             </span>
                             <button type="button" class="secondary btn-sm" onclick="window.openQuickActionsConfigModal()" title="Настроить состав действий">НАСТРОИТЬ</button>
@@ -2208,7 +2286,7 @@
                 return `
                     <div class="tile tile-lg" id="tile-vesuvio_flags">
                         <div class="tile-header">
-                            <span class="tile-title">⚡ ПОСЛЕДНИЕ СРАБАТЫВАНИЯ АНТИЧИТА</span>
+                            <span class="tile-title" style="display:flex; align-items:center; gap:8px;">${renderSvgIcon('shieldAlert', 'violet', 16)} ПОСЛЕДНИЕ СРАБАТЫВАНИЯ АНТИЧИТА</span>
                             <button type="button" class="secondary btn-sm" onclick="window.navigateTo('anticheat')">ВСЕ ФЛАГИ →</button>
                         </div>
                         <div class="tile-body" id="tile-body-vesuvio_flags" style="padding:10px 18px;">Загрузка потока...</div>
@@ -2217,7 +2295,7 @@
                 return `
                     <div class="tile tile-sm" id="tile-attention">
                         <div class="tile-header">
-                            <span class="tile-title">⚠ ТРЕБУЕТ ВНИМАНИЯ</span>
+                            <span class="tile-title" style="display:flex; align-items:center; gap:8px;">${renderSvgIcon('alert', 'red', 16)} ТРЕБУЕТ ВНИМАНИЯ</span>
                             <span class="badge yellow">ФЛАГИ & РИСК</span>
                         </div>
                         <div class="tile-body" id="tile-body-attention">Загрузка...</div>
@@ -2226,7 +2304,7 @@
                 return `
                     <div class="tile tile-sm" id="tile-punishments_stats">
                         <div class="tile-header">
-                            <span class="tile-title">⚖ СТАТИСТИКА НАКАЗАНИЙ</span>
+                            <span class="tile-title" style="display:flex; align-items:center; gap:8px;">${renderSvgIcon('scales', 'violet', 16)} СТАТИСТИКА НАКАЗАНИЙ</span>
                         </div>
                         <div class="tile-body" id="tile-body-punishments_stats">Загрузка...</div>
                     </div>`;
@@ -2234,7 +2312,7 @@
                 return `
                     <div class="tile tile-sm" id="tile-online_players">
                         <div class="tile-header">
-                            <span class="tile-title">👥 ОНЛАЙН-ИГРОКИ</span>
+                            <span class="tile-title" style="display:flex; align-items:center; gap:8px;">${renderSvgIcon('users', 'violet', 16)} ОНЛАЙН-ИГРОКИ</span>
                             <button type="button" class="secondary btn-sm" onclick="window.navigateTo('server')">ИГРОКИ →</button>
                         </div>
                         <div class="tile-body" id="tile-body-online_players" style="max-height:280px; overflow-y:auto; padding:8px 14px;">Загрузка...</div>
@@ -2243,7 +2321,7 @@
                 return `
                     <div class="tile tile-sm" id="tile-admin_actions">
                         <div class="tile-header">
-                            <span class="tile-title">▤ ПОСЛЕДНИЕ ДЕЙСТВИЯ ${isModeratorRole() ? 'МОИ' : 'АДМИНИСТРАЦИИ'}</span>
+                            <span class="tile-title" style="display:flex; align-items:center; gap:8px;">${renderSvgIcon('fileText', 'gray', 16)} ПОСЛЕДНИЕ ДЕЙСТВИЯ ${isModeratorRole() ? 'МОИ' : 'АДМИНИСТРАЦИИ'}</span>
                             <button type="button" class="secondary btn-sm" onclick="window.navigateTo('journal')">ЖУРНАЛ →</button>
                         </div>
                         <div class="tile-body" id="tile-body-admin_actions" style="max-height:280px; overflow-y:auto; padding:10px 16px;">Загрузка...</div>
@@ -2252,7 +2330,7 @@
                 return `
                     <div class="tile tile-sm" id="tile-my_shift">
                         <div class="tile-header">
-                            <span class="tile-title">⏱ МОЯ СМЕНА</span>
+                            <span class="tile-title" style="display:flex; align-items:center; gap:8px;">${renderSvgIcon('clock', 'green', 16)} МОЯ СМЕНА</span>
                             <span class="badge green">АКТИВНА</span>
                         </div>
                         <div class="tile-body" id="tile-body-my_shift">Загрузка...</div>
@@ -2358,8 +2436,8 @@
                 if (!list.length) {
                     body.innerHTML = `
                         <div style="text-align:center; padding:24px; color:var(--text-dim);">
-                            <div style="font-size:24px; margin-bottom:6px; color:var(--green);">✓</div>
-                            Подозрительных игроков нет
+                            <div style="margin-bottom:6px; display:inline-flex; align-items:center;">${renderSvgIcon('check', 'green', 24)}</div>
+                            <div>Подозрительных игроков нет</div>
                         </div>`;
                 } else {
                     body.innerHTML = list.map(p => `
@@ -2367,7 +2445,7 @@
                             <div style="display:flex; align-items:center; gap:8px;">
                                 <img src="https://mc-heads.net/avatar/${encodeURIComponent(p.name || '')}/24" class="player-avatar-sm" alt="">
                                 <div>
-                                    <div style="font-weight:700; color:#fff;">${esc(p.name)}</div>
+                                    <div style="font-weight:700; color:var(--text-main);">${esc(p.name)}</div>
                                     <div style="font-size:11px; color:var(--yellow);">Режим наблюдения</div>
                                 </div>
                             </div>
@@ -2423,7 +2501,7 @@
                         <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.04);">
                             <div style="display:flex; align-items:center; gap:8px;">
                                 <img src="https://mc-heads.net/avatar/${encodeURIComponent(p.name)}/22" class="player-avatar-sm" style="width:22px; height:22px;" alt="">
-                                <span style="font-weight:600; color:#fff;">${esc(p.name)}</span>
+                                <span style="font-weight:600; color:var(--text-heading);">${esc(p.name)}</span>
                             </div>
                             <div style="display:flex; align-items:center; gap:6px;">
                                 <span class="badge gray">${p.ping} мс</span>
@@ -2498,7 +2576,7 @@
         const currentTiles = getActiveDashboardTiles();
         const allTileKeys = [
             { key: 'server_stats', title: 'Статистика сервера (TPS, MSPT, память, онлайн)' },
-            { key: 'quick_actions', title: 'Быстрые действия (Бан, Кик, Спавн, Заморозка)' },
+            { key: 'quick_actions', title: 'Быстрые действия (Бан, Мут, Кик, Спавн)' },
             { key: 'vesuvio_flags', title: 'Последние срабатывания античита' },
             { key: 'attention', title: '«Требует внимания» (подозрительные игроки)' },
             { key: 'punishments_stats', title: 'Статистика наказаний (сегодня / неделя)' },
@@ -2510,7 +2588,7 @@
         openModal(`
             <div class="modal-header">
                 <h3>НАСТРОЙКА ПЛИТОК ДАШБОРДА</h3>
-                <button type="button" class="close-btn" onclick="window.closeCurrentModal()">✕</button>
+                <button type="button" class="close-btn" onclick="window.closeCurrentModal()">${renderSvgIcon('close', 'gray', 16)}</button>
             </div>
             <div class="modal-body">
                 <p style="color:var(--text-muted); font-size:13px; margin-bottom:16px;">
@@ -2522,7 +2600,7 @@
                         return `
                             <label style="display:flex; align-items:center; gap:10px; cursor:pointer; padding:8px 12px; background:rgba(255,255,255,0.03); border:1px solid var(--border); border-radius:6px;">
                                 <input type="checkbox" class="dash-tile-cb" value="${t.key}" ${checked} style="width:18px; height:18px; accent-color:var(--accent);">
-                                <span style="font-size:13px; font-weight:600; color:#fff;">${esc(t.title)}</span>
+                                <span style="font-size:13px; font-weight:600; color:var(--text-heading);">${esc(t.title)}</span>
                             </label>`;
                     }).join('')}
                 </div>
@@ -2574,12 +2652,8 @@
         area.innerHTML = `
             <div class="view-header">
                 <div class="view-title-block">
-                    <h2>ЖУРНАЛ СОБЫТИЙ (AUDIT LOG)</h2>
-                    <p>Раздельный аудит действий веб-панели и серверных событий Minecraft с фильтрами и экспортом</p>
-                </div>
-                <div class="view-actions">
-                    <button type="button" class="secondary" id="journal-export-csv-btn">📥 ЭКСПОРТ CSV</button>
-                    <button type="button" class="secondary" id="journal-export-json-btn">📥 ЭКСПОРТ JSON</button>
+                    <h2>ЖУРНАЛ СОБЫТИЙ</h2>
+                    <p>Аудит действий веб-панели и серверных событий Minecraft</p>
                 </div>
             </div>
 
@@ -2587,12 +2661,12 @@
             <div class="segmented-nav-tabs" style="margin-bottom:18px;">
                 ${canViewWebLogs ? `
                 <button type="button" class="segmented-nav-tab ${primaryMode === 'web' ? 'active' : ''}" data-mode="web">
-                    <span>🌐</span>
-                    <span>ВЕБ-ЖУРНАЛ (ТОЛЬКО ДЕЙСТВИЯ ЧЕРЕЗ САЙТ)</span>
+                    ${renderSvgIcon('globe', 'violet', 16)}
+                    <span>Веб журнал</span>
                 </button>` : ''}
                 <button type="button" class="segmented-nav-tab ${primaryMode === 'server' ? 'active' : ''}" data-mode="server">
-                    <span>🖥️</span>
-                    <span>СЕРВЕРНЫЙ ЖУРНАЛ (ИГРОВЫЕ СОБЫТИЯ + ВЕБ-ДЕЙСТВИЯ)</span>
+                    ${renderSvgIcon('server', 'gray', 16)}
+                    <span>Серверный журнал</span>
                 </button>
             </div>
 
@@ -2606,7 +2680,7 @@
                 <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
                     <div style="flex:1; min-width:200px; position:relative;">
                         <input type="text" id="journal-search-input" placeholder="Поиск по содержанию лога..." style="padding-left:34px;">
-                        <span style="position:absolute; left:12px; top:50%; transform:translateY(-50%); color:var(--text-dim);">🔍</span>
+                        <span style="position:absolute; left:12px; top:50%; transform:translateY(-50%); display:inline-flex; align-items:center;">${renderSvgIcon('search', 'gray', 14)}</span>
                     </div>
 
                     <input type="text" id="journal-filter-staff" placeholder="Сотрудник (ник)..." style="width:160px;">
@@ -2707,7 +2781,7 @@
             if (s.includes('вошёл') || s.includes('вышел') || s.includes('вход') || s.includes('сесси') || s.includes('2fa') || s.includes('парол')) {
                 return { type: 'АВТОРИЗАЦИЯ', typeClass: 'blue' };
             }
-            if (s.includes('бан') || s.includes('разбан') || s.includes('кик') || s.includes('наказан') || s.includes('замороз')) {
+            if (s.includes('бан') || s.includes('разбан') || s.includes('кик') || s.includes('наказан')) {
                 return { type: 'НАКАЗАНИЕ', typeClass: 'red' };
             }
             if (s.includes('жалоб') || s.includes('репорт')) {
@@ -2859,7 +2933,7 @@
                 <tr>
                     <td class="font-mono" style="font-size:12px; color:var(--text-muted);">${fmtTime(row.time)}</td>
                     <td style="font-weight:700;">
-                        <span style="cursor:pointer; color:#fff;" onclick="window.viewPlayerProfile('${esc(row.actor)}')">${esc(row.actor)}</span>
+                        <span style="cursor:pointer; color:var(--text-heading);" onclick="window.viewPlayerProfile('${esc(row.actor)}')">${esc(row.actor)}</span>
                     </td>
                     <td><span class="badge ${row.typeClass}">${esc(row.type)}</span></td>
                     <td style="color:var(--text-secondary); line-height:1.4; word-break:break-word;">${esc(row.action)}</td>
@@ -2882,7 +2956,7 @@
             openModal(`
                 <div class="modal-header">
                     <h3>ДЕТАЛИЗАЦИЯ ЗАПИСИ ЖУРНАЛА</h3>
-                    <button type="button" class="close-btn" data-modal-close="true">✕</button>
+                    <button type="button" class="close-btn" data-modal-close="true">${renderSvgIcon('close', 'gray', 16)}</button>
                 </div>
                 <div class="modal-body">
                     <div style="display:grid; grid-template-columns:120px 1fr; gap:10px; font-size:13px; margin-bottom:16px;">
@@ -2893,11 +2967,11 @@
                         <div style="color:var(--text-dim); font-weight:700;">ТИП СОБЫТИЯ:</div>
                         <div><span class="badge ${item.typeClass}">${esc(item.type)}</span></div>
                         <div style="color:var(--text-dim); font-weight:700;">СОДЕРЖАНИЕ:</div>
-                        <div style="color:#fff;">${esc(item.action)}</div>
+                        <div style="color:var(--text-main);">${esc(item.action)}</div>
                     </div>
 
                     <div style="font-size:11px; font-weight:700; color:var(--text-dim); text-transform:uppercase; margin-bottom:6px;">Сырые данные:</div>
-                    <pre style="background:#090614; padding:12px; border-radius:6px; font-size:12px; color:var(--accent-light); border:1px solid var(--border); overflow-x:auto;">${esc(JSON.stringify(item.raw, null, 2))}</pre>
+                    <pre style="background:var(--card-inner-bg); padding:12px; border-radius:6px; font-size:12px; color:var(--accent-light); border:1px solid var(--border); overflow-x:auto;">${esc(JSON.stringify(item.raw, null, 2))}</pre>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="primary" onclick="window.viewPlayerProfile('${esc(item.actor)}');">КАРТОЧКА ИГРОКА</button>
@@ -2905,53 +2979,6 @@
                 </div>
             `);
         };
-
-        // Export Log Handlers (CSV and JSON)
-        document.getElementById('journal-export-csv-btn')?.addEventListener('click', () => {
-            const list = primaryMode === 'web' ? cachedWebLogs : cachedServerLogs;
-            if (!list.length) {
-                showToast('Внимание', 'Журнал пуст для экспорта', 'warning');
-                return;
-            }
-            const csvRows = ['Timestamp,Time,Actor,Type,Action'];
-            list.forEach(e => {
-                const cleanAct = (e.action || '').replace(/"/g, '""');
-                csvRows.push(`${e.time},"${fmtTime(e.time)}","${e.actor}","${e.type}","${cleanAct}"`);
-            });
-            const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `lovewebadmin-${primaryMode}-journal-${Date.now()}.csv`;
-            a.click();
-            URL.revokeObjectURL(url);
-            showToast('Экспорт CSV', 'Файл CSV успешно сохранён', 'success');
-        });
-
-        document.getElementById('journal-export-json-btn')?.addEventListener('click', () => {
-            const list = primaryMode === 'web' ? cachedWebLogs : cachedServerLogs;
-            if (!list.length) {
-                showToast('Внимание', 'Журнал пуст для экспорта', 'warning');
-                return;
-            }
-            const exportData = list.map(e => ({
-                id: e.id,
-                timestamp: e.time,
-                formattedTime: fmtTime(e.time),
-                actor: e.actor,
-                type: e.type,
-                action: e.action,
-                details: e.raw
-            }));
-            const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `lovewebadmin-${primaryMode}-journal-${Date.now()}.json`;
-            a.click();
-            URL.revokeObjectURL(url);
-            showToast('Экспорт JSON', 'Файл JSON успешно сохранён', 'success');
-        });
 
         // Primary Tab Switcher (Web vs Server)
         document.querySelectorAll('.segmented-nav-tab').forEach(btn => {
@@ -3046,11 +3073,11 @@
             appealTemplatesCache = {
                 form: { header: 'ФОРМА ПОДАЧИ АПЕЛЛЯЦИИ', fields: ['1. Ваш никнейм: {targetName}', '2. Кем выдано: {creatorName}', '3. Причина: {ruleReason}', '4. Ваши комментарии:'], footer: 'Срок рассмотрения: до 24 часов.' },
                 verdicts: [
-                    { id: 'v_approved_error', name: 'Одобрено (Ошибочный бан)', type: 'APPROVE', template: '✅ **АПЕЛЛЯЦИЯ ОДОБРЕНА**\n\nУважаемый **{targetName}**!\nБлокировка **#{id}** была пересмотрена. В ходе повторной проверки доказательств была установлена ошибка.\nБлокировка полностью снята, аккаунт разбанен. Приносим извинения за неудобства.\n\n*Администрация сервера*' },
-                    { id: 'v_approved_amnesty', name: 'Одобрено (Амнистия)', type: 'APPROVE', template: '✅ **АПЕЛЛЯЦИЯ ОДОБРЕНА (АМНИСТИЯ)**\n\nУважаемый **{targetName}**!\nАдминистрация приняла решение удовлетворить вашу просьбу об амнистии по блокировке **#{id}** ({ruleReason}).\nБан снят. Пожалуйста, соблюдайте правила проекта во избежание повторного бессрочного бана.' },
-                    { id: 'v_rejected_cheats', name: 'Отклонено (Читы доказаны)', type: 'REJECT', template: '❌ **АПЕЛЛЯЦИЯ ОТКЛОНЕНА**\n\nУважаемый **{targetName}**!\nВаша апелляция по бану **#{id}** рассмотрена.\nФакт использования запрещённого ПО ({ruleReason}) подтверждён видеозаписью и телеметрией античита.\nБлокировка остаётся в силе и является **бессрочной**.' },
-                    { id: 'v_rejected_expired', name: 'Отклонено (Истёк срок)', type: 'REJECT', template: '❌ **АПЕЛЛЯЦИЯ ОТКЛОНЕНА (ИСТЁК СРОК)**\n\nУважаемый **{targetName}**!\nСрок подачи апелляции на блокировку от {createdAt} истёк.\nАпелляция не подлежит дальнейшему рассмотрению.' },
-                    { id: 'v_info_request', name: 'Запрос доп. информации', type: 'INFO', template: '⚠️ **ТРЕБУЕТСЯ УТОЧНЕНИЕ**\n\nУважаемый **{targetName}**!\nДля вынесения вердикта по блокировке **#{id}** предоставьте дополнительную информацию или опровержение в течение 24 часов.' }
+                    { id: 'v_approved_error', name: 'Одобрено (Ошибочный бан)', type: 'APPROVE', template: '**[ОДОБРЕНО] АПЕЛЛЯЦИЯ ОДОБРЕНА**\n\nУважаемый **{targetName}**!\nБлокировка **#{id}** была пересмотрена. В ходе повторной проверки доказательств была установлена ошибка.\nБлокировка полностью снята, аккаунт разбанен. Приносим извинения за неудобства.\n\n*Администрация сервера*' },
+                    { id: 'v_approved_amnesty', name: 'Одобрено (Амнистия)', type: 'APPROVE', template: '**[ОДОБРЕНО] АПЕЛЛЯЦИЯ ОДОБРЕНА (АМНИСТИЯ)**\n\nУважаемый **{targetName}**!\nАдминистрация приняла решение удовлетворить вашу просьбу об амнистии по блокировке **#{id}** ({ruleReason}).\nБан снят. Пожалуйста, соблюдайте правила проекта во избежание повторного бессрочного бана.' },
+                    { id: 'v_rejected_cheats', name: 'Отклонено (Читы доказаны)', type: 'REJECT', template: '**[ОТКЛОНЕНО] АПЕЛЛЯЦИЯ ОТКЛОНЕНА**\n\nУважаемый **{targetName}**!\nВаша апелляция по бану **#{id}** рассмотрена.\nФакт использования запрещённого ПО ({ruleReason}) подтверждён видеозаписью и телеметрией античита.\nБлокировка остаётся в силе и является **бессрочной**.' },
+                    { id: 'v_rejected_expired', name: 'Отклонено (Истёк срок)', type: 'REJECT', template: '**[ОТКЛОНЕНО] АПЕЛЛЯЦИЯ ОТКЛОНЕНА (ИСТЁК СРОК)**\n\nУважаемый **{targetName}**!\nСрок подачи апелляции на блокировку от {createdAt} истёк.\nАпелляция не подлежит дальнейшему рассмотрению.' },
+                    { id: 'v_info_request', name: 'Запрос доп. информации', type: 'INFO', template: '**[ТРЕБУЕТСЯ УТОЧНЕНИЕ]**\n\nУважаемый **{targetName}**!\nДля вынесения вердикта по блокировке **#{id}** предоставьте дополнительную информацию или опровержение в течение 24 часов.' }
                 ]
             };
         }
@@ -3099,16 +3126,16 @@
             <!-- Subtabs Navigation -->
             <div class="segmented-nav-tabs" id="punishments-subtabs-bar" style="margin-bottom:20px;">
                 <button type="button" class="segmented-nav-tab ${currentPunishmentsSubtab === 'reports' ? 'active' : ''}" data-subtab="reports">
-                    <span>📋</span>
+                    <span>${renderSvgIcon('fileText', 'violet', 15)}</span>
                     <span>ЖАЛОБЫ И РЕПОРТЫ</span>
                     <span class="badge yellow" id="punishments-pending-badge-tab" style="margin-left:4px; font-size:10px;">0</span>
                 </button>
                 <button type="button" class="segmented-nav-tab ${currentPunishmentsSubtab === 'bans' ? 'active' : ''}" data-subtab="bans">
-                    <span>🛡️</span>
+                    <span>${renderSvgIcon('shield', 'red', 15)}</span>
                     <span>БАНЫ СЕРВЕРА</span>
                 </button>
                 <button type="button" class="segmented-nav-tab ${currentPunishmentsSubtab === 'appeals' ? 'active' : ''}" data-subtab="appeals">
-                    <span>⚖️</span>
+                    <span>${renderSvgIcon('scales', 'violet', 15)}</span>
                     <span>АПЕЛЛЯЦИИ (DISCORD)</span>
                 </button>
             </div>
@@ -3253,7 +3280,7 @@
                 wrap.innerHTML = `
                     <div class="frequent-offenders-card">
                         <div class="frequent-offenders-title">
-                            <span>⚠️ ПОВТОРНЫЕ НАРУШИТЕЛИ (4+ ЖАЛОБЫ)</span>
+                            <span style="display:flex; align-items:center; gap:6px;">${renderSvgIcon('alert', 'red', 14)} ПОВТОРНЫЕ НАРУШИТЕЛИ (4+ ЖАЛОБЫ)</span>
                             <span class="badge red">ТРЕБУЮТ ПРИОРИТЕТНОГО ВНИМАНИЯ</span>
                         </div>
                         <div class="frequent-offenders-grid">
@@ -3262,8 +3289,8 @@
                                     <div style="display:flex; align-items:center; gap:10px;">
                                         <img src="https://mc-heads.net/avatar/${encodeURIComponent(o.name)}/32" class="player-avatar-sm" alt="" style="width:32px; height:32px; border-radius:4px;">
                                         <div>
-                                            <div style="font-weight:700; color:#fff; font-size:13.5px;">${esc(o.name)}</div>
-                                            <span class="badge red" style="font-size:10px; padding:2px 6px;">⚠️ ${o.count} жалоб</span>
+                                            <div style="font-weight:700; color:var(--text-main); font-size:13.5px;">${esc(o.name)}</div>
+                                            <span class="badge red" style="display:inline-flex; align-items:center; gap:4px; font-size:10px; padding:2px 6px;">${renderSvgIcon('alert', 'red', 11)} ${o.count} жалоб</span>
                                         </div>
                                     </div>
                                     <div style="display:flex; gap:6px;">
@@ -3325,15 +3352,15 @@
                         : '<span style="color:var(--text-dim); font-size:12px;">Не указано</span>';
 
                     const descHtml = (r.description && r.description.trim() && r.description !== 'не указано')
-                        ? `<span style="color:#e2e8f0;" title="${esc(r.description)}">${esc(r.description.length > 35 ? r.description.substring(0, 35) + '...' : r.description)}</span>`
+                        ? `<span style="color:var(--text-main);" title="${esc(r.description)}">${esc(r.description.length > 35 ? r.description.substring(0, 35) + '...' : r.description)}</span>`
                         : '<i style="color:var(--text-dim); font-size:12px;">не указано</i>';
 
                     const recentBadge = r.isRecent
-                        ? '<span class="badge green" style="font-size:10.5px;" title="Произошло менее 5 минут назад">⏱ &lt; 5 мин</span>'
-                        : '<span class="badge gray" style="font-size:10.5px;" title="Произошло более 5 минут назад">⏱ &gt; 5 мин</span>';
+                        ? `<span class="badge green" style="font-size:10.5px; display:inline-flex; align-items:center; gap:4px;" title="Произошло менее 5 минут назад">${renderSvgIcon('clock', 'green', 11)} &lt; 5 мин</span>`
+                        : `<span class="badge gray" style="font-size:10.5px; display:inline-flex; align-items:center; gap:4px;" title="Произошло более 5 минут назад">${renderSvgIcon('clock', 'gray', 11)} &gt; 5 мин</span>`;
 
                     const suspBadge = r.targetSuspicious
-                        ? '<span class="badge danger" style="margin-left:4px; font-size:10px; font-weight:800;" title="Более 4-х активных жалоб!">⚠️ 4+</span>'
+                        ? `<span class="badge danger" style="margin-left:4px; font-size:10px; font-weight:800; display:inline-flex; align-items:center; gap:3px;" title="Более 4-х активных жалоб!">${renderSvgIcon('alert', 'red', 10)} 4+</span>`
                         : '';
 
                     const isPending = r.status === 'PENDING';
@@ -3344,7 +3371,7 @@
                             <td>
                                 <div style="display:flex; align-items:center; gap:6px;">
                                     <img src="https://mc-heads.net/avatar/${encodeURIComponent(r.targetName)}/24" style="width:24px; height:24px; border-radius:4px;" alt="">
-                                    <a href="javascript:void(0)" onclick="window.viewPlayerProfile('${esc(r.targetName)}')" style="color:#fff; font-weight:700; text-decoration:none;">${esc(r.targetName)}</a>
+                                    <a href="javascript:void(0)" onclick="window.viewPlayerProfile('${esc(r.targetName)}')" style="color:var(--text-main); font-weight:700; text-decoration:none;">${esc(r.targetName)}</a>
                                     ${suspBadge}
                                 </div>
                             </td>
@@ -3361,18 +3388,18 @@
                             <td>
                                 <div style="display:flex; align-items:center; gap:4px; flex-wrap:wrap;">
                                     ${statusBadge}
-                                    ${(r.linkedBanId && r.linkedBanId > 0) ? `<button type="button" class="btn-tag-link" style="color:#f87171; border-color:rgba(239, 68, 68, 0.4);" onclick="window.viewBanDetails(${r.linkedBanId})" title="Открыть примененный бан #${r.linkedBanId}">🔨 БАН #${r.linkedBanId}</button>` : ''}
+                                    ${(r.linkedBanId && r.linkedBanId > 0) ? `<button type="button" class="btn-tag-link" style="color:#f87171; border-color:rgba(239, 68, 68, 0.4); display:inline-flex; align-items:center; gap:4px;" onclick="window.viewBanDetails(${r.linkedBanId})" title="Открыть примененный бан #${r.linkedBanId}">${renderSvgIcon('shield', 'red', 12)} БАН #${r.linkedBanId}</button>` : ''}
                                 </div>
                             </td>
                             <td style="text-align:right; white-space:nowrap;">
                                 <div style="display:inline-flex; gap:5px;">
                                     <button type="button" class="secondary btn-sm" onclick="window.openReportDetailModal(${r.id})" title="Просмотреть детали и контекст чата">ИНФО</button>
                                     ${isPending ? `
-                                        <button type="button" class="primary btn-sm" onclick="window.handleAcceptReport(${r.id}, '${esc(r.targetName)}')" title="Принять и наказать (начислить репутацию заявителю)">✔</button>
+                                        <button type="button" class="primary btn-sm" onclick="window.handleAcceptReport(${r.id}, '${esc(r.targetName)}')" title="Принять и наказать (начислить репутацию заявителю)">${renderSvgIcon('check', 'white', 12)}</button>
                                         <button type="button" class="secondary btn-sm" onclick="window.handleRejectReport(${r.id}, '${esc(r.targetName)}')" title="Пометить как ложную (вернуть репутацию цели)">ЛОЖЬ</button>
                                         <button type="button" class="danger btn-sm" onclick="window.handleBanFromReportRow(${r.id})" title="Выдать бан по жалобе #${r.id}">БАН</button>
                                     ` : ''}
-                                    <button type="button" class="danger btn-sm" onclick="window.handleDeleteReport(${r.id})" title="Удалить запись жалобы">✕</button>
+                                    <button type="button" class="danger btn-sm" onclick="window.handleDeleteReport(${r.id})" title="Удалить запись жалобы">${renderSvgIcon('close', 'white', 12)}</button>
                                 </div>
                             </td>
                         </tr>
@@ -3510,7 +3537,7 @@
                                 <div style="display:flex; align-items:center; gap:10px; cursor:pointer;" onclick="window.viewPlayerProfile('${esc(b.targetName)}')">
                                     <img src="https://mc-heads.net/avatar/${encodeURIComponent(b.targetName)}/24" class="player-avatar-sm" alt="">
                                     <div>
-                                        <div style="font-weight:700; color:#fff;">${esc(b.targetName)}</div>
+                                        <div style="font-weight:700; color:var(--text-heading);">${esc(b.targetName)}</div>
                                         ${b.isIpBan ? '<span class="badge yellow" style="font-size:9px; padding:1px 4px;">IP-БАН</span>' : ''}
                                     </div>
                                 </div>
@@ -3518,8 +3545,8 @@
                             <td>
                                 <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
                                     <span class="badge red">${esc(b.ruleReason)}</span>
-                                    ${b.linkedReportId ? `<button type="button" class="btn-tag-link" style="color:#c084fc; border-color:rgba(192, 132, 252, 0.4);" onclick="window.openReportDetailModal(${b.linkedReportId})" title="Открыть прикрепленную жалобу #${b.linkedReportId}">📋 ЖАЛОБА #${b.linkedReportId}</button>` : ''}
-                                    ${proofUrl ? `<button type="button" class="screenshot-thumb-btn" onclick="window.openScreenshotLightbox('${esc(proofUrl)}')">📷 СКРИНШОТ</button>` : ''}
+                                    ${b.linkedReportId ? `<button type="button" class="btn-tag-link" style="color:#c084fc; border-color:rgba(192, 132, 252, 0.4); display:inline-flex; align-items:center; gap:4px;" onclick="window.openReportDetailModal(${b.linkedReportId})" title="Открыть прикрепленную жалобу #${b.linkedReportId}">${renderSvgIcon('fileText', 'violet', 12)} ЖАЛОБА #${b.linkedReportId}</button>` : ''}
+                                    ${proofUrl ? `<button type="button" class="screenshot-thumb-btn" onclick="window.openScreenshotLightbox('${esc(proofUrl)}')">${renderSvgIcon('fileText', 'gray', 12)} СКРИНШОТ</button>` : ''}
                                 </div>
                                 ${b.description ? `<div style="font-size:11.5px; color:var(--text-muted); margin-top:4px;">${esc(b.description)}</div>` : ''}
                             </td>
@@ -3563,9 +3590,9 @@
                     <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap;">
                         <div>
                             <div style="display:flex; align-items:center; gap:8px;">
-                                <span style="font-size:22px;">💬</span>
-                                <h3 style="margin:0; font-size:16px; color:#fff;">ИНТЕГРАЦИЯ С DISCORD: ТИКЕТЫ АПЕЛЛЯЦИЙ</h3>
-                                <span class="badge green" style="font-size:10.5px;">✓ РАБОЧИЙ ШЛЮЗ</span>
+                                <span>${renderSvgIcon('message', 'violet', 20)}</span>
+                                <h3 style="margin:0; font-size:16px; color:var(--text-main);">ИНТЕГРАЦИЯ С DISCORD: ТИКЕТЫ АПЕЛЛЯЦИЙ</h3>
+                                <span class="badge green" style="font-size:10.5px; display:inline-flex; align-items:center; gap:4px;">${renderSvgIcon('check', 'green', 11)} РАБОЧИЙ ШЛЮЗ</span>
                             </div>
                             <p style="font-size:13px; color:var(--text-secondary); margin:6px 0 0 0; line-height:1.5;">
                                 На сервере приём апелляций осуществляется через Discord-бота в канале <b>#тикеты-апелляций</b>. 
@@ -3573,14 +3600,14 @@
                             </p>
                         </div>
                         <div>
-                            <button type="button" class="secondary btn-sm" id="btn-toggle-discord-docs">📖 СПРАВКА И МЕТОДЫ БОТА</button>
+                            <button type="button" class="secondary btn-sm" id="btn-toggle-discord-docs" style="display:inline-flex; align-items:center; gap:6px;">${renderSvgIcon('fileText', 'gray', 12)} СПРАВКА И МЕТОДЫ БОТА</button>
                         </div>
                     </div>
                 </div>
 
                 <!-- Collapsible Discord Bot API & Methods Doc -->
                 <div id="discord-bot-docs-box" style="display:none; background:var(--card-bg); border:1px solid var(--border); border-radius:var(--radius-md); padding:16px; margin-bottom:20px;">
-                    <h4 style="color:var(--accent-light); margin:0 0 10px 0; font-size:14px;">📡 МЕТОДЫ И ИНСТРУКЦИИ ДЛЯ DISCORD-БОТА</h4>
+                    <h4 style="color:var(--accent-light); margin:0 0 10px 0; font-size:14px; display:flex; align-items:center; gap:6px;">${renderSvgIcon('server', 'violet', 14)} МЕТОДЫ И ИНСТРУКЦИИ ДЛЯ DISCORD-БОТА</h4>
                     <div style="font-size:12.5px; color:var(--text-muted); line-height:1.6; margin-bottom:12px;">
                         Для автоматизации тикетов Discord-бот может обращаться к REST API веб-панели через авторизационный токен с правами <code>MANAGE_BANS</code>:
                     </div>
@@ -3595,7 +3622,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
 // 3. Формат готового Discord Embed сообщения с вердиктом:
 {
   "embeds": [{
-    "title": "⚖️ Вердикт по апелляции на блокировку",
+    "title": "Вердикт по апелляции на блокировку",
     "color": 3066993, // Зеленый при разбане, 15158332 при отказе
     "fields": [
       { "name": "Игрок", "value": "{targetName}", "inline": true },
@@ -3609,8 +3636,8 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 <div style="background:var(--card-bg); border:1px solid var(--border); border-radius:var(--radius-md); padding:18px; margin-bottom:20px;">
                     <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:14px;">
                         <div>
-                            <h3 style="margin:0; font-size:15px; color:#fff; display:flex; align-items:center; gap:8px;">
-                                <span>⚖️</span>
+                            <h3 style="margin:0; font-size:15px; color:var(--text-main); display:flex; align-items:center; gap:8px;">
+                                <span>${renderSvgIcon('scales', 'violet', 15)}</span>
                                 <span>ОЧЕРЕДЬ АПЕЛЛЯЦИЙ И ТИКЕТОВ DISCORD</span>
                                 <span class="badge yellow" id="live-appeals-count-badge" style="font-size:11px;">0</span>
                             </h3>
@@ -3672,9 +3699,9 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                                             <img src="https://mc-heads.net/avatar/${esc(a.playerName)}/36" style="width:36px; height:36px; border-radius:4px;" alt="">
                                             <div>
                                                 <div style="display:flex; align-items:center; gap:8px;">
-                                                    <span style="font-size:14px; font-weight:800; color:#fff;">${esc(a.playerName)}</span>
+                                                    <span style="font-size:14px; font-weight:800; color:var(--text-main);">${esc(a.playerName)}</span>
                                                     ${stBadge}
-                                                    ${a.discordChannelId ? `<span class="badge purple" style="font-size:10px;">💬 Discord: ticket-бан-${esc(a.playerName)}</span>` : ''}
+                                                    ${a.discordChannelId ? `<span class="badge purple" style="font-size:10px; display:inline-flex; align-items:center; gap:4px;">${renderSvgIcon('message', 'violet', 11)} Discord: ticket-бан-${esc(a.playerName)}</span>` : ''}
                                                 </div>
                                                 <div style="font-size:12px; color:var(--text-muted); margin-top:2px;">
                                                     Бан #${a.banId}: <b>${esc(a.banReason || '—')}</b> • Подана: ${fmtTime(a.createdAt)}
@@ -3685,7 +3712,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                                             </div>
                                         </div>
                                         <div style="display:flex; gap:8px;">
-                                            <button type="button" class="primary btn-sm" data-open-appeal-thread="${a.id}">💬 ТИКЕТ / ТРЕД</button>
+                                            <button type="button" class="primary btn-sm" data-open-appeal-thread="${a.id}" style="display:inline-flex; align-items:center; gap:6px;">${renderSvgIcon('message', 'white', 12)} ТИКЕТ / ТРЕД</button>
                                         </div>
                                     </div>
                                 `;
@@ -3716,13 +3743,13 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                                     <div style="font-size:11.5px; color:var(--text-muted);">Бан #${appeal.banId} • Причина: ${esc(appeal.banReason || '—')} • ${statusBadge}</div>
                                 </div>
                             </div>
-                            <button type="button" class="close-btn" onclick="window.closeCurrentModal()">✕</button>
+                            <button type="button" class="close-btn" onclick="window.closeCurrentModal()">${renderSvgIcon('close', 'gray', 16)}</button>
                         </div>
                         <div class="modal-body" style="max-height:65vh; overflow-y:auto;">
-                            <div style="background:#0d061c; border:1px solid var(--border); border-radius:var(--radius-sm); padding:12px; margin-bottom:14px; font-size:12.5px;">
+                            <div style="background:var(--card-inner-bg); border:1px solid var(--border); border-radius:var(--radius-sm); padding:12px; margin-bottom:14px; font-size:12.5px;">
                                 <div style="color:var(--text-dim); font-size:11px; font-weight:700; text-transform:uppercase;">Причина / аргумент апелляции:</div>
-                                <div style="color:#fff; margin-top:4px; line-height:1.5;">${esc(appeal.reason)}</div>
-                                ${appeal.discordChannelId ? `<div style="margin-top:8px; color:var(--accent-light); font-size:11.5px;">💬 Discord Ticket ID: <code>${esc(appeal.discordChannelId)}</code></div>` : ''}
+                                <div style="color:var(--text-main); margin-top:4px; line-height:1.5;">${esc(appeal.reason)}</div>
+                                ${appeal.discordChannelId ? `<div style="margin-top:8px; color:var(--accent-light); font-size:11.5px; display:flex; align-items:center; gap:4px;">${renderSvgIcon('message', 'violet', 12)} Discord Ticket ID: <code>${esc(appeal.discordChannelId)}</code></div>` : ''}
                             </div>
 
                             <div style="font-size:12px; font-weight:700; color:var(--text-dim); text-transform:uppercase; margin-bottom:8px;">
@@ -3730,7 +3757,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                             </div>
                             <div id="appeal-messages-thread" style="display:flex; flex-direction:column; gap:10px; margin-bottom:16px;">
                                 ${(appeal.messages || []).map(m => `
-                                    <div style="background:${m.isStaff ? 'rgba(124, 58, 237, 0.15)' : 'rgba(255, 255, 255, 0.04)'}; border:1px solid ${m.isStaff ? 'var(--accent)' : 'var(--border)'}; border-radius:6px; padding:10px 12px;">
+                                    <div style="background:${m.isStaff ? 'rgba(124, 58, 237, 0.12)' : 'var(--card-inner-bg)'}; border:1px solid ${m.isStaff ? 'var(--accent)' : 'var(--border)'}; border-radius:6px; padding:10px 12px;">
                                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; font-size:11.5px;">
                                             <div style="display:flex; align-items:center; gap:6px;">
                                                 <b>${esc(m.authorName)}</b>
@@ -3738,7 +3765,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                                             </div>
                                             <span style="color:var(--text-dim); font-size:10.5px;">${fmtTime(m.createdAt)}</span>
                                         </div>
-                                        <div style="color:#e2e8f0; font-size:13px; line-height:1.5; white-space:pre-wrap;">${esc(m.message)}</div>
+                                        <div style="color:var(--text-main); font-size:13px; line-height:1.5; white-space:pre-wrap;">${esc(m.message)}</div>
                                     </div>
                                 `).join('')}
                             </div>
@@ -3750,10 +3777,10 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                                         <textarea id="appeal-reply-text" rows="3" placeholder="Введите сообщение игроку..." style="width:100%;"></textarea>
                                     </div>
                                     <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-                                        <button type="button" class="primary btn-sm" id="btn-send-appeal-reply">💬 Отправить ответ в Discord</button>
+                                        <button type="button" class="primary btn-sm" id="btn-send-appeal-reply" style="display:inline-flex; align-items:center; gap:6px;">${renderSvgIcon('message', 'white', 12)} Отправить ответ в Discord</button>
                                         <div style="display:flex; gap:8px;">
-                                            <button type="button" class="danger btn-sm" id="btn-reject-appeal-modal">❌ Отклонить</button>
-                                            <button type="button" class="success btn-sm" id="btn-approve-appeal-modal">✅ Одобрить и разбанить</button>
+                                            <button type="button" class="danger btn-sm" id="btn-reject-appeal-modal" style="display:inline-flex; align-items:center; gap:4px;">${renderSvgIcon('ban', 'white', 12)} Отклонить</button>
+                                            <button type="button" class="success btn-sm" id="btn-approve-appeal-modal" style="display:inline-flex; align-items:center; gap:4px;">${renderSvgIcon('check', 'white', 12)} Одобрить и разбанить</button>
                                         </div>
                                     </div>
                                 </div>
@@ -3835,7 +3862,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
         openModal(`
             <div class="modal-header">
                 <h3>ВЫДАТЬ БЕССРОЧНЫЙ БАН</h3>
-                <button type="button" class="close-btn" data-modal-close="true">✕</button>
+                <button type="button" class="close-btn" data-modal-close="true">${renderSvgIcon('close', 'gray', 16)}</button>
             </div>
             <div class="modal-body">
                 <div style="font-size:12px; color:var(--text-muted); margin-bottom:16px;">
@@ -3851,7 +3878,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 <div class="form-group">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
                         <label style="margin-bottom:0;">Никнейм игрока-нарушителя</label>
-                        <button type="button" class="btn-tag-link" id="btn-browse-reports-picker" style="font-size:11px; padding:2px 8px;">📋 Выбрать жалобу</button>
+                        <button type="button" class="btn-tag-link" id="btn-browse-reports-picker" style="font-size:11px; padding:2px 8px; display:inline-flex; align-items:center; gap:5px;">${renderSvgIcon('fileText', 'violet', 12)} Выбрать жалобу</button>
                     </div>
                     <input type="text" id="ban-target-name" placeholder="Введите ник игрока..." value="${esc(defaultPlayer)}" required autofocus autocomplete="off">
                 </div>
@@ -3888,14 +3915,14 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                     <input type="text" id="ban-screenshot-url" placeholder="Вставьте URL скриншота (Imgur, Yapx, Discord...) или загрузите файл ниже">
                     
                     <div class="screenshot-dropzone" id="ban-screenshot-dropzone">
-                        <span style="color:var(--accent-light); font-weight:600;">📁 Загрузить файл скриншота</span>
+                        <span style="color:var(--accent-light); font-weight:600; display:inline-flex; align-items:center; gap:6px;">${renderSvgIcon('download', 'violet', 14)} Загрузить файл скриншота</span>
                         <span style="font-size:11.5px; color:var(--text-muted); display:block; margin-top:3px;">Кликните для выбора, перетащите изображение или нажмите Ctrl+V</span>
                         <input type="file" id="ban-screenshot-file" accept="image/*" style="display:none;">
                     </div>
                     <div id="ban-screenshot-preview-wrap" style="display:none;">
                         <div class="screenshot-preview-box">
                             <img id="ban-screenshot-img" class="screenshot-preview-img" alt="Скриншот">
-                            <button type="button" class="btn-remove-screenshot" id="btn-clear-screenshot" title="Удалить скриншот">✕</button>
+                            <button type="button" class="btn-remove-screenshot" id="btn-clear-screenshot" title="Удалить скриншот">${renderSvgIcon('close', 'gray', 14)}</button>
                         </div>
                     </div>
                 </div>
@@ -4012,7 +4039,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                                 <div>
                                     <div style="display:flex; align-items:center; gap:8px;">
                                         <span class="badge purple">ПРИКРЕПЛЕНА ЖАЛОБА #${r.id}</span>
-                                        <span style="font-weight:700; color:#fff;">от ${esc(r.reporterName)}</span>
+                                        <span style="font-weight:700; color:var(--text-heading);">от ${esc(r.reporterName)}</span>
                                         ${r.isRecent ? '<span class="badge green" style="font-size:10px;">⏱ &lt; 5 мин</span>' : ''}
                                     </div>
                                     <div style="font-size:12px; color:var(--text-secondary); margin-top:4px;">
@@ -4022,7 +4049,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                                         <div style="font-size:12px; color:#e2e8f0; margin-top:4px;">"${esc(r.description)}"</div>
                                     ` : ''}
                                 </div>
-                                <button type="button" class="btn-remove-screenshot" id="btn-detach-report" title="Открепить жалобу">✕</button>
+                                <button type="button" class="btn-remove-screenshot" id="btn-detach-report" title="Открепить жалобу">${renderSvgIcon('close', 'gray', 14)}</button>
                             </div>
                         </div>
                     `;
@@ -4076,7 +4103,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                         suggBox.innerHTML = `
                             <div class="report-picker-hint">
                                 <div>
-                                    <span>💡 Найдено активных жалоб на игрока: <b>${list.length}</b></span>
+                                    <span style="display:inline-flex; align-items:center; gap:6px;">${renderSvgIcon('alert', 'yellow', 13)} Найдено активных жалоб на игрока: <b>${list.length}</b></span>
                                 </div>
                                 <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
                                     ${list.slice(0, 3).map(pr => `
@@ -4176,7 +4203,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
         openModal(`
             <div class="modal-header">
                 <h3>ДЕТАЛИ БЛОКИРОВКИ #${banId}</h3>
-                <button type="button" class="close-btn" data-modal-close="true">✕</button>
+                <button type="button" class="close-btn" data-modal-close="true">${renderSvgIcon('close', 'gray', 16)}</button>
             </div>
             <div class="modal-body" id="ban-details-body">
                 <div style="text-align:center; padding:24px; color:var(--text-dim);">Загрузка деталей...</div>
@@ -4201,7 +4228,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                         <img src="https://mc-heads.net/avatar/${encodeURIComponent(b.targetName)}/56" style="width:56px; height:56px; border-radius:8px;" alt="">
                         <div>
                             <div style="display:flex; align-items:center; gap:8px;">
-                                <h3 style="margin:0; font-size:20px; color:#fff;">${esc(b.targetName)}</h3>
+                                <h3 style="margin:0; font-size:20px; color:var(--text-heading);">${esc(b.targetName)}</h3>
                                 <span class="badge ${isActive ? 'red' : 'green'}">${isActive ? 'АКТИВЕН' : 'СНЯТ'}</span>
                                 ${b.isIpBan ? '<span class="badge yellow">IP-БАН</span>' : ''}
                             </div>
@@ -4224,8 +4251,8 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                         ${b.linkedReportId ? `
                             <div style="color:var(--text-dim); font-weight:700;">СВЯЗАННАЯ ЖАЛОБА:</div>
                             <div>
-                                <button type="button" class="btn-tag-link" onclick="window.closeCurrentModal(); window.openReportDetailModal(${b.linkedReportId})">
-                                    📋 ЖАЛОБА #${b.linkedReportId}
+                                <button type="button" class="btn-tag-link" onclick="window.closeCurrentModal(); window.openReportDetailModal(${b.linkedReportId})" style="display:inline-flex; align-items:center; gap:5px;">
+                                    ${renderSvgIcon('fileText', 'violet', 12)} ЖАЛОБА #${b.linkedReportId}
                                 </button>
                             </div>
                         ` : `
@@ -4238,7 +4265,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                         `}
 
                         <div style="color:var(--text-dim); font-weight:700;">ПОЯСНЕНИЕ:</div>
-                        <div style="color:#e2e8f0; line-height:1.5;">${esc(b.description || 'Комментарий отсутствует')}</div>
+                        <div style="color:var(--text-main); line-height:1.5;">${esc(b.description || 'Комментарий отсутствует')}</div>
                     </div>
 
                     ${proofUrl ? `
@@ -4269,7 +4296,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
 
                 if (footer) {
                     footer.innerHTML = `
-                        <button type="button" class="secondary" onclick="window.closeCurrentModal(); window.renderPunishmentsView('appeals', ${b.id});">⚖️ АПЕЛЛЯЦИЯ (ТИКЕТЫ)</button>
+                        <button type="button" class="secondary" onclick="window.closeCurrentModal(); window.renderPunishmentsView('appeals', ${b.id});" style="display:inline-flex; align-items:center; gap:6px;">${renderSvgIcon('scales', 'violet', 13)} АПЕЛЛЯЦИЯ (ТИКЕТЫ)</button>
                         <button type="button" class="secondary" onclick="window.openPlayerAltsModal('${esc(b.targetName)}')">ПРОВЕРИТЬ АЛЬТЫ</button>
                         ${isActive && canUnban ? `
                             <button type="button" class="danger" id="btn-modal-unban">РАЗБАНИТЬ ИГРОКА</button>
@@ -4294,7 +4321,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
         overlay.className = 'lightbox-overlay';
         overlay.innerHTML = `
             <div style="position:relative; max-width:92vw; max-height:92vh; display:flex; flex-direction:column; align-items:center;">
-                <button type="button" class="btn-remove-screenshot" style="top:-14px; right:-14px; width:32px; height:32px; font-size:16px;" onclick="this.closest('.lightbox-overlay').remove()">✕</button>
+                <button type="button" class="btn-remove-screenshot" style="top:-14px; right:-14px; width:32px; height:32px;" onclick="this.closest('.lightbox-overlay').remove()">${renderSvgIcon('close', 'white', 16)}</button>
                 <img src="${esc(imgSrc)}" class="lightbox-img" alt="Доказательство бана">
                 <div style="margin-top:10px; display:flex; gap:10px;">
                     <a href="${esc(imgSrc)}" target="_blank" class="secondary btn-sm" style="text-decoration:none; padding:6px 14px; font-size:12px; border-radius:4px; border:1px solid var(--border); background:rgba(0,0,0,0.7); color:#fff;">ОТКРЫТЬ В НОВОЙ ВКЛАДКЕ ↗</a>
@@ -4338,7 +4365,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
         openModal(`
             <div class="modal-header">
                 <h3>ТВИНКИ И АЛЬТ-АККАУНТЫ: ${esc(playerName)}</h3>
-                <button type="button" class="close-btn" data-modal-close="true">✕</button>
+                <button type="button" class="close-btn" data-modal-close="true">${renderSvgIcon('close', 'gray', 16)}</button>
             </div>
             <div class="modal-body" id="player-alts-body">
                 <div style="text-align:center; padding:24px; color:var(--text-dim);">Поиск связанных аккаунтов по IP...</div>
@@ -4379,7 +4406,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                                         <td>
                                             <div style="display:flex; align-items:center; gap:8px;">
                                                 <img src="https://mc-heads.net/avatar/${encodeURIComponent(a.name)}/20" style="width:20px; height:20px; border-radius:3px;" alt="">
-                                                <b style="color:#fff;">${esc(a.name)}</b>
+                                                <b style="color:var(--text-heading);">${esc(a.name)}</b>
                                             </div>
                                         </td>
                                         <td class="font-mono" style="font-size:11.5px; color:var(--text-muted);">${fmtTime(a.lastSeen)}</td>
@@ -4476,7 +4503,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
         openModal(`
             <div class="modal-header">
                 <h3>ДЕТАЛИЗАЦИЯ ЖАЛОБЫ #${reportId}</h3>
-                <button type="button" class="close-btn" data-modal-close="true">✕</button>
+                <button type="button" class="close-btn" data-modal-close="true">${renderSvgIcon('close', 'gray', 16)}</button>
             </div>
             <div class="modal-body" id="report-modal-body">
                 <div style="text-align:center; padding:32px; color:var(--text-dim);">Загрузка данных жалобы...</div>
@@ -4509,7 +4536,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                             <div style="display:flex; align-items:center; gap:10px; margin-top:8px;">
                                 <img src="https://mc-heads.net/avatar/${encodeURIComponent(r.targetName)}/40" style="width:40px; height:40px; border-radius:4px;" alt="">
                                 <div>
-                                    <div style="font-size:15px; font-weight:700; color:#fff;">${esc(r.targetName)}</div>
+                                    <div style="font-size:15px; font-weight:700; color:var(--text-main);">${esc(r.targetName)}</div>
                                     <div style="font-size:11.5px; color:var(--text-muted);">${r.targetReputation != null ? 'Репутация: ' + r.targetReputation : ''}</div>
                                 </div>
                             </div>
@@ -4520,7 +4547,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                             <div style="display:flex; align-items:center; gap:10px; margin-top:8px;">
                                 <img src="https://mc-heads.net/avatar/${encodeURIComponent(r.reporterName)}/40" style="width:40px; height:40px; border-radius:4px;" alt="">
                                 <div>
-                                    <div style="font-size:15px; font-weight:700; color:#fff;">${esc(r.reporterName)}</div>
+                                    <div style="font-size:15px; font-weight:700; color:var(--text-main);">${esc(r.reporterName)}</div>
                                     <div style="font-size:11.5px; color:var(--text-muted);">${r.reporterReputation != null ? 'Репутация: ' + r.reporterReputation : ''}</div>
                                 </div>
                             </div>
@@ -4535,7 +4562,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                         <div>${(r.reasons || []).map(re => `<span class="badge purple" style="margin-right:4px;">${esc(re)}</span>`).join('')}</div>
 
                         <div style="color:var(--text-dim); font-weight:700;">ОПИСАНИЕ:</div>
-                        <div style="color:#e2e8f0;">${esc(r.description || 'Не указано')}</div>
+                        <div style="color:var(--text-main);">${esc(r.description || 'Не указано')}</div>
 
                         <div style="color:var(--text-dim); font-weight:700;">ВРЕМЯ ПОДАЧИ:</div>
                         <div>${fmtTime(r.createdAt)} (${r.isRecent ? 'менее 5 минут назад' : 'более 5 минут назад'})</div>
@@ -4543,7 +4570,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
 
                     <div style="margin-top:16px;">
                         <div style="font-size:11px; font-weight:700; color:var(--text-dim); text-transform:uppercase; margin-bottom:6px;">Снимок чата на момент жалобы:</div>
-                        <div style="background:#090614; border:1px solid var(--border); border-radius:6px; padding:10px; max-height:160px; overflow-y:auto; font-family:monospace; font-size:12px;">
+                        <div style="background:var(--card-inner-bg); border:1px solid var(--border); border-radius:6px; padding:10px; max-height:160px; overflow-y:auto; font-family:monospace; font-size:12px;">
                             ${logs.length ? logs.map(l => `
                                 <div style="padding:2px 0; color:${l.isTarget ? 'var(--yellow)' : (l.isReporter ? 'var(--cyan)' : 'var(--text-muted)')};">
                                     [${fmtTime(l.timestamp)}] <b>&lt;${esc(l.sender)}&gt;</b> ${esc(l.message)}
@@ -4582,7 +4609,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                         });
                     } else if (r.linkedBanId && r.linkedBanId > 0) {
                         footer.innerHTML = `
-                            <button type="button" class="primary" onclick="window.closeCurrentModal(); window.viewBanDetails(${r.linkedBanId});">🔨 ПРОСМОТРЕТЬ БАН #${r.linkedBanId}</button>
+                            <button type="button" class="primary" onclick="window.closeCurrentModal(); window.viewBanDetails(${r.linkedBanId});" style="display:inline-flex; align-items:center; gap:6px;">${renderSvgIcon('ban', 'white', 13)} ПРОСМОТРЕТЬ БАН #${r.linkedBanId}</button>
                             <button type="button" class="secondary" data-modal-close="true">ЗАКРЫТЬ</button>
                         `;
                     } else {
@@ -4605,7 +4632,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
         openModal(`
             <div class="modal-header">
                 <div style="display:flex; align-items:center; gap:10px;">
-                    <span style="font-size:20px;">📋</span>
+                    <span style="display:inline-flex; align-items:center;">${renderSvgIcon('fileText', 'violet', 20)}</span>
                     <div>
                         <h3 style="margin:0;">ШАБЛОНЫ АПЕЛЛЯЦИЙ И ВЕРДИКТОВ</h3>
                         <div style="font-size:12px; color:var(--text-dim);" id="appeal-modal-subtitle">
@@ -4613,7 +4640,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                         </div>
                     </div>
                 </div>
-                <button type="button" class="close-btn" onclick="window.closeCurrentModal()">✕</button>
+                <button type="button" class="close-btn" onclick="window.closeCurrentModal()">${renderSvgIcon('close', 'gray', 16)}</button>
             </div>
             <div class="modal-body" id="modal-appeal-body" style="padding:16px 20px;">
                 <div style="text-align:center; padding:32px; color:var(--text-dim);">Загрузка шаблонов апелляций...</div>
@@ -4659,7 +4686,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                     const subtitle = document.getElementById('appeal-modal-subtitle');
                     if (subtitle) {
                         subtitle.innerHTML = currentBan
-                            ? `Блокировка <b>#${currentBan.id}</b> игрока <b style="color:#fff;">${esc(currentBan.targetName)}</b> • Причина: <b>${esc(currentBan.ruleReason)}</b>`
+                            ? `Блокировка <b>#${currentBan.id}</b> игрока <b style="color:var(--text-heading);">${esc(currentBan.targetName)}</b> • Причина: <b>${esc(currentBan.ruleReason)}</b>`
                             : `Общий режим (без привязки к конкретному бану)`;
                     }
 
@@ -4710,7 +4737,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                                 <img src="https://mc-heads.net/avatar/${encodeURIComponent(currentBan ? currentBan.targetName : 'Steve')}/32" style="width:32px; height:32px; border-radius:4px;" alt="">
                                 <div>
                                     <div style="font-size:11px; font-weight:700; color:var(--text-dim); text-transform:uppercase;">Выбранный бан для авто-подстановки:</div>
-                                    <div style="font-size:13.5px; font-weight:800; color:#fff;">
+                                    <div style="font-size:13.5px; font-weight:800; color:var(--text-heading);">
                                         ${currentBan ? `${esc(currentBan.targetName)} (Бан #${currentBan.id})` : 'Общий шаблон без привязки'}
                                     </div>
                                 </div>
@@ -4730,10 +4757,10 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                         <!-- Tabs Header -->
                         <div class="appeal-tabs-bar">
                             <button type="button" class="appeal-tab-btn ${currentTab === 'form' ? 'active' : ''}" id="tab-btn-form">
-                                📄 ФОРМА ДЛЯ ИГРОКА
+                                <span style="display:inline-flex; align-items:center; gap:6px;">${renderSvgIcon('fileText', 'violet', 14)} ФОРМА ДЛЯ ИГРОКА</span>
                             </button>
                             <button type="button" class="appeal-tab-btn ${currentTab === 'verdicts' ? 'active' : ''}" id="tab-btn-verdicts">
-                                ⚖️ ВЕРДИКТЫ АДМИНИСТРАЦИИ (${(tmpl.verdicts || []).length})
+                                <span style="display:inline-flex; align-items:center; gap:6px;">${renderSvgIcon('scales', 'violet', 14)} ВЕРДИКТЫ АДМИНИСТРАЦИИ (${(tmpl.verdicts || []).length})</span>
                             </button>
                         </div>
 
@@ -4745,8 +4772,8 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                                     <button type="button" class="secondary btn-sm ${formatMode === 'discord' ? 'primary' : ''}" id="fmt-discord-btn">Discord (Markdown)</button>
                                     <button type="button" class="secondary btn-sm ${formatMode === 'bbcode' ? 'primary' : ''}" id="fmt-bbcode-btn">Форум (BBCode)</button>
                                 </div>
-                                <button type="button" class="primary btn-sm" id="btn-copy-form-text">
-                                    📋 СКОПИРОВАТЬ ФОРМУ
+                                <button type="button" class="primary btn-sm" id="btn-copy-form-text" style="display:inline-flex; align-items:center; gap:6px;">
+                                    ${renderSvgIcon('copy', 'white', 13)} СКОПИРОВАТЬ ФОРМУ
                                 </button>
                             </div>
                             <textarea class="appeal-code-editor" id="appeal-form-textarea" spellcheck="false">${esc(formContent)}</textarea>
@@ -4763,10 +4790,10 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                                 ${(tmpl.verdicts || []).map(v => {
                                     const isActive = v.id === selectedVerdictId;
                                     const typeClass = v.type ? v.type.toLowerCase() : 'info';
-                                    let icon = '⚖️';
-                                    if (v.type === 'APPROVE') icon = '🟢';
-                                    else if (v.type === 'REJECT') icon = '🔴';
-                                    else if (v.type === 'INFO') icon = '🔵';
+                                    let icon = renderSvgIcon('scales', 'violet', 13);
+                                    if (v.type === 'APPROVE') icon = renderSvgIcon('check', 'green', 13);
+                                    else if (v.type === 'REJECT') icon = renderSvgIcon('ban', 'red', 13);
+                                    else if (v.type === 'INFO') icon = renderSvgIcon('fileText', 'gray', 13);
                                     return `
                                         <button type="button" class="verdict-chip ${typeClass} ${isActive ? 'active ' + typeClass : ''}" data-verdict-id="${esc(v.id)}">
                                             <span>${icon}</span>
@@ -4784,12 +4811,12 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                                 </div>
                                 <div style="display:flex; gap:8px; flex-wrap:wrap;">
                                     ${(curVerdict && curVerdict.type === 'APPROVE' && currentBan && currentBan.status === 'ACTIVE' && (!isModeratorRole() || me.isOwner)) ? `
-                                        <button type="button" class="danger btn-sm" id="btn-unban-and-copy" title="Разбанить игрока на сервере и скопировать готовый вердикт">
-                                            ⚡ СНЯТЬ БАН И СКОПИРОВАТЬ
+                                        <button type="button" class="danger btn-sm" id="btn-unban-and-copy" title="Разбанить игрока на сервере и скопировать готовый вердикт" style="display:inline-flex; align-items:center; gap:6px;">
+                                            ${renderSvgIcon('shield', 'white', 13)} СНЯТЬ БАН И СКОПИРОВАТЬ
                                         </button>
                                     ` : ''}
-                                    <button type="button" class="primary btn-sm" id="btn-copy-verdict-text">
-                                        📋 СКОПИРОВАТЬ ВЕРДИКТ
+                                    <button type="button" class="primary btn-sm" id="btn-copy-verdict-text" style="display:inline-flex; align-items:center; gap:6px;">
+                                        ${renderSvgIcon('copy', 'white', 13)} СКОПИРОВАТЬ ВЕРДИКТ
                                     </button>
                                 </div>
                             </div>
@@ -4907,7 +4934,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
         openModal(`
             <div class="modal-header">
                 <h3>СВЯЗАННЫЕ АККАУНТЫ (АЛЬТЫ)</h3>
-                <button type="button" class="close-btn" onclick="window.closeCurrentModal()">✕</button>
+                <button type="button" class="close-btn" onclick="window.closeCurrentModal()">${renderSvgIcon('close', 'gray', 16)}</button>
             </div>
             <div class="modal-body" id="alts-modal-body">
                 <div style="text-align:center; padding:20px; color:var(--text-muted);">Поиск связей по IP-графу для игрока <b>${esc(playerName)}</b>...</div>
@@ -4921,18 +4948,18 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 const ip = data.primaryIp || '—';
 
                 body.innerHTML = `
-                    <div style="background:#110b28; padding:12px 16px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-bottom:16px;">
+                    <div style="background:var(--card-inner-bg); padding:12px 16px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-bottom:16px;">
                         <div style="font-size:11px; font-weight:700; color:var(--text-dim); text-transform:uppercase;">Основной IP адрес игрока:</div>
                         <div class="font-mono" style="font-size:14px; font-weight:700; color:var(--accent-light); margin-top:2px;">${esc(ip)}</div>
                     </div>
 
-                    <h4 style="font-size:13px; margin-bottom:8px; color:#fff;">Точные совпадения по IP (${direct.length}):</h4>
+                    <h4 style="font-size:13px; margin-bottom:8px; color:var(--text-main);">Точные совпадения по IP (${direct.length}):</h4>
                     <div style="margin-bottom:16px;">
                         ${direct.length ? direct.map(name => `
                             <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
                                 <div style="display:flex; align-items:center; gap:8px;">
                                     <img src="https://mc-heads.net/avatar/${encodeURIComponent(name)}/20" class="player-avatar-sm" alt="">
-                                    <b style="color:#fff;">${esc(name)}</b>
+                                    <b style="color:var(--text-main);">${esc(name)}</b>
                                 </div>
                                 <div style="display:flex; gap:6px;">
                                     <button type="button" class="secondary btn-sm" onclick="window.viewPlayerProfile('${esc(name)}')">ДОСЬЕ</button>
@@ -5131,7 +5158,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 if (!mergedList.length) {
                     container.innerHTML = `
                         <div style="text-align:center; padding:36px; color:var(--text-dim); background:var(--card-bg); border-radius:var(--radius-md); border:1px solid var(--border);">
-                            <div style="font-size:28px; color:var(--green); margin-bottom:8px;">✓</div>
+                            <div style="margin-bottom:8px; display:flex; justify-content:center;">${renderSvgIcon('check', 'green', 28)}</div>
                             <h3>Подозреваемых игроков нет</h3>
                             <p style="font-size:12.5px; color:var(--text-muted); margin-top:4px;">Добавляйте игроков в ручное наблюдение из потока нарушений или досье</p>
                         </div>`;
@@ -5159,7 +5186,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                                         <td>
                                             <div style="display:flex; align-items:center; gap:8px;">
                                                 <img src="https://mc-heads.net/avatar/${encodeURIComponent(s.name || '')}/24" class="player-avatar-sm" alt="">
-                                                <b style="color:#fff;">${esc(s.name)}</b>
+                                                <b style="color:var(--text-heading);">${esc(s.name)}</b>
                                             </div>
                                         </td>
                                         <td>
@@ -5232,14 +5259,14 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                     ${categories.map(cat => `
                         <div style="background:var(--card-bg); border:1px solid var(--border); border-radius:var(--radius-md); padding:16px;">
                             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-                                <h3 style="font-size:14px; font-weight:700; color:#fff; margin:0;">${esc(cat.title)}</h3>
+                                <h3 style="font-size:14px; font-weight:700; color:var(--text-main); margin:0;">${esc(cat.title)}</h3>
                                 <span class="badge ${cat.color}">${cat.badge}</span>
                             </div>
                             <div style="display:flex; flex-direction:column; gap:8px;">
                                 ${cat.checks.map(c => `
-                                    <div style="background:#110a26; padding:10px 12px; border-radius:6px; border:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
+                                    <div style="background:var(--card-inner-bg); padding:10px 12px; border-radius:6px; border:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
                                         <div>
-                                            <div style="font-weight:700; color:#fff; font-size:13px;">${esc(c.name)}</div>
+                                            <div style="font-weight:700; color:var(--text-main); font-size:13px;">${esc(c.name)}</div>
                                             <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">${esc(c.desc)}</div>
                                         </div>
                                         <div style="text-align:right;">
@@ -5443,7 +5470,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
         openModal(`
             <div class="modal-header">
                 <h3>ДОСЬЕ ИГРОКА: ${esc(playerName)}</h3>
-                <button type="button" class="close-btn" onclick="window.closeCurrentModal()">✕</button>
+                <button type="button" class="close-btn" onclick="window.closeCurrentModal()">${renderSvgIcon('close', 'gray', 16)}</button>
             </div>
             <div class="modal-body" id="player-dossier-body">
                 <div style="text-align:center; padding:30px; color:var(--text-muted);">Загрузка полного досье игрока...</div>
@@ -5460,11 +5487,11 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
 
                 body.innerHTML = `
                     <!-- Header Info Bar -->
-                    <div style="display:flex; align-items:center; justify-content:space-between; background:#120c2a; border:1px solid var(--border); border-radius:var(--radius-md); padding:16px; margin-bottom:18px;">
+                    <div style="display:flex; align-items:center; justify-content:space-between; background:var(--card-inner-bg); border:1px solid var(--border); border-radius:var(--radius-md); padding:16px; margin-bottom:18px;">
                         <div style="display:flex; align-items:center; gap:14px;">
-                            <img src="https://mc-heads.net/avatar/${encodeURIComponent(p.name)}/48" style="width:48px; height:48px; border-radius:6px; background:#1e1442; border:1px solid var(--border-light);" alt="">
+                            <img src="https://mc-heads.net/avatar/${encodeURIComponent(p.name)}/48" style="width:48px; height:48px; border-radius:6px; background:var(--bg-surface); border:1px solid var(--border-light);" alt="">
                             <div>
-                                <h3 style="font-size:18px; margin-bottom:2px;">${esc(p.name)}</h3>
+                                <h3 style="font-size:18px; margin-bottom:2px; color:var(--text-main);">${esc(p.name)}</h3>
                                 <div style="font-size:11.5px; color:var(--text-muted); font-family:'JetBrains Mono';">${esc(p.uuid)}</div>
                                 <div style="margin-top:4px;">
                                     <span class="badge ${p.isOnline ? 'green' : 'gray'}">${p.isOnline ? `● В СЕТИ (${p.ping} мс)` : 'ОФФЛАЙН'}</span>
@@ -5474,7 +5501,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                         </div>
 
                         <!-- Trust Score Pill -->
-                        <div style="text-align:right; background:rgba(0,0,0,0.25); padding:10px 14px; border-radius:8px; border:1px solid var(--border);">
+                        <div style="text-align:right; background:var(--card-bg); padding:10px 14px; border-radius:8px; border:1px solid var(--border);">
                             <div style="font-size:10.5px; font-weight:700; color:var(--text-dim); text-transform:uppercase;">Trust Score</div>
                             <div style="font-family:'Outfit'; font-size:24px; font-weight:800; color:${trustColor};">${trustGrade} <span style="font-size:16px;">(${trustScore}/100)</span></div>
                         </div>
@@ -5500,11 +5527,11 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                         <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:16px;">
                             <div class="stat-card" style="padding:12px;">
                                 <div class="stat-label">Первый вход</div>
-                                <div class="font-mono" style="font-size:13px; color:#fff;">${fmtTime(p.firstJoinedAt)}</div>
+                                <div class="font-mono" style="font-size:13px; color:var(--text);">${fmtTime(p.firstJoinedAt)}</div>
                             </div>
                             <div class="stat-card" style="padding:12px;">
                                 <div class="stat-label">Последняя активность</div>
-                                <div class="font-mono" style="font-size:13px; color:#fff;">${fmtTime(p.lastSeenAt)}</div>
+                                <div class="font-mono" style="font-size:13px; color:var(--text);">${fmtTime(p.lastSeenAt)}</div>
                             </div>
                             <div class="stat-card" style="padding:12px;">
                                 <div class="stat-label">Общее время в игре</div>
@@ -5512,11 +5539,11 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                             </div>
                             <div class="stat-card" style="padding:12px;">
                                 <div class="stat-label">Баланс монет (Экономика)</div>
-                                <div style="font-size:16px; font-weight:700; color:#fff;">${(p.economy && p.economy.balance) ? p.economy.balance.toLocaleString() : 0} монет</div>
+                                <div style="font-size:16px; font-weight:700; color:var(--text-main);">${(p.economy && p.economy.balance) ? p.economy.balance.toLocaleString() : 0} монет</div>
                             </div>
                         </div>
 
-                        <div style="display:flex; justify-content:space-between; align-items:center; background:#100b26; padding:12px; border-radius:6px; border:1px solid var(--border);">
+                        <div style="display:flex; justify-content:space-between; align-items:center; background:var(--card-inner-bg); padding:12px; border-radius:6px; border:1px solid var(--border);">
                             <span style="font-size:12px; color:var(--text-muted);">Проверка на связанные аккаунты по IP графу:</span>
                             <button type="button" class="secondary btn-sm" onclick="window.openPlayerAltsModal('${esc(p.name)}')">ПРОВЕРИТЬ АЛЬТЫ</button>
                         </div>
@@ -5534,12 +5561,12 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                     dossierContainer.innerHTML = `
                         <div style="display:flex; gap:12px; margin-bottom:16px; flex-wrap:wrap;">
                             <button type="button" class="quick-action-btn" id="act-kick" style="min-width:160px; flex:1; padding:18px;">
-                                <span class="qa-icon" style="color:var(--red); font-size:24px;">👢</span>
+                                <span class="qa-icon" style="margin-bottom:6px;">${renderSvgIcon('userMinus', 'red', 24)}</span>
                                 <span style="font-weight:700;">КИКНУТЬ ИГРОКА</span>
                             </button>
                             ${isHigherRole ? `
                             <button type="button" class="quick-action-btn" id="act-clear-inv" style="min-width:160px; flex:1; padding:18px;">
-                                <span class="qa-icon" style="color:#eab308; font-size:24px;">🗑</span>
+                                <span class="qa-icon" style="margin-bottom:6px;">${renderSvgIcon('trash', 'yellow', 24)}</span>
                                 <span style="font-weight:700;">ОЧИСТИТЬ ИНВЕНТАРЬ</span>
                             </button>
                             ` : ''}
@@ -5573,7 +5600,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
 
                 const renderNotes = () => {
                     dossierContainer.innerHTML = `
-                        <div style="margin-bottom:14px; background:#0f0923; padding:12px; border-radius:6px; border:1px solid var(--border);">
+                        <div style="margin-bottom:14px; background:var(--card-inner-bg); padding:12px; border-radius:6px; border:1px solid var(--border);">
                             <label>Добавить внутреннюю заметку стаффа:</label>
                             <div style="display:flex; gap:8px;">
                                 <input type="text" id="new-note-text" placeholder="Заметка о поведении игрока (видна только стаффу)...">
@@ -5583,14 +5610,14 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
 
                         <div id="notes-list-box" style="max-height:220px; overflow-y:auto;">
                             ${notes.length ? notes.map(n => `
-                                <div style="background:#130e28; padding:10px 12px; border-radius:6px; border:1px solid var(--border); margin-bottom:8px; display:flex; justify-content:space-between; align-items:flex-start;">
+                                <div style="background:var(--card-inner-bg); padding:10px 12px; border-radius:6px; border:1px solid var(--border); margin-bottom:8px; display:flex; justify-content:space-between; align-items:flex-start;">
                                     <div>
                                         <div style="font-size:11px; color:var(--text-dim); margin-bottom:3px;">
                                             Автор: <b style="color:var(--accent-light);">${esc(n.author)}</b> • ${fmtTime(n.createdAt)}
                                         </div>
-                                        <div style="color:#fff; font-size:13px;">${esc(n.note)}</div>
+                                        <div style="color:var(--text-main); font-size:13px;">${esc(n.note)}</div>
                                     </div>
-                                    <button type="button" class="secondary btn-sm" onclick="window.deleteStaffNote('${esc(p.name)}', ${n.id})" style="color:var(--red);">✕</button>
+                                    <button type="button" class="secondary btn-sm" onclick="window.deleteStaffNote('${esc(p.name)}', ${n.id})" style="color:var(--red); padding:4px 8px; display:inline-flex; align-items:center;">${renderSvgIcon('trash', 'red', 13)}</button>
                                 </div>
                             `).join('') : '<div style="color:var(--text-dim); font-size:12px; text-align:center; padding:16px;">Заметок пока нет</div>'}
                         </div>
@@ -5613,7 +5640,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                     dossierContainer.innerHTML = `
                         <div style="max-height:240px; overflow-y:auto;">
                             ${bans.length ? bans.map(b => `
-                                <div style="background:#130e28; padding:10px 12px; border-radius:6px; border:1px solid var(--border); margin-bottom:8px;">
+                                <div style="background:var(--card-inner-bg); padding:10px 12px; border-radius:6px; border:1px solid var(--border); margin-bottom:8px;">
                                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
                                         <span class="badge red">${esc(b.ruleReason)}</span>
                                         <span class="badge ${b.status === 'ACTIVE' ? 'red' : 'green'}">${b.status === 'ACTIVE' ? 'АКТИВЕН' : 'СНЯТ'}</span>
@@ -5660,7 +5687,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
         container.innerHTML = `
             <div class="terminal-window">
                 <div class="terminal-header">
-                    <span style="font-family:'Outfit'; font-weight:700; color:#fff; font-size:13px;">КОНСОЛЬ СЕРВЕРА MINECRAFT</span>
+                    <span style="font-family:'Outfit'; font-weight:700; color:var(--text-heading); font-size:13px;">КОНСОЛЬ СЕРВЕРА MINECRAFT</span>
                     <span class="badge green">ПЕРМИШИН EXECUTE_COMMANDS</span>
                 </div>
                 <div class="terminal-logs-body" id="console-logs-body">
@@ -5744,7 +5771,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 <!-- Whitelist Management -->
                 <div style="background:var(--card-bg); border:1px solid var(--border); border-radius:var(--radius-md); padding:18px;">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; border-bottom:1px solid var(--border); padding-bottom:10px;">
-                        <h3 style="font-size:15px; color:#fff;">БЕЛЫЙ СПИСОК (WHITELIST)</h3>
+                        <h3 style="font-size:15px; color:var(--text-heading);">БЕЛЫЙ СПИСОК (WHITELIST)</h3>
                         <button type="button" class="secondary btn-sm" id="btn-toggle-whitelist">ПЕРЕКЛЮЧИТЬ</button>
                     </div>
 
@@ -5768,7 +5795,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 <!-- Operators Management -->
                 <div style="background:var(--card-bg); border:1px solid var(--border); border-radius:var(--radius-md); padding:18px;">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; border-bottom:1px solid var(--border); padding-bottom:10px;">
-                        <h3 style="font-size:15px; color:#fff;">ОПЕРАТОРЫ СЕРВЕРА (OPs)</h3>
+                        <h3 style="font-size:15px; color:var(--text-heading);">ОПЕРАТОРЫ СЕРВЕРА (OPs)</h3>
                         <span class="badge red">КРИТИЧЕСКИЙ ДОСТУП</span>
                     </div>
 
@@ -5809,7 +5836,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                     } else {
                         tbody.innerHTML = players.map(p => `
                             <tr>
-                                <td style="font-weight:700; color:#fff;">${esc(p.name)}</td>
+                                <td style="font-weight:700; color:var(--text-heading);">${esc(p.name)}</td>
                                 <td style="text-align:right;">
                                     <button type="button" class="secondary btn-sm" onclick="window.removeWhitelistPlayer('${esc(p.name)}')">УДАЛИТЬ</button>
                                 </td>
@@ -5835,7 +5862,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                             <td>
                                 <div style="display:flex; align-items:center; gap:8px;">
                                     <img src="https://mc-heads.net/avatar/${encodeURIComponent(o.name)}/20" class="player-avatar-sm" alt="">
-                                    <b style="color:#fff;">${esc(o.name)}</b>
+                                    <b style="color:var(--text-heading);">${esc(o.name)}</b>
                                 </div>
                             </td>
                             <td style="text-align:right;">
@@ -5914,11 +5941,11 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
 
             <!-- Subtabs Navigation -->
             <div class="sub-tabs-bar" id="auth-subtabs">
-                <button type="button" class="sub-tab-btn active" data-subtab="web">
-                    💻 ВЕБ-ПАНЕЛЬ (СЕССИИ СТАФФА)
+                <button type="button" class="sub-tab-btn active" data-subtab="web" style="display:inline-flex; align-items:center; gap:6px;">
+                    ${renderSvgIcon('server', 'violet', 15)} ВЕБ-ПАНЕЛЬ (СЕССИИ СТАФФА)
                 </button>
-                <button type="button" class="sub-tab-btn" data-subtab="loveauth">
-                    🎮 ИГРОВОЙ СЕРВЕР (АВТОРИЗАЦИЯ)
+                <button type="button" class="sub-tab-btn" data-subtab="loveauth" style="display:inline-flex; align-items:center; gap:6px;">
+                    ${renderSvgIcon('users', 'violet', 15)} ИГРОВОЙ СЕРВЕР (АВТОРИЗАЦИЯ)
                 </button>
             </div>
 
@@ -5955,7 +5982,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 container.innerHTML = `
                     <!-- Active Sessions Card -->
                     <div style="background:var(--card-bg); border:1px solid var(--border); border-radius:var(--radius-md); padding:18px; margin-bottom:20px;">
-                        <h3 style="font-size:15px; margin-bottom:12px; color:#fff;">АКТИВНЫЕ СЕССИИ ВЕБ-ПАНЕЛИ</h3>
+                        <h3 style="font-size:15px; margin-bottom:12px; color:var(--text-heading);">АКТИВНЫЕ СЕССИИ ВЕБ-ПАНЕЛИ</h3>
                         <div class="table-wrap">
                             <table>
                                 <thead>
@@ -5977,7 +6004,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
 
                     <!-- Login History Card -->
                     <div style="background:var(--card-bg); border:1px solid var(--border); border-radius:var(--radius-md); padding:18px;">
-                        <h3 style="font-size:15px; margin-bottom:12px; color:#fff;">ИСТОРИЯ ВХОДОВ И БЕЗОПАСНОСТЬ ПАНЕЛИ</h3>
+                        <h3 style="font-size:15px; margin-bottom:12px; color:var(--text-heading);">ИСТОРИЯ ВХОДОВ И БЕЗОПАСНОСТЬ ПАНЕЛИ</h3>
                         <div class="table-wrap">
                             <table>
                                 <thead>
@@ -6016,7 +6043,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                     } else {
                         sBody.innerHTML = sessions.map(s => `
                             <tr>
-                                <td><b style="color:#fff;">${esc(s.username)}</b></td>
+                                <td><b style="color:var(--text-heading);">${esc(s.username)}</b></td>
                                 <td><span class="badge purple">${esc(s.role)}</span></td>
                                 <td class="font-mono" style="font-size:12px;">${esc(s.ip)}</td>
                                 <td style="color:var(--text-secondary);">${esc(parseDeviceString(s.userAgent))}</td>
@@ -6038,7 +6065,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                             <tr>
                                 <td class="font-mono" style="font-size:12px; color:var(--text-muted);">${fmtTime(h.timestamp)}</td>
                                 <td><b>${esc(h.username)}</b></td>
-                                <td style="color:#fff;">${esc(h.action)}</td>
+                                <td style="color:var(--text);">${esc(h.action)}</td>
                             </tr>
                         `).join('');
                     }
@@ -6069,9 +6096,9 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 ${isAvailable ? `
                     <div class="loveauth-banner">
                         <div style="display:flex; align-items:center; gap:14px;">
-                            <span style="font-size:26px;">🛡</span>
+                            <span style="display:inline-flex; align-items:center;">${renderSvgIcon('shield', 'violet', 26)}</span>
                             <div>
-                                <div style="font-weight:700; color:#fff; font-size:15px; display:flex; align-items:center; gap:8px;">
+                                <div style="font-weight:700; color:var(--text-main); font-size:15px; display:flex; align-items:center; gap:8px;">
                                     <span>СИСТЕМА АВТОРИЗАЦИИ</span>
                                     <span class="badge green">● АКТИВНА</span>
                                 </div>
@@ -6084,9 +6111,9 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 ` : `
                     <div class="loveauth-banner" style="background:rgba(239, 68, 68, 0.08); border-color:rgba(239, 68, 68, 0.25);">
                         <div style="display:flex; align-items:center; gap:14px;">
-                            <span style="font-size:26px;">⚠</span>
+                            <span style="display:inline-flex; align-items:center;">${renderSvgIcon('shieldAlert', 'red', 26)}</span>
                             <div>
-                                <div style="font-weight:700; color:#fff; font-size:15px; display:flex; align-items:center; gap:8px;">
+                                <div style="font-weight:700; color:var(--text-main); font-size:15px; display:flex; align-items:center; gap:8px;">
                                     <span>СИСТЕМА АВТОРИЗАЦИИ</span>
                                     <span class="badge red">● НЕДОСТУПНА</span>
                                 </div>
@@ -6101,7 +6128,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
 
                 <!-- Account Search & Online Quick-Chips -->
                 <div class="loveauth-card" style="margin-bottom:20px;">
-                    <h3 style="font-size:14px; margin-bottom:10px; color:#fff;">ИНСПЕКЦИЯ ИГРОВОГО АККАУНТА</h3>
+                    <h3 style="font-size:14px; margin-bottom:10px; color:var(--text-main);">ИНСПЕКЦИЯ ИГРОВОГО АККАУНТА</h3>
                     <div style="display:flex; gap:10px; margin-bottom:14px;">
                         <input type="text" id="loveauth-search-input" placeholder="Введите точный ник игрока..." style="flex:1;">
                         <button type="button" class="primary" id="btn-loveauth-search">НАЙТИ АККАУНТ</button>
@@ -6122,8 +6149,8 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 <!-- Inspected Player Details -->
                 <div id="loveauth-player-result">
                     <div style="background:var(--card-bg); border:1px dashed var(--border); border-radius:var(--radius-md); padding:40px 20px; text-align:center; color:var(--text-dim);">
-                        <div style="font-size:28px; margin-bottom:8px;">🔍</div>
-                        Введите никнейм или нажмите на игрока онлайн выше, чтобы загрузить данные авторизации
+                        <div style="margin-bottom:8px; display:inline-flex; align-items:center;">${renderSvgIcon('search', 'violet', 28)}</div>
+                        <div>Введите никнейм или нажмите на игрока онлайн выше, чтобы загрузить данные авторизации</div>
                     </div>
                 </div>
             `;
@@ -6165,8 +6192,8 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 if (!info || !info.found) {
                     resBox.innerHTML = `
                         <div class="loveauth-card" style="text-align:center; padding:32px;">
-                            <div style="color:var(--yellow); font-size:24px; margin-bottom:8px;">⚠</div>
-                            <h3 style="color:#fff; margin-bottom:6px;">Игрок «${esc(name)}» не найден в базе авторизации</h3>
+                            <div style="margin-bottom:8px; display:inline-flex; align-items:center;">${renderSvgIcon('alert', 'yellow', 24)}</div>
+                            <h3 style="color:var(--text-main); margin-bottom:6px;">Игрок «${esc(name)}» не найден в базе авторизации</h3>
                             <p style="color:var(--text-dim); font-size:12.5px;">Возможно, игрок еще ни разу не заходил на сервер или никнейм введен с опечаткой.</p>
                         </div>
                     `;
@@ -6187,9 +6214,9 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                                 <img src="https://mc-heads.net/avatar/${encodeURIComponent(info.username)}/48" class="player-avatar-sm" style="width:48px; height:48px; border-radius:8px;" alt="">
                                 <div>
                                     <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-                                        <h3 style="font-size:18px; color:#fff; margin:0;">${esc(info.username)}</h3>
-                                        <span class="badge ${isReg ? 'green' : 'yellow'}">${isReg ? '✓ ЗАРЕГИСТРИРОВАН' : 'НЕ ЗАРЕГИСТРИРОВАН'}</span>
-                                        <span class="badge ${isLocked ? 'red' : 'green'}">${isLocked ? '🔒 ЗАБЛОКИРОВАН (LOCKOUT)' : '✓ ДОСТУП РАЗРЕШЕН'}</span>
+                                        <h3 style="font-size:18px; color:var(--text-main); margin:0;">${esc(info.username)}</h3>
+                                        <span class="badge ${isReg ? 'green' : 'yellow'}" style="display:inline-flex; align-items:center; gap:4px;">${isReg ? renderSvgIcon('check', 'green', 11) : ''} ${isReg ? 'ЗАРЕГИСТРИРОВАН' : 'НЕ ЗАРЕГИСТРИРОВАН'}</span>
+                                        <span class="badge ${isLocked ? 'red' : 'green'}" style="display:inline-flex; align-items:center; gap:4px;">${isLocked ? renderSvgIcon('lock', 'red', 11) : renderSvgIcon('check', 'green', 11)} ${isLocked ? 'ЗАБЛОКИРОВАН (LOCKOUT)' : 'ДОСТУП РАЗРЕШЕН'}</span>
                                     </div>
                                     <div class="font-mono" style="font-size:11.5px; color:var(--text-dim); margin-top:4px;">
                                         UUID: ${esc(info.uuid || '—')}
@@ -6217,8 +6244,8 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
 
                             <div class="stat-card" style="padding:12px;">
                                 <div class="stat-label">2FA / DISCORD ВЕРИФИКАЦИЯ</div>
-                                <div style="font-size:14px; font-weight:700; margin-top:4px; color:${hasDc ? 'var(--accent-light)' : 'var(--text-dim)'};">
-                                    ${hasDc ? '✓ Discord 2FA подключен' : 'Без двухфакторной защиты'}
+                                <div style="font-size:14px; font-weight:700; margin-top:4px; color:${hasDc ? 'var(--accent-light)' : 'var(--text-dim)'}; display:flex; align-items:center; gap:4px;">
+                                    ${hasDc ? renderSvgIcon('check', 'green', 12) + ' Discord 2FA подключен' : 'Без двухфакторной защиты'}
                                 </div>
                                 <div class="stat-sub">${hasDc ? 'Подтверждение через бота' : 'Вход только по паролю'}</div>
                             </div>
@@ -6243,32 +6270,32 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                         </div>
 
                         <div class="loveauth-actions-grid">
-                            <button type="button" class="secondary" onclick="window.loveAuthResetSession('${esc(info.username)}')">
-                                ⚡ СБРОСИТЬ СЕССИЮ (КИК)
+                            <button type="button" class="secondary" onclick="window.loveAuthResetSession('${esc(info.username)}')" style="display:inline-flex; align-items:center; gap:6px;">
+                                ${renderSvgIcon('refresh', 'violet', 13)} СБРОСИТЬ СЕССИЮ (КИК)
                             </button>
-                            <button type="button" class="secondary" onclick="window.loveAuthChangePassword('${esc(info.username)}')">
-                                🔑 СМЕНИТЬ ПАРОЛЬ
+                            <button type="button" class="secondary" onclick="window.loveAuthChangePassword('${esc(info.username)}')" style="display:inline-flex; align-items:center; gap:6px;">
+                                ${renderSvgIcon('key', 'violet', 13)} СМЕНИТЬ ПАРОЛЬ
                             </button>
                             ${isLocked ? `
-                                <button type="button" class="primary" onclick="window.loveAuthUnlock('${esc(info.username)}')">
-                                    🔓 РАЗБЛОКИРОВАТЬ АККАУНТ
+                                <button type="button" class="primary" onclick="window.loveAuthUnlock('${esc(info.username)}')" style="display:inline-flex; align-items:center; gap:6px;">
+                                    ${renderSvgIcon('lock', 'green', 13)} РАЗБЛОКИРОВАТЬ АККАУНТ
                                 </button>
                             ` : `
-                                <button type="button" class="secondary" disabled style="opacity:0.5; cursor:not-allowed;" title="Аккаунт не заблокирован">
-                                    ✓ АККАУНТ ДОСТУПЕН
+                                <button type="button" class="secondary" disabled style="opacity:0.5; cursor:not-allowed; display:inline-flex; align-items:center; gap:6px;" title="Аккаунт не заблокирован">
+                                    ${renderSvgIcon('check', 'gray', 13)} АККАУНТ ДОСТУПЕН
                                 </button>
                             `}
                             ${isIpBlocked ? `
-                                <button type="button" class="primary" onclick="window.loveAuthUnblockIp('${esc(info.lastIp)}')">
-                                    🌐 РАЗБЛОКИРОВАТЬ IP (${esc(info.lastIp)})
+                                <button type="button" class="primary" onclick="window.loveAuthUnblockIp('${esc(info.lastIp)}')" style="display:inline-flex; align-items:center; gap:6px;">
+                                    ${renderSvgIcon('globe', 'green', 13)} РАЗБЛОКИРОВАТЬ IP (${esc(info.lastIp)})
                                 </button>
                             ` : `
-                                <button type="button" class="secondary" disabled style="opacity:0.5; cursor:not-allowed;" title="IP не заблокирован">
-                                    ✓ IP НЕ ЗАБЛОКИРОВАН
+                                <button type="button" class="secondary" disabled style="opacity:0.5; cursor:not-allowed; display:inline-flex; align-items:center; gap:6px;" title="IP не заблокирован">
+                                    ${renderSvgIcon('check', 'gray', 13)} IP НЕ ЗАБЛОКИРОВАН
                                 </button>
                             `}
-                            <button type="button" class="danger" onclick="window.loveAuthDelete('${esc(info.username)}')">
-                                🗑 УДАЛИТЬ АККАУНТ
+                            <button type="button" class="danger" onclick="window.loveAuthDelete('${esc(info.username)}')" style="display:inline-flex; align-items:center; gap:6px;">
+                                ${renderSvgIcon('trash', 'white', 13)} УДАЛИТЬ АККАУНТ
                             </button>
                         </div>
                     </div>
@@ -6300,7 +6327,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
             openModal(`
                 <div class="modal-header">
                     <h3>СМЕНА ПАРОЛЯ: ${esc(name)}</h3>
-                    <button type="button" class="close-btn" data-modal-close="true">✕</button>
+                    <button type="button" class="close-btn" data-modal-close="true">${renderSvgIcon('close', 'gray', 16)}</button>
                 </div>
                 <div class="modal-body">
                     <div class="form-group">
@@ -6414,7 +6441,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
 
             <!-- Staff Members Table -->
             <div style="background:var(--card-bg); border:1px solid var(--border); border-radius:var(--radius-md); padding:18px; margin-bottom:24px;">
-                <h3 style="font-size:15px; margin-bottom:12px; color:#fff;">СОСТАВ ПЕРСОНАЛА</h3>
+                <h3 style="font-size:15px; margin-bottom:12px; color:var(--text-heading);">СОСТАВ ПЕРСОНАЛА</h3>
                 <div class="table-wrap">
                     <table>
                         <thead>
@@ -6437,22 +6464,21 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
             <!-- Roles Table -->
             <div style="background:var(--card-bg); border:1px solid var(--border); border-radius:var(--radius-md); padding:18px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-                    <h3 style="font-size:15px; margin:0; color:#fff;">РОЛИ И МАТРИЦА ПРАВ</h3>
-                    <span style="font-size:12px; color:var(--text-muted);">Настройка прав доступа веб-панели и привязка к LuckPerms</span>
+                    <h3 style="font-size:15px; margin:0; color:var(--text-heading);">РОЛИ И МАТРИЦА ПРАВ</h3>
+                    <span style="font-size:12px; color:var(--text-muted);">Настройка ролей и матрицы прав доступа веб-панели</span>
                 </div>
                 <div class="table-wrap">
                     <table>
                         <thead>
                             <tr>
                                 <th>НАЗВАНИЕ РОЛИ</th>
-                                <th>LUCKPERMS ГРУППА</th>
                                 <th>КОЛИЧЕСТВО ПРАВ</th>
                                 <th>ТИП</th>
                                 <th style="text-align:right;">ДЕЙСТВИЯ</th>
                             </tr>
                         </thead>
                         <tbody id="roles-table-body">
-                            <tr><td colspan="5" style="text-align:center; padding:18px; color:var(--text-dim);">Загрузка ролей...</td></tr>
+                            <tr><td colspan="4" style="text-align:center; padding:18px; color:var(--text-dim);">Загрузка ролей...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -6484,12 +6510,12 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                                 <td>
                                     <div style="display:flex; align-items:center; gap:8px;">
                                         <div class="sidebar-user-avatar" style="width:26px; height:26px; font-size:11px;">${esc((a.username || '').substring(0, 2).toUpperCase())}</div>
-                                        <b style="color:#fff;">${esc(a.username)}</b>
+                                        <b style="color:var(--text-main);">${esc(a.username)}</b>
                                     </div>
                                 </td>
                                 <td><span class="badge" style="background:${roleColor}22; color:${roleColor}; border:1px solid ${roleColor}44;">${esc(roleObj.name)}</span></td>
                                 <td>
-                                    <span class="badge ${hasTotp ? 'green' : 'yellow'}">${hasTotp ? '✓ 2FA ВКЛ' : 'НЕТ 2FA'}</span>
+                                    <span class="badge ${hasTotp ? 'green' : 'yellow'}" style="display:inline-flex; align-items:center; gap:4px;">${hasTotp ? renderSvgIcon('check', 'green', 11) + ' 2FA ВКЛ' : 'НЕТ 2FA'}</span>
                                 </td>
                                 <td style="color:var(--text-muted); font-size:12px;">${expiry}</td>
                                 <td class="font-mono" style="font-size:12px; color:var(--text-dim);">${fmtTime(a.lastLoginAt)}</td>
@@ -6513,10 +6539,9 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                             <td>
                                 <div style="display:flex; align-items:center; gap:8px;">
                                     <span style="display:inline-block; width:12px; height:12px; border-radius:50%; background:${esc(rCol)}; box-shadow:0 0 6px ${esc(rCol)};"></span>
-                                    <b style="color:#fff;">${esc(r.name)}</b>
+                                    <b style="color:var(--text-heading);">${esc(r.name)}</b>
                                 </div>
                             </td>
-                            <td class="font-mono" style="font-size:12px; color:var(--accent-light);">${esc(r.lpGroup || '—')}</td>
                             <td><b>${r.permissions ? r.permissions.length : 0}</b> прав</td>
                             <td>
                                 <span class="badge" style="background:${rCol}22; color:${rCol}; border:1px solid ${rCol}44;">${r.isOwner ? 'УПРАВЛЯЮЩИЙ' : 'КАСТОМНАЯ'}</span>
@@ -6542,7 +6567,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
             openModal(`
                 <div class="modal-header">
                     <h3>НАЗНАЧЕНИЕ РОЛИ: ${esc(username)}</h3>
-                    <button type="button" class="close-btn" data-modal-close="true">✕</button>
+                    <button type="button" class="close-btn" data-modal-close="true">${renderSvgIcon('close', 'gray', 16)}</button>
                 </div>
                 <div class="modal-body">
                     <div class="form-group">
@@ -6613,14 +6638,13 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
             return ALL_PERMISSIONS.map(p => {
                 const has = activePerms.includes(p);
                 const desc = PERMISSION_LABELS[p] || p;
-                const displayName = p === 'VIEW_SERVER_INTERNALS' ? 'Техническая информация' :
-                                    (p === 'BYPASS_MAINTENANCE' ? 'Обход тех. работ' : p);
+                const displayName = PERMISSION_NAMES[p] || p;
                 return `
-                    <label style="display:flex; align-items:flex-start; gap:10px; padding:8px 10px; background:rgba(255,255,255,0.02); border:1px solid var(--border); border-radius:5px; cursor:pointer;" title="${esc(desc)}">
+                    <label style="display:flex; align-items:flex-start; gap:10px; padding:10px 12px; background:var(--card-bg); border:1px solid var(--border); border-radius:5px; cursor:pointer;" title="${esc(desc)}">
                         <input type="checkbox" class="role-perm-cb" value="${p}" ${has ? 'checked' : ''} style="width:16px; height:16px; accent-color:var(--accent); margin-top:2px;">
                         <div>
-                            <div class="font-mono" style="font-size:12px; font-weight:700; color:#fff;" title="${esc(desc)}">${esc(displayName)}</div>
-                            <div style="font-size:11.5px; color:var(--text-muted); line-height:1.3; margin-top:2px;">${esc(desc)}</div>
+                            <div style="font-size:12.5px; font-weight:700; color:var(--text-heading);">${esc(displayName)}</div>
+                            <div style="font-size:11.5px; color:var(--text-muted); line-height:1.35; margin-top:3px;">${esc(desc)}</div>
                         </div>
                     </label>
                 `;
@@ -6632,16 +6656,12 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
             openModal(`
                 <div class="modal-header">
                     <h3>СОЗДАНИЕ НОВОЙ РОЛИ</h3>
-                    <button type="button" class="close-btn" data-modal-close="true">✕</button>
+                    <button type="button" class="close-btn" data-modal-close="true">${renderSvgIcon('close', 'gray', 16)}</button>
                 </div>
                 <div class="modal-body" style="max-height:75vh; overflow-y:auto;">
                     <div class="form-group">
                         <label>Название роли *</label>
                         <input type="text" id="create-role-name" placeholder="Например: Старший Модератор" required autofocus>
-                    </div>
-                    <div class="form-group">
-                        <label>Группа в LuckPerms (опционально)</label>
-                        <input type="text" id="create-role-lp" placeholder="Например: srmod">
                     </div>
                     <div class="form-group">
                         <label>Цвет роли (для бейджей, списков и журналов)</label>
@@ -6652,11 +6672,10 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                     </div>
 
                     <div style="margin-top:16px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-                        <label style="margin-bottom:0; font-weight:700; color:#fff;">Права доступа роли в панели:</label>
+                        <label style="margin-bottom:0; font-weight:700; color:var(--text-heading);">Права доступа роли в панели:</label>
                         <div style="display:flex; gap:6px;">
                             <button type="button" class="secondary btn-sm" id="btn-perm-all">Выбрать все</button>
                             <button type="button" class="secondary btn-sm" id="btn-perm-none">Снять все</button>
-                            <button type="button" class="secondary btn-sm" id="btn-perm-mod">Пресет: Модератор</button>
                         </div>
                     </div>
 
@@ -6675,23 +6694,16 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 document.getElementById('btn-perm-none')?.addEventListener('click', () => {
                     document.querySelectorAll('.role-perm-cb').forEach(cb => cb.checked = false);
                 });
-                document.getElementById('btn-perm-mod')?.addEventListener('click', () => {
-                    const modPerms = ['VIEW_STATS', 'VIEW_PLAYERS', 'MANAGE_PLAYERS', 'VIEW_BANS', 'MANAGE_BANS', 'VIEW_REPORTS', 'MANAGE_REPORTS', 'VIEW_VESUVIO', 'VIEW_SERVER_LOGS'];
-                    document.querySelectorAll('.role-perm-cb').forEach(cb => {
-                        cb.checked = modPerms.includes(cb.value);
-                    });
-                });
 
                 document.getElementById('btn-submit-create-role')?.addEventListener('click', async () => {
                     const name = document.getElementById('create-role-name').value.trim();
-                    const lpGroup = document.getElementById('create-role-lp').value.trim();
                     const color = document.getElementById('create-role-color')?.value || '#8b5cf6';
                     const permissions = Array.from(document.querySelectorAll('.role-perm-cb:checked')).map(cb => cb.value);
 
                     if (!name) { alert('Укажите название роли'); return; }
 
                     try {
-                        await api('POST', '/api/roles', { name, lpGroup, color, permissions });
+                        await api('POST', '/api/roles', { name, lpGroup: '', color, permissions });
                         showToast('Роль создана', `Роль ${name} успешно добавлена`, 'success');
                         closeModal();
                         loadAdminsAndRoles();
@@ -6710,16 +6722,12 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
             openModal(`
                 <div class="modal-header">
                     <h3>РЕДАКТИРОВАНИЕ РОЛИ: ${esc(role.name)}</h3>
-                    <button type="button" class="close-btn" data-modal-close="true">✕</button>
+                    <button type="button" class="close-btn" data-modal-close="true">${renderSvgIcon('close', 'gray', 16)}</button>
                 </div>
                 <div class="modal-body" style="max-height:75vh; overflow-y:auto;">
                     <div class="form-group">
                         <label>Название роли *</label>
                         <input type="text" id="edit-role-name" value="${esc(role.name)}" required autofocus>
-                    </div>
-                    <div class="form-group">
-                        <label>Группа в LuckPerms (опционально)</label>
-                        <input type="text" id="edit-role-lp" value="${esc(role.lpGroup || '')}" placeholder="Например: srmod">
                     </div>
                     <div class="form-group">
                         <label>Цвет роли (для бейджей, списков и журналов)</label>
@@ -6730,11 +6738,10 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                     </div>
 
                     <div style="margin-top:16px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-                        <label style="margin-bottom:0; font-weight:700; color:#fff;">Права доступа роли в панели:</label>
+                        <label style="margin-bottom:0; font-weight:700; color:var(--text-heading);">Права доступа роли в панели:</label>
                         <div style="display:flex; gap:6px;">
                             <button type="button" class="secondary btn-sm" id="btn-edit-perm-all">Выбрать все</button>
                             <button type="button" class="secondary btn-sm" id="btn-edit-perm-none">Снять все</button>
-                            <button type="button" class="secondary btn-sm" id="btn-edit-perm-mod">Пресет: Модератор</button>
                         </div>
                     </div>
 
@@ -6753,23 +6760,16 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 document.getElementById('btn-edit-perm-none')?.addEventListener('click', () => {
                     document.querySelectorAll('.role-perm-cb').forEach(cb => cb.checked = false);
                 });
-                document.getElementById('btn-edit-perm-mod')?.addEventListener('click', () => {
-                    const modPerms = ['VIEW_STATS', 'VIEW_PLAYERS', 'MANAGE_PLAYERS', 'VIEW_BANS', 'MANAGE_BANS', 'VIEW_REPORTS', 'MANAGE_REPORTS', 'VIEW_VESUVIO', 'VIEW_SERVER_LOGS'];
-                    document.querySelectorAll('.role-perm-cb').forEach(cb => {
-                        cb.checked = modPerms.includes(cb.value);
-                    });
-                });
 
                 document.getElementById('btn-submit-edit-role')?.addEventListener('click', async () => {
                     const name = document.getElementById('edit-role-name').value.trim();
-                    const lpGroup = document.getElementById('edit-role-lp').value.trim();
                     const color = document.getElementById('edit-role-color')?.value || '#8b5cf6';
                     const permissions = Array.from(document.querySelectorAll('.role-perm-cb:checked')).map(cb => cb.value);
 
                     if (!name) { alert('Укажите название роли'); return; }
 
                     try {
-                        await api('PUT', `/api/roles/${roleId}`, { name, lpGroup, color, permissions });
+                        await api('PUT', `/api/roles/${roleId}`, { name, lpGroup: '', color, permissions });
                         showToast('Роль обновлена', `Параметры и права для роли ${name} сохранены`, 'success');
                         closeModal();
                         loadAdminsAndRoles();
@@ -6804,7 +6804,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
             openModal(`
                 <div class="modal-header">
                     <h3>ДОБАВЛЕНИЕ СОТРУДНИКА</h3>
-                    <button type="button" class="close-btn" data-modal-close="true">✕</button>
+                    <button type="button" class="close-btn" data-modal-close="true">${renderSvgIcon('close', 'gray', 16)}</button>
                 </div>
                 <div class="modal-body">
                     <div class="form-group">
@@ -6884,9 +6884,9 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 </div>
 
                 <div id="db-custom-range-box" style="display:none; align-items:center; gap:8px;">
-                    <input type="date" id="db-date-from" style="padding:4px 8px; font-size:12px; width:135px; background:rgba(0,0,0,0.4); border:1px solid var(--border); color:#fff; border-radius:4px;">
+                    <input type="date" id="db-date-from" style="padding:4px 8px; font-size:12px; width:135px; background:var(--input-bg); border:1px solid var(--border); color:var(--text-heading); border-radius:4px;">
                     <span style="color:var(--text-dim); font-size:12px;">—</span>
-                    <input type="date" id="db-date-to" style="padding:4px 8px; font-size:12px; width:135px; background:rgba(0,0,0,0.4); border:1px solid var(--border); color:#fff; border-radius:4px;">
+                    <input type="date" id="db-date-to" style="padding:4px 8px; font-size:12px; width:135px; background:var(--input-bg); border:1px solid var(--border); color:var(--text-heading); border-radius:4px;">
                     <button type="button" class="primary btn-sm" id="btn-apply-custom-period">ПРИМЕНИТЬ</button>
                 </div>
             </div>
@@ -6900,7 +6900,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
             <div class="hourly-chart-wrap" style="margin-bottom:24px;">
                 <div class="chart-header">
                     <div>
-                        <h3 style="font-size:15px; color:#fff;" id="db-chart-title">АКТИВНОСТЬ ПО ЧАСАМ (24 ЧАСА)</h3>
+                        <h3 style="font-size:15px; color:var(--text-heading);" id="db-chart-title">АКТИВНОСТЬ ПО ЧАСАМ (24 ЧАСА)</h3>
                         <p style="font-size:12px; color:var(--text-muted);" id="db-chart-subtitle">Сравнение распределения действий с предыдущим аналогичным периодом</p>
                     </div>
                     <span class="badge purple" id="db-chart-badge">СЕГОДНЯ</span>
@@ -6915,7 +6915,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 <!-- Top Playtime Table -->
                 <div style="background:var(--card-bg); border:1px solid var(--border); border-radius:var(--radius-md); padding:18px;">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
-                        <h3 style="font-size:15px; color:#fff;">ТОП ИГРОКОВ ПО НАИГРАННОМУ ВРЕМЕНИ</h3>
+                        <h3 style="font-size:15px; color:var(--text-heading);">ТОП ИГРОКОВ ПО НАИГРАННОМУ ВРЕМЕНИ</h3>
                         <span style="font-size:12px; color:var(--text-dim);">Всего в базе данных</span>
                     </div>
                     <div class="table-wrap" style="max-height:440px; overflow-y:auto;">
@@ -6938,7 +6938,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
 
                 <!-- Dedicated Player Stat Inspector -->
                 <div style="background:var(--card-bg); border:1px solid var(--border); border-radius:var(--radius-md); padding:18px;">
-                    <h3 style="font-size:15px; margin-bottom:6px; color:#fff;">КАРТОЧКА СТАТИСТИКИ ИГРОКА</h3>
+                    <h3 style="font-size:15px; margin-bottom:6px; color:var(--text-heading);">КАРТОЧКА СТАТИСТИКИ ИГРОКА</h3>
                     <p style="font-size:12px; color:var(--text-muted); margin-bottom:14px;">Персональное досье и параметры конкретного пользователя</p>
 
                     <div style="display:flex; gap:8px; margin-bottom:16px;">
@@ -7068,7 +7068,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                                 <td>
                                     <div style="display:flex; align-items:center; gap:8px; cursor:pointer;" onclick="window.viewPlayerProfile('${esc(p.name)}')">
                                         <img src="https://mc-heads.net/avatar/${encodeURIComponent(p.name)}/22" class="player-avatar-sm" alt="">
-                                        <b style="color:#fff;">${esc(p.name)}</b>
+                                        <b style="color:var(--text-heading);">${esc(p.name)}</b>
                                     </div>
                                 </td>
                                 <td><b style="color:var(--green);">${fmtDuration(p.playtimeSeconds)}</b></td>
@@ -7127,11 +7127,11 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 const hours = Math.round((p.playtimeSeconds || 0) / 3600);
 
                 resBox.innerHTML = `
-                    <div style="background:#0e0921; padding:14px; border-radius:var(--radius-sm); border:1px solid var(--border-light);">
+                    <div style="background:var(--card-inner-bg); padding:14px; border-radius:var(--radius-sm); border:1px solid var(--border-light);">
                         <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
                             <img src="https://mc-heads.net/avatar/${encodeURIComponent(p.name)}/36" class="player-avatar-sm" style="width:36px; height:36px;" alt="">
                             <div>
-                                <h4 style="color:#fff; font-size:15px; margin:0;">${esc(p.name)}</h4>
+                                <h4 style="color:var(--text-main); font-size:15px; margin:0;">${esc(p.name)}</h4>
                                 <span class="badge ${p.isOnline ? 'green' : 'gray'}" style="margin-top:2px;">${p.isOnline ? 'ОНЛАЙН' : 'ОФФЛАЙН'}</span>
                             </div>
                         </div>
@@ -7180,7 +7180,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
         const isLight = theme === 'light';
         document.body.classList.toggle('theme-light', isLight);
         const icon = document.getElementById('theme-btn-icon');
-        if (icon) icon.textContent = isLight ? '☀️' : '🌙';
+        if (icon) icon.innerHTML = renderSvgIcon(isLight ? 'sun' : 'moon', isLight ? 'yellow' : 'violet', 15);
         localStorage.setItem('wa_theme', theme);
     }
 
@@ -7199,7 +7199,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
         const text = document.getElementById('shift-btn-text');
         const btn = document.getElementById('topbar-shift-btn');
         if (btn) btn.classList.toggle('on-shift', !!onShift);
-        if (dot) dot.textContent = onShift ? '🟢' : '⚪';
+        if (dot) dot.innerHTML = renderSvgIcon('dot', onShift ? 'green' : 'gray', 10);
         if (text) text.textContent = onShift ? 'НА СМЕНЕ' : 'ВНЕ СМЕНЫ';
     }
 
@@ -7219,8 +7219,8 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
     async function openStaffOnShiftModal() {
         openModal(`
             <div class="modal-header">
-                <h3>👥 ПЕРСОНАЛ СЕЙЧАС НА СМЕНЕ</h3>
-                <button type="button" class="close-btn" data-modal-close="true">✕</button>
+                <h3 style="display:flex; align-items:center; gap:8px;">${renderSvgIcon('users', 'violet', 18)} ПЕРСОНАЛ СЕЙЧАС НА СМЕНЕ</h3>
+                <button type="button" class="close-btn" data-modal-close="true">${renderSvgIcon('close', 'gray', 16)}</button>
             </div>
             <div class="modal-body" id="staff-shifts-modal-body">
                 <div style="text-align:center; padding:20px; color:var(--text-muted);">Загрузка активных смен...</div>
@@ -7254,7 +7254,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                                         <td>
                                             <div style="display:flex; align-items:center; gap:8px;">
                                                 <div class="sidebar-user-avatar" style="width:24px; height:24px; font-size:10px;">${esc((s.username || 'A').substring(0, 2).toUpperCase())}</div>
-                                                <b style="color:#fff;">${esc(s.username)}</b>
+                                                <b style="color:var(--text-main);">${esc(s.username)}</b>
                                             </div>
                                         </td>
                                         <td><span class="badge purple">${esc(s.role || 'Персонал')}</span></td>
@@ -7290,11 +7290,11 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
     async function openNotificationsModal() {
         openModal(`
             <div class="modal-header">
-                <h3>🔔 УВЕДОМЛЕНИЯ ПЕРСОНАЛА</h3>
+                <h3 style="display:flex; align-items:center; gap:8px;">${renderSvgIcon('bell', 'violet', 18)} УВЕДОМЛЕНИЯ ПЕРСОНАЛА</h3>
                 <div style="display:flex; gap:8px; align-items:center;">
                     <button type="button" class="secondary btn-sm" id="btn-create-notif">+ ОБЪЯВЛЕНИЕ</button>
                     <button type="button" class="secondary btn-sm" id="btn-read-all-notifs">ПРОЧИТАТЬ ВСЕ</button>
-                    <button type="button" class="close-btn" data-modal-close="true">✕</button>
+                    <button type="button" class="close-btn" data-modal-close="true">${renderSvgIcon('close', 'gray', 16)}</button>
                 </div>
             </div>
             <div class="modal-body" id="notifs-modal-body" style="max-height:65vh; overflow-y:auto;">
@@ -7313,7 +7313,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                     if (!list.length) {
                         body.innerHTML = `
                             <div style="text-align:center; padding:32px; color:var(--text-dim);">
-                                <div style="font-size:28px; margin-bottom:6px;">🔕</div>
+                                <div style="margin-bottom:8px;">${renderSvgIcon('bell', 'gray', 32)}</div>
                                 <div>Новых уведомлений для персонала нет</div>
                             </div>
                         `;
@@ -7328,11 +7328,11 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                         else if (n.type === 'CRITICAL') { badgeClass = 'red'; typeLabel = 'КРИТИЧНО'; }
 
                         return `
-                            <div class="notif-item ${n.read ? 'read' : 'unread'}" style="background:#110b26; border:1px solid var(--border); border-radius:var(--radius-sm); padding:12px; margin-bottom:8px;">
+                            <div class="notif-item ${n.read ? 'read' : 'unread'}" style="background:var(--card-inner-bg); border:1px solid var(--border); border-radius:var(--radius-sm); padding:12px; margin-bottom:8px;">
                                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
                                     <div style="display:flex; align-items:center; gap:8px;">
                                         <span class="badge ${badgeClass}">${typeLabel}</span>
-                                        <b style="color:#fff; font-size:13.5px;">${esc(n.title)}</b>
+                                        <b style="color:var(--text-main); font-size:13.5px;">${esc(n.title)}</b>
                                     </div>
                                     <span class="font-mono" style="font-size:11px; color:var(--text-dim);">${fmtTime(n.createdAt)}</span>
                                 </div>
@@ -7342,8 +7342,8 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                                 <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; font-size:11px; color:var(--text-dim);">
                                     <span>От: <b>${esc(n.sender || 'Система')}</b></span>
                                     ${!n.read ? `
-                                        <button type="button" class="secondary btn-sm" onclick="window.markNotifRead(${n.id})" style="font-size:10px; padding:2px 6px;">
-                                            ✓ Прочитано
+                                        <button type="button" class="secondary btn-sm" onclick="window.markNotifRead(${n.id})" style="font-size:10px; padding:2px 6px; display:inline-flex; align-items:center; gap:4px;">
+                                            ${renderSvgIcon('check', 'gray', 11)} Прочитано
                                         </button>
                                     ` : '<span style="color:var(--text-dim);">Прочитано</span>'}
                                 </div>
@@ -7382,7 +7382,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
         openModal(`
             <div class="modal-header">
                 <h3>СОЗДАТЬ ОБЪЯВЛЕНИЕ ДЛЯ ПЕРСОНАЛА</h3>
-                <button type="button" class="close-btn" data-modal-close="true">✕</button>
+                <button type="button" class="close-btn" data-modal-close="true">${renderSvgIcon('close', 'gray', 16)}</button>
             </div>
             <div class="modal-body">
                 <div class="form-group">
@@ -7400,7 +7400,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 </div>
                 <div class="form-group">
                     <label>Текст сообщения</label>
-                    <textarea id="ann-message" rows="4" placeholder="Подробный текст сообщения для всех членов персонала..." style="width:100%; background:#0e0822; border:1px solid var(--border); color:#fff; padding:10px; border-radius:5px;"></textarea>
+                    <textarea id="ann-message" rows="4" placeholder="Подробный текст сообщения для всех членов персонала..." style="width:100%;"></textarea>
                 </div>
             </div>
             <div class="modal-footer">
@@ -7437,14 +7437,14 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
         app.innerHTML = `
             <div class="maintenance-screen">
                 <div class="maintenance-card">
-                    <div class="maintenance-icon">🚧</div>
+                    <div class="maintenance-icon" style="display:flex; justify-content:center; margin-bottom:16px;">${renderSvgIcon('wrench', 'violet', 48)}</div>
                     <h2>ВЕДУТСЯ ТЕХНИЧЕСКИЕ РАБОТЫ</h2>
                     <p class="maintenance-msg">${esc(message || 'Веб-панель временно закрыта на плановое обслуживание сервера. Доступ разрешён только Управляющему.')}</p>
                     <div style="font-size:12px; color:var(--text-dim); margin-bottom:18px;">
                         Если вы являетесь Управляющим или имеете право обхода тех. работ, войдите с подтверждением.
                     </div>
                     <div style="display:flex; gap:10px; justify-content:center;">
-                        <button type="button" class="primary" onclick="location.reload()">🔄 ПРОВЕРИТЬ СНОВА</button>
+                        <button type="button" class="primary" onclick="location.reload()" style="display:inline-flex; align-items:center; gap:6px;">${renderSvgIcon('refresh', 'white', 14)} ПРОВЕРИТЬ СНОВА</button>
                         <button type="button" class="secondary" onclick="localStorage.removeItem('wa_token'); location.reload();">ВЫЙТИ В ВХОД</button>
                     </div>
                 </div>
@@ -7453,9 +7453,9 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
     }
 
     // ==========================================================================
-    // UNIFIED ADMIN SETTINGS MODAL (7 TABS)
+    // UNIFIED ADMIN SETTINGS MODAL (REAL SETTINGS & ICONS)
     // ==========================================================================
-    function openAdminSettingsModal(initialTab = 'general') {
+    async function openAdminSettingsModal(initialTab = 'general') {
         const isMod = isModeratorRole();
         const roleName = me.isOwner ? 'Управляющий' : (me.role || (isMod ? 'Модератор' : 'Администратор'));
 
@@ -7464,24 +7464,48 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
             userPrefs = typeof me.uiPreferences === 'string' ? JSON.parse(me.uiPreferences) : (me.uiPreferences || {});
         } catch (_) { userPrefs = {}; }
 
+        let serverConfig = {
+            webPort: 8080,
+            webHost: '0.0.0.0',
+            sessionLifetimeMinutes: 1440,
+            keepLogCount: 2000,
+            strictIp: true,
+            loginMaxAttempts: 5,
+            loginLockoutMinutes: 15,
+            minPasswordLength: 8,
+            debugMode: false,
+            commandBlacklist: ['stop', 'restart', 'op', 'deop', 'sudo', 'pex', 'lp'],
+            webhooksEnabled: false,
+            discordWebhookUrl: '',
+            telegramBotToken: '',
+            telegramChatId: ''
+        };
+
+        try {
+            const fetchedConfig = await api('GET', '/api/server/config');
+            if (fetchedConfig && typeof fetchedConfig === 'object') {
+                serverConfig = { ...serverConfig, ...fetchedConfig };
+            }
+        } catch (_) {}
+
         let currentTab = initialTab || 'general';
 
         const tabs = [
-            { id: 'general', label: 'Общие', icon: '⚙️' },
-            { id: 'security', label: 'Безопасность', icon: '🛡️' },
-            { id: 'notifications', label: 'Уведомления', icon: '🔔' },
-            { id: 'appearance', label: 'Внешний вид', icon: '🎨' },
-            { id: 'integrations', label: 'Интеграции', icon: '🔌' },
-            { id: 'maintenance', label: 'Технические работы', icon: '🚧' },
-            { id: 'danger', label: 'Опасные зоны', icon: '⚠️' }
+            { id: 'general', label: 'Общие', icon: renderSvgIcon('gear', 'violet', 16) },
+            { id: 'server', label: 'Сервер и сеть', icon: renderSvgIcon('server', 'violet', 16) },
+            { id: 'security', label: 'Безопасность', icon: renderSvgIcon('shield', 'green', 16) },
+            { id: 'blacklist', label: 'Черный список', icon: renderSvgIcon('ban', 'red', 16) },
+            { id: 'webhooks', label: 'Вебхуки и связь', icon: renderSvgIcon('bell', 'violet', 16) },
+            { id: 'maintenance', label: 'Тех. работы', icon: renderSvgIcon('wrench', 'gray', 16) },
+            { id: 'danger', label: 'Опасные зоны', icon: renderSvgIcon('alert', 'red', 16) }
         ];
 
         openModal(`
             <div class="modal-header">
-                <h3>НАСТРОЙКИ АДМИНИСТРАТОРА ПАНЕЛИ</h3>
-                <button type="button" class="close-btn" data-modal-close="true">✕</button>
+                <h3>НАСТРОЙКИ ПАНЕЛИ И СЕРВЕРА</h3>
+                <button type="button" class="close-btn" data-modal-close="true">${renderSvgIcon('close', 'gray', 16)}</button>
             </div>
-            <div class="modal-body" style="padding:0; max-height:80vh; overflow:hidden;">
+            <div class="modal-body" style="padding:0; max-height:82vh; overflow:hidden;">
                 <div class="settings-modal-layout">
                     <!-- Left Navigation Sidebar -->
                     <aside class="settings-nav-sidebar">
@@ -7515,15 +7539,16 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
 
                 if (tabId === 'general') {
                     // TAB 1: ОБЩИЕ
+                    const isLight = document.body.classList.contains('theme-light');
                     contentPane.innerHTML = `
-                        <h4 style="color:#fff; margin-bottom:14px;">ОБЩИЙ ПРОФИЛЬ СОТРУДНИКА</h4>
-                        <div style="background:#110a26; padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-bottom:16px;">
+                        <h4 style="color:var(--text-main); margin-bottom:14px;">ОБЩИЙ ПРОФИЛЬ СОТРУДНИКА</h4>
+                        <div style="background:var(--card-inner-bg); padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-bottom:16px;">
                             <div style="display:flex; align-items:center; gap:12px;">
                                 <div class="sidebar-user-avatar" style="width:46px; height:46px; font-size:18px;">
                                     ${esc((me.username || 'A').substring(0, 2).toUpperCase())}
                                 </div>
                                 <div>
-                                    <div style="font-size:17px; font-weight:800; color:#fff;">
+                                    <div style="font-size:17px; font-weight:800; color:var(--text-main);">
                                         ${esc(me.username)} <span class="badge purple">${esc(roleName)}</span>
                                     </div>
                                     <div style="font-size:12px; color:var(--text-muted); margin-top:2px;">
@@ -7539,10 +7564,48 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                             <div style="font-size:11.5px; color:var(--text-muted); margin-top:4px;">Используется для быстрого автозаполнения и синхронизации смен в игре</div>
                         </div>
 
-                        <button type="button" class="primary btn-sm" id="btn-save-general-settings" style="width:100%; margin-top:6px;">
-                            💾 СОХРАНИТЬ ОБЩИЕ НАСТРОЙКИ
+                        <div style="background:var(--card-inner-bg); padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-bottom:16px;">
+                            <b style="color:var(--text-main); font-size:13.5px;">Тема оформления интерфейса</b>
+                            <div style="font-size:12px; color:var(--text-muted); margin-bottom:12px;">Выберите цветовую схему для комфортной работы:</div>
+
+                            <div style="display:flex; gap:12px;">
+                                <button type="button" class="secondary ${!isLight ? 'active' : ''}" id="btn-theme-dark" style="flex:1; padding:12px; display:flex; align-items:center; justify-content:center; gap:8px;">
+                                    ${renderSvgIcon('moon', 'violet', 16)} ТЁМНАЯ ТЕМА (DARK)
+                                </button>
+                                <button type="button" class="secondary ${isLight ? 'active' : ''}" id="btn-theme-light" style="flex:1; padding:12px; display:flex; align-items:center; justify-content:center; gap:8px;">
+                                    ${renderSvgIcon('sun', 'yellow', 16)} СВЕТЛАЯ ТЕМА (LIGHT)
+                                </button>
+                            </div>
+                        </div>
+
+                        <div style="background:var(--card-inner-bg); padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-bottom:16px;">
+                            <b style="color:var(--text-main); font-size:13.5px;">Раскладка дашборда</b>
+                            <div style="font-size:12px; color:var(--text-muted); margin-bottom:10px;">
+                                Плитки дашборда можно свободно перетаскивать и настраивать прямо на главной странице.
+                            </div>
+                            <button type="button" class="secondary btn-sm" onclick="window.openDashboardCustomizerModal()" style="display:inline-flex; align-items:center; gap:6px;">
+                                ${renderSvgIcon('gear', 'gray', 14)} НАСТРОИТЬ АКТИВНЫЕ ПЛИТКИ
+                            </button>
+                        </div>
+
+                        <button type="button" class="primary btn-sm" id="btn-save-general-settings" style="width:100%; margin-top:6px; display:flex; align-items:center; justify-content:center; gap:6px;">
+                            ${renderSvgIcon('save', 'white', 14)} СОХРАНИТЬ ОБЩИЕ НАСТРОЙКИ
                         </button>
                     `;
+
+                    document.getElementById('btn-theme-dark')?.addEventListener('click', async () => {
+                        applyUserTheme('dark');
+                        userPrefs.theme = 'dark';
+                        try { await api('PUT', '/api/me/preferences', { uiPreferences: userPrefs }); } catch (_) {}
+                        switchSettingsTab('general');
+                    });
+
+                    document.getElementById('btn-theme-light')?.addEventListener('click', async () => {
+                        applyUserTheme('light');
+                        userPrefs.theme = 'light';
+                        try { await api('PUT', '/api/me/preferences', { uiPreferences: userPrefs }); } catch (_) {}
+                        switchSettingsTab('general');
+                    });
 
                     document.getElementById('btn-save-general-settings')?.addEventListener('click', async () => {
                         userPrefs.minecraftNick = document.getElementById('gen-mc-nick').value.trim();
@@ -7554,34 +7617,130 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                             showToast('Ошибка', e.message, 'error');
                         }
                     });
-                } else if (tabId === 'security') {
-                    // TAB 2: БЕЗОПАСНОСТЬ (Смена пароля с мгновенным киком, 2FA, сессии)
+                } else if (tabId === 'server') {
+                    // TAB 2: СЕРВЕР И СЕТЬ (РЕАЛЬНЫЙ CONFIG.YML)
                     contentPane.innerHTML = `
-                        <h4 style="color:#fff; margin-bottom:14px;">БЕЗОПАСНОСТЬ И АВТОРИЗАЦИЯ</h4>
+                        <h4 style="color:var(--text-main); margin-bottom:14px;">ПАРАМЕТРЫ СЕРВЕРА И ВЕБ-ПАНЕЛИ</h4>
+
+                        <div style="background:var(--card-inner-bg); padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-bottom:16px;">
+                            <div class="form-group">
+                                <label>Порт веб-сервера (web.port)</label>
+                                <input type="number" id="cfg-web-port" value="${serverConfig.webPort || 8080}" min="1" max="65535">
+                                <div style="font-size:11.5px; color:var(--text-muted); margin-top:3px;">Порт, на котором работает веб-интерфейс панели</div>
+                            </div>
+
+                            <div class="form-group">
+                                <label>Хост прослушивания (web.host)</label>
+                                <input type="text" id="cfg-web-host" value="${esc(serverConfig.webHost || '0.0.0.0')}">
+                                <div style="font-size:11.5px; color:var(--text-muted); margin-top:3px;">IP-адрес привязки (0.0.0.0 для всех сетевых интерфейсов)</div>
+                            </div>
+
+                            <div class="form-group">
+                                <label>Время жизни сессии администратора (минуты)</label>
+                                <input type="number" id="cfg-session-lifetime" value="${serverConfig.sessionLifetimeMinutes || 1440}" min="10" max="43200">
+                                <div style="font-size:11.5px; color:var(--text-muted); margin-top:3px;">По истечении времени потребуется повторная авторизация</div>
+                            </div>
+
+                            <div class="form-group">
+                                <label>Лимит хранения логов в БД (записей)</label>
+                                <input type="number" id="cfg-keep-logs" value="${serverConfig.keepLogCount || 2000}" min="100" max="50000">
+                                <div style="font-size:11.5px; color:var(--text-muted); margin-top:3px;">Количество записей журнала, сохраняемых в локальной базе данных</div>
+                            </div>
+
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:var(--text-main);">
+                                    <input type="checkbox" id="cfg-debug-mode" ${serverConfig.debugMode ? 'checked' : ''}>
+                                    <span>Включить подробный режим отладки в консоли сервера (debug-mode)</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <button type="button" class="primary btn-sm" id="btn-save-server-config" style="width:100%; display:flex; align-items:center; justify-content:center; gap:6px;">
+                            ${renderSvgIcon('save', 'white', 14)} СОХРАНИТЬ НАСТРОЙКИ СЕРВЕРА
+                        </button>
+                    `;
+
+                    document.getElementById('btn-save-server-config')?.addEventListener('click', async () => {
+                        const port = parseInt(document.getElementById('cfg-web-port').value, 10) || 8080;
+                        const host = document.getElementById('cfg-web-host').value.trim() || '0.0.0.0';
+                        const sessionLifetime = parseInt(document.getElementById('cfg-session-lifetime').value, 10) || 1440;
+                        const keepLogs = parseInt(document.getElementById('cfg-keep-logs').value, 10) || 2000;
+                        const debugMode = document.getElementById('cfg-debug-mode').checked;
+
+                        try {
+                            const res = await api('POST', '/api/server/config', {
+                                webPort: port,
+                                webHost: host,
+                                sessionLifetimeMinutes: sessionLifetime,
+                                keepLogCount: keepLogs,
+                                debugMode: debugMode
+                            });
+                            serverConfig = { ...serverConfig, ...res.config };
+                            showToast('Сохранено', 'Конфигурация сервера успешно обновлена в config.yml', 'success');
+                        } catch (e) {
+                            showToast('Ошибка', e.message, 'error');
+                        }
+                    });
+                } else if (tabId === 'security') {
+                    // TAB 3: БЕЗОПАСНОСТЬ (СИСТЕМА + СМЕНА ПАРОЛЯ + 2FA)
+                    contentPane.innerHTML = `
+                        <h4 style="color:var(--text-main); margin-bottom:14px;">БЕЗОПАСНОСТЬ И АВТОРИЗАЦИЯ</h4>
+
+                        <!-- System Security Rules -->
+                        <div style="background:var(--card-inner-bg); padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-bottom:16px;">
+                            <b style="color:var(--text-main); font-size:13.5px;">Параметры безопасности панели</b>
+                            <div style="font-size:12px; color:var(--text-muted); margin-bottom:12px;">Защита от подбора паролей и фиксация IP-адресов:</div>
+
+                            <div class="form-group">
+                                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:var(--text-main);">
+                                    <input type="checkbox" id="cfg-strict-ip" ${serverConfig.strictIp ? 'checked' : ''}>
+                                    <span>Строгая привязка сессий к IP (аннулировать сессию при смене адреса)</span>
+                                </label>
+                            </div>
+
+                            <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px;">
+                                <div class="form-group" style="margin-bottom:0;">
+                                    <label>Мин. длина пароля</label>
+                                    <input type="number" id="cfg-min-pass" value="${serverConfig.minPasswordLength || 8}" min="6" max="32">
+                                </div>
+                                <div class="form-group" style="margin-bottom:0;">
+                                    <label>Макс. попыток входа</label>
+                                    <input type="number" id="cfg-max-attempts" value="${serverConfig.loginMaxAttempts || 5}" min="1" max="20">
+                                </div>
+                                <div class="form-group" style="margin-bottom:0;">
+                                    <label>Блокировка (мин)</label>
+                                    <input type="number" id="cfg-lockout-min" value="${serverConfig.loginLockoutMinutes || 15}" min="1" max="1440">
+                                </div>
+                            </div>
+
+                            <button type="button" class="secondary btn-sm" id="btn-save-sec-rules" style="margin-top:14px; width:100%; display:flex; align-items:center; justify-content:center; gap:6px;">
+                                ${renderSvgIcon('save', 'white', 14)} СОХРАНИТЬ ПРАВИЛА БЕЗОПАСНОСТИ
+                            </button>
+                        </div>
 
                         <!-- Sessions & 2FA Info Card -->
-                        <div style="background:#110a26; padding:14px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-bottom:16px;">
-                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                        <div style="background:var(--card-inner-bg); padding:14px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-bottom:16px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
                                 <div>
-                                    <b style="color:#fff; font-size:13px;">Управление сессиями устройства</b>
-                                    <div style="font-size:11.5px; color:var(--text-muted);">Завершите сессии на всех остальных смартфонах и ПК</div>
+                                    <b style="color:var(--text-main); font-size:13px;">Управление сессиями вашей учетной записи</b>
+                                    <div style="font-size:11.5px; color:var(--text-muted);">Завершите активные сессии на всех остальных смартфонах и ПК</div>
                                 </div>
-                                <button type="button" class="danger btn-sm" id="btn-sec-terminate-other">
-                                    ЗАВЕРШИТЬ ДРУГИЕ
+                                <button type="button" class="danger btn-sm" id="btn-sec-terminate-other" style="display:flex; align-items:center; gap:6px;">
+                                    ${renderSvgIcon('ban', 'white', 12)} ЗАВЕРШИТЬ ДРУГИЕ
                                 </button>
                             </div>
                             ${me.totpEnabled ? `
-                                <button type="button" class="secondary btn-sm" id="btn-sec-regen-codes" style="width:100%; font-size:11px; margin-top:6px;">
-                                    🔄 СГЕНЕРИРОВАТЬ НОВЫЕ РЕЗЕРВНЫЕ КОДЫ 2FA
+                                <button type="button" class="secondary btn-sm" id="btn-sec-regen-codes" style="width:100%; font-size:11px; margin-top:10px; display:flex; align-items:center; justify-content:center; gap:6px;">
+                                    ${renderSvgIcon('refresh', 'gray', 12)} СГЕНЕРИРОВАТЬ НОВЫЕ РЕЗЕРВНЫЕ КОДЫ 2FA
                                 </button>
                             ` : ''}
                         </div>
 
-                        <!-- 4-step Password Change -->
-                        <div style="background:#110a26; padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border);">
-                            <div style="font-weight:700; color:#fff; margin-bottom:4px; font-size:13.5px;">СМЕНА ПАРОЛЯ УЧЁТНОЙ ЗАПИСИ</div>
+                        <!-- Password Change -->
+                        <div style="background:var(--card-inner-bg); padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border);">
+                            <div style="font-weight:700; color:var(--text-main); margin-bottom:4px; font-size:13.5px;">СМЕНА ПАРОЛЯ УЧЁТНОЙ ЗАПИСИ</div>
                             <div style="font-size:11.5px; color:var(--yellow); margin-bottom:12px;">
-                                Внимание: ввод неверного старого пароля приведёт к немедленному аннулированию сессии и кику с сайта!
+                                Внимание: ввод неверного старого пароля приведёт к аннулированию сессии!
                             </div>
 
                             <div class="form-group">
@@ -7589,8 +7748,8 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                                 <input type="password" id="sec-old-pass" placeholder="••••••••" autocomplete="current-password">
                             </div>
                             <div class="form-group">
-                                <label>2. Новый надёжный пароль (минимум 10 символов) *</label>
-                                <input type="password" id="sec-new-pass" placeholder="Минимум 10 символов" autocomplete="new-password">
+                                <label>2. Новый надёжный пароль (минимум ${serverConfig.minPasswordLength || 8} символов) *</label>
+                                <input type="password" id="sec-new-pass" placeholder="Новый пароль" autocomplete="new-password">
                             </div>
                             <div class="form-group">
                                 <label>3. Подтвердите новый пароль *</label>
@@ -7604,11 +7763,31 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                             ` : ''}
 
                             <div id="sec-pass-err" class="error" style="display:none; margin-bottom:10px;"></div>
-                            <button type="button" class="primary" id="btn-submit-change-pass" style="width:100%;">
-                                ИЗМЕНИТЬ ПАРОЛЬ
+                            <button type="button" class="primary" id="btn-submit-change-pass" style="width:100%; display:flex; align-items:center; justify-content:center; gap:6px;">
+                                ${renderSvgIcon('key', 'white', 14)} ИЗМЕНИТЬ ПАРОЛЬ
                             </button>
                         </div>
                     `;
+
+                    document.getElementById('btn-save-sec-rules')?.addEventListener('click', async () => {
+                        const strictIp = document.getElementById('cfg-strict-ip').checked;
+                        const minLength = parseInt(document.getElementById('cfg-min-pass').value, 10) || 8;
+                        const maxAttempts = parseInt(document.getElementById('cfg-max-attempts').value, 10) || 5;
+                        const lockoutMin = parseInt(document.getElementById('cfg-lockout-min').value, 10) || 15;
+
+                        try {
+                            const res = await api('POST', '/api/server/config', {
+                                strictIp,
+                                minPasswordLength: minLength,
+                                loginMaxAttempts: maxAttempts,
+                                loginLockoutMinutes: lockoutMin
+                            });
+                            serverConfig = { ...serverConfig, ...res.config };
+                            showToast('Сохранено', 'Правила безопасности обновлены в config.yml', 'success');
+                        } catch (e) {
+                            showToast('Ошибка', e.message, 'error');
+                        }
+                    });
 
                     document.getElementById('btn-sec-terminate-other')?.addEventListener('click', () => {
                         confirmAction('ЗАВЕРШЕНИЕ СЕССИЙ', 'Завершить все активные сессии на всех других устройствах?', async () => {
@@ -7641,13 +7820,14 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                         const err = document.getElementById('sec-pass-err');
                         err.style.display = 'none';
 
+                        const minRequired = serverConfig.minPasswordLength || 8;
                         if (!oldPassword || !newPassword || !confirmPass) {
                             err.textContent = 'Заполните все обязательные поля';
                             err.style.display = 'block';
                             return;
                         }
-                        if (newPassword.length < 10) {
-                            err.textContent = 'Новый пароль должен содержать минимум 10 символов';
+                        if (newPassword.length < minRequired) {
+                            err.textContent = `Новый пароль должен содержать минимум ${minRequired} символов`;
                             err.style.display = 'block';
                             return;
                         }
@@ -7666,22 +7846,124 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                             err.style.display = 'block';
                         }
                     });
-                } else if (tabId === 'notifications') {
-                    // TAB 3: УВЕДОМЛЕНИЯ (DISCORD + ПАНЕЛЬ)
+                } else if (tabId === 'blacklist') {
+                    // TAB 4: ЧЕРНЫЙ СПИСОК КОМАНД
+                    let currentBlacklist = Array.isArray(serverConfig.commandBlacklist) ? [...serverConfig.commandBlacklist] : [];
+
+                    const renderBlacklistUI = () => {
+                        contentPane.innerHTML = `
+                            <h4 style="color:var(--text-main); margin-bottom:14px;">ЧЕРНЫЙ СПИСОК КОМАНД ВЕБ-КОНСОЛИ</h4>
+                            <div style="background:var(--card-inner-bg); padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-bottom:16px;">
+                                <div style="font-size:12.5px; color:var(--text-muted); margin-bottom:14px;">
+                                    Команды, перечисленные ниже, полностью блокируются при попытке выполнить их через веб-терминал LoveWebAdmin для защиты целостности сервера.
+                                </div>
+
+                                <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px; min-height:42px; padding:10px; background:var(--bg-main); border-radius:var(--radius-sm); border:1px solid var(--border);">
+                                    ${currentBlacklist.length === 0 ? `<div style="font-size:12px; color:var(--text-dim); font-style:italic;">Черный список пуст</div>` : ''}
+                                    ${currentBlacklist.map((cmd, idx) => `
+                                        <span class="badge red" style="display:inline-flex; align-items:center; gap:6px; font-size:12.5px; padding:4px 10px; border-radius:4px;">
+                                            <code>/${esc(cmd)}</code>
+                                            <button type="button" class="btn-remove-cmd" data-idx="${idx}" style="background:none; border:none; color:inherit; cursor:pointer; padding:0; line-height:1; display:inline-flex; align-items:center;">${renderSvgIcon('close', 'gray', 12)}</button>
+                                        </span>
+                                    `).join('')}
+                                </div>
+
+                                <div style="display:flex; gap:10px; align-items:center;">
+                                    <input type="text" id="input-new-blacklist-cmd" placeholder="Например: restart, stop, op..." style="flex:1;">
+                                    <button type="button" class="secondary" id="btn-add-blacklist-cmd" style="display:inline-flex; align-items:center; gap:6px;">
+                                        ${renderSvgIcon('plus', 'violet', 14)} ДОБАВИТЬ
+                                    </button>
+                                </div>
+                            </div>
+
+                            <button type="button" class="primary btn-sm" id="btn-save-blacklist" style="width:100%; display:flex; align-items:center; justify-content:center; gap:6px;">
+                                ${renderSvgIcon('save', 'white', 14)} СОХРАНИТЬ ЧЕРНЫЙ СПИСОК
+                            </button>
+                        `;
+
+                        document.querySelectorAll('.btn-remove-cmd').forEach(btn => {
+                            btn.addEventListener('click', () => {
+                                const idx = parseInt(btn.dataset.idx, 10);
+                                currentBlacklist.splice(idx, 1);
+                                renderBlacklistUI();
+                            });
+                        });
+
+                        const addCmd = () => {
+                            const input = document.getElementById('input-new-blacklist-cmd');
+                            let val = input.value.trim().toLowerCase();
+                            if (val.startsWith('/')) val = val.substring(1).trim();
+                            if (val && !currentBlacklist.includes(val)) {
+                                currentBlacklist.push(val);
+                                renderBlacklistUI();
+                            }
+                        };
+
+                        document.getElementById('btn-add-blacklist-cmd')?.addEventListener('click', addCmd);
+                        document.getElementById('input-new-blacklist-cmd')?.addEventListener('keydown', (e) => {
+                            if (e.key === 'Enter') { e.preventDefault(); addCmd(); }
+                        });
+
+                        document.getElementById('btn-save-blacklist')?.addEventListener('click', async () => {
+                            try {
+                                const res = await api('POST', '/api/server/config', { commandBlacklist: currentBlacklist });
+                                serverConfig.commandBlacklist = [...currentBlacklist];
+                                showToast('Сохранено', 'Черный список команд успешно записан в config.yml', 'success');
+                            } catch (e) {
+                                showToast('Ошибка', e.message, 'error');
+                            }
+                        });
+                    };
+
+                    renderBlacklistUI();
+                } else if (tabId === 'webhooks') {
+                    // TAB 5: ВЕБХУКИ И СВЯЗЬ (DISCORD + TELEGRAM)
                     const discordId = userPrefs.discordId || '';
                     const notifyReports = userPrefs.discordNotifyReports !== false;
                     const notifyTickets = userPrefs.discordNotifyTickets !== false;
 
                     contentPane.innerHTML = `
-                        <h4 style="color:#fff; margin-bottom:14px;">НАСТРОЙКИ УВЕДОМЛЕНИЙ ПЕРСОНАЛА</h4>
+                        <h4 style="color:var(--text-main); margin-bottom:14px;">ОПОВЕЩЕНИЯ, DISCORD И TELEGRAM ВЕБХУКИ</h4>
 
-                        <div style="background:#110a26; padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-bottom:16px;">
+                        <!-- Server Global Webhooks Card -->
+                        <div style="background:var(--card-inner-bg); padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-bottom:16px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+                                <div>
+                                    <b style="color:var(--text-main); font-size:13.5px;">Глобальные вебхуки сервера</b>
+                                    <div style="font-size:11.5px; color:var(--text-muted); margin-top:2px;">Отправка событий наказаний, входов и алертов в каналы</div>
+                                </div>
+                                <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                                    <input type="checkbox" id="cfg-webhooks-enabled" ${serverConfig.webhooksEnabled ? 'checked' : ''}>
+                                    <span style="font-size:12.5px; color:var(--text-main); font-weight:700;">ВКЛЮЧЕНЫ</span>
+                                </label>
+                            </div>
+
+                            <div class="form-group">
+                                <label>Discord Webhook URL (webhooks.discord)</label>
+                                <input type="text" id="cfg-discord-webhook" value="${esc(serverConfig.discordWebhookUrl || '')}" placeholder="https://discord.com/api/webhooks/...">
+                                <div style="font-size:11.5px; color:var(--text-muted); margin-top:3px;">Канал Discord для серверных оповещений и логов</div>
+                            </div>
+
+                            <div style="display:grid; grid-template-columns:1.5fr 1fr; gap:12px;">
+                                <div class="form-group" style="margin-bottom:0;">
+                                    <label>Telegram Bot Token</label>
+                                    <input type="text" id="cfg-tg-token" value="${esc(serverConfig.telegramBotToken || '')}" placeholder="123456789:ABCdefGHI...">
+                                </div>
+                                <div class="form-group" style="margin-bottom:0;">
+                                    <label>Telegram Chat ID</label>
+                                    <input type="text" id="cfg-tg-chat" value="${esc(serverConfig.telegramChatId || '')}" placeholder="-100123456789">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Personal Staff Notifications -->
+                        <div style="background:var(--card-inner-bg); padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-bottom:16px;">
                             <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
-                                <span style="font-size:18px;">💬</span>
-                                <h5 style="font-size:13.5px; color:#fff; margin:0;">ОПОВЕЩЕНИЯ В ЛС DISCORD</h5>
+                                <span style="font-size:16px;">${renderSvgIcon('bell', 'violet', 16)}</span>
+                                <h5 style="font-size:13.5px; color:var(--text-main); margin:0;">ЛИЧНЫЕ ОПОВЕЩЕНИЯ В ЛС DISCORD</h5>
                             </div>
                             <div style="font-size:12px; color:var(--text-muted); margin-bottom:12px;">
-                                Моментальные личные оповещения от сервера в Discord при поступлении новых репортов или тикетов апелляций.
+                                Моментальные личные оповещения от бота при поступлении новых жалоб игроков или тикетов.
                             </div>
 
                             <div class="form-group">
@@ -7689,130 +7971,70 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                                 <input type="text" id="pref-discord-id" value="${esc(discordId)}" placeholder="например: 345678901234567890">
                             </div>
 
-                            <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px;">
-                                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:12.5px; color:#fff;">
+                            <div style="display:flex; flex-direction:column; gap:8px;">
+                                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:12.5px; color:var(--text-main);">
                                     <input type="checkbox" id="pref-notify-reports" ${notifyReports ? 'checked' : ''}>
-                                    <span>🚨 Оповещать в ЛС о новых жалобах игроков (Reports)</span>
+                                    <span>Оповещать в ЛС о новых жалобах игроков (Reports)</span>
                                 </label>
-                                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:12.5px; color:#fff;">
+                                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:12.5px; color:var(--text-main);">
                                     <input type="checkbox" id="pref-notify-tickets" ${notifyTickets ? 'checked' : ''}>
-                                    <span>⚖️ Оповещать в ЛС о новых апелляциях банов (Tickets)</span>
+                                    <span>Оповещать в ЛС о новых апелляциях банов (Tickets)</span>
                                 </label>
                             </div>
                         </div>
 
-                        <button type="button" class="primary btn-sm" id="btn-save-notif-prefs" style="width:100%;">
-                            💾 СОХРАНИТЬ НАСТРОЙКИ УВЕДОМЛЕНИЙ
+                        <button type="button" class="primary btn-sm" id="btn-save-webhooks" style="width:100%; display:flex; align-items:center; justify-content:center; gap:6px;">
+                            ${renderSvgIcon('save', 'white', 14)} СОХРАНИТЬ ВЕБХУКИ И ОПОВЕЩЕНИЯ
                         </button>
                     `;
 
-                    document.getElementById('btn-save-notif-prefs')?.addEventListener('click', async () => {
+                    document.getElementById('btn-save-webhooks')?.addEventListener('click', async () => {
+                        const webhooksEnabled = document.getElementById('cfg-webhooks-enabled').checked;
+                        const discordWebhook = document.getElementById('cfg-discord-webhook').value.trim();
+                        const tgToken = document.getElementById('cfg-tg-token').value.trim();
+                        const tgChat = document.getElementById('cfg-tg-chat').value.trim();
+
                         userPrefs.discordId = document.getElementById('pref-discord-id').value.trim();
                         userPrefs.discordNotifyReports = document.getElementById('pref-notify-reports').checked;
                         userPrefs.discordNotifyTickets = document.getElementById('pref-notify-tickets').checked;
 
                         try {
-                            await api('PUT', '/api/me/preferences', { uiPreferences: userPrefs });
+                            const [resCfg] = await Promise.all([
+                                api('POST', '/api/server/config', {
+                                    webhooksEnabled,
+                                    discordWebhookUrl: discordWebhook,
+                                    telegramBotToken: tgToken,
+                                    telegramChatId: tgChat
+                                }),
+                                api('PUT', '/api/me/preferences', { uiPreferences: userPrefs })
+                            ]);
+                            serverConfig = { ...serverConfig, ...resCfg.config };
                             me.uiPreferences = JSON.stringify(userPrefs);
-                            showToast('Настройки сохранены', 'Параметры уведомлений успешно обновлены', 'success');
+                            showToast('Сохранено', 'Настройки вебхуков и оповещений успешно обновлены', 'success');
                         } catch (e) {
                             showToast('Ошибка', e.message, 'error');
                         }
                     });
-                } else if (tabId === 'appearance') {
-                    // TAB 4: ВНЕШНИЙ ВИД (ТЕМА, ЦВЕТА РОЛЕЙ)
-                    const isLight = document.body.classList.contains('theme-light');
-                    contentPane.innerHTML = `
-                        <h4 style="color:#fff; margin-bottom:14px;">ВНЕШНИЙ ВИД И ПЕРСОНАЛИЗАЦИЯ</h4>
-
-                        <div style="background:#110a26; padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-bottom:16px;">
-                            <b style="color:#fff; font-size:13.5px;">Тема оформления интерфейса</b>
-                            <div style="font-size:12px; color:var(--text-muted); margin-bottom:12px;">Выберите комфортную цветовую схему для работы:</div>
-
-                            <div style="display:flex; gap:12px;">
-                                <button type="button" class="secondary ${!isLight ? 'active' : ''}" id="btn-theme-dark" style="flex:1; padding:12px;">
-                                    🌙 ТЁМНАЯ ТЕМА (DARK)
-                                </button>
-                                <button type="button" class="secondary ${isLight ? 'active' : ''}" id="btn-theme-light" style="flex:1; padding:12px;">
-                                    ☀️ СВЕТЛАЯ ТЕМА (LIGHT)
-                                </button>
-                            </div>
-                        </div>
-
-                        <div style="background:#110a26; padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border);">
-                            <b style="color:#fff; font-size:13.5px;">Раскладка дашборда</b>
-                            <div style="font-size:12px; color:var(--text-muted); margin-bottom:10px;">
-                                Плитки дашборда можно свободно перетаскивать (Drag & Drop) прямо на главной странице.
-                            </div>
-                            <button type="button" class="secondary btn-sm" onclick="window.openDashboardCustomizerModal()">
-                                ▦ НАСТРОИТЬ АКТИВНЫЕ ПЛИТКИ
-                            </button>
-                        </div>
-                    `;
-
-                    document.getElementById('btn-theme-dark')?.addEventListener('click', async () => {
-                        applyUserTheme('dark');
-                        userPrefs.theme = 'dark';
-                        try { await api('PUT', '/api/me/preferences', { uiPreferences: userPrefs }); } catch (_) {}
-                        switchSettingsTab('appearance');
-                    });
-
-                    document.getElementById('btn-theme-light')?.addEventListener('click', async () => {
-                        applyUserTheme('light');
-                        userPrefs.theme = 'light';
-                        try { await api('PUT', '/api/me/preferences', { uiPreferences: userPrefs }); } catch (_) {}
-                        switchSettingsTab('appearance');
-                    });
-                } else if (tabId === 'integrations') {
-                    // TAB 5: ИНТЕГРАЦИИ
-                    contentPane.innerHTML = `
-                        <h4 style="color:#fff; margin-bottom:14px;">ИНТЕГРАЦИИ И ПОДКЛЮЧЕННЫЕ СЕРВИСЫ</h4>
-                        <div style="display:flex; flex-direction:column; gap:12px;">
-                            <div style="background:#110a26; padding:14px; border-radius:var(--radius-sm); border:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
-                                <div>
-                                    <b style="color:#fff;">Discord Bot Integration</b>
-                                    <div style="font-size:11.5px; color:var(--text-muted);">Синхронизация тикетов апелляций и оповещений</div>
-                                </div>
-                                <span class="badge green">ПОДКЛЮЧЕН</span>
-                            </div>
-
-                            <div style="background:#110a26; padding:14px; border-radius:var(--radius-sm); border:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
-                                <div>
-                                    <b style="color:#fff;">LuckPerms Bridge</b>
-                                    <div style="font-size:11.5px; color:var(--text-muted);">Синхронизация игровых групп и прав доступа</div>
-                                </div>
-                                <span class="badge green">АКТИВЕН</span>
-                            </div>
-
-                            <div style="background:#110a26; padding:14px; border-radius:var(--radius-sm); border:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
-                                <div>
-                                    <b style="color:#fff;">Vesuvio Anticheat ML Engine</b>
-                                    <div style="font-size:11.5px; color:var(--text-muted);">Поток телеметрии, поведенческие чеки и детекция</div>
-                                </div>
-                                <span class="badge purple">LIVE ПОТОК</span>
-                            </div>
-                        </div>
-                    `;
                 } else if (tabId === 'maintenance') {
-                    // TAB 6: ТЕХНИЧЕСКИЕ РАБОТЫ (Глобальный переключатель)
+                    // TAB 6: ТЕХНИЧЕСКИЕ РАБОТЫ
                     let maintStatus = { enabled: false, message: 'Ведутся технические работы' };
                     try {
                         maintStatus = await api('GET', '/api/server/maintenance');
                     } catch (_) {}
 
                     contentPane.innerHTML = `
-                        <h4 style="color:#fff; margin-bottom:14px;">РЕЖИМ ТЕХНИЧЕСКИХ РАБОТ</h4>
-                        <div style="background:#110a26; padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-bottom:16px;">
+                        <h4 style="color:var(--text-main); margin-bottom:14px;">РЕЖИМ ТЕХНИЧЕСКИХ РАБОТ ПАНЕЛИ</h4>
+                        <div style="background:var(--card-inner-bg); padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-bottom:16px;">
                             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
                                 <div>
-                                    <b style="color:#fff; font-size:14px;">Глобальный режим обслуживания панели</b>
+                                    <b style="color:var(--text-main); font-size:14px;">Глобальный режим обслуживания веб-панели</b>
                                     <div style="font-size:12px; color:var(--text-muted); margin-top:2px;">
-                                        Когда включён — вход разрешён только Управляющему и ролям с правом «Обход тех. работ».
+                                        Когда включён — вход разрешён только Управляющему и сотрудникам с правом «Обход тех. работ».
                                     </div>
                                 </div>
                                 <label class="switch" style="position:relative; display:inline-block; width:44px; height:24px;">
                                     <input type="checkbox" id="settings-maint-toggle" ${maintStatus.enabled ? 'checked' : ''}>
-                                    <span style="position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; background:${maintStatus.enabled ? 'var(--accent)' : '#332759'}; border-radius:24px; transition:.3s;"></span>
+                                    <span style="position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; background:${maintStatus.enabled ? 'var(--accent)' : 'var(--border)'}; border-radius:24px; transition:.3s;"></span>
                                 </label>
                             </div>
 
@@ -7821,8 +8043,8 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                                 <input type="text" id="settings-maint-msg" value="${esc(maintStatus.message || 'Ведутся технические работы')}" placeholder="Сообщение...">
                             </div>
 
-                            <button type="button" class="primary btn-sm" id="btn-save-maintenance-settings" style="width:100%; margin-top:6px;">
-                                🚧 ПРИМЕНИТЬ РЕЖИМ ТЕХНИЧЕСКИХ РАБОТ
+                            <button type="button" class="primary btn-sm" id="btn-save-maintenance-settings" style="width:100%; margin-top:6px; display:flex; align-items:center; justify-content:center; gap:6px;">
+                                ${renderSvgIcon('wrench', 'white', 14)} ПРИМЕНИТЬ РЕЖИМ ТЕХНИЧЕСКИХ РАБОТ
                             </button>
                         </div>
                     `;
@@ -7845,22 +8067,22 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                         <h4 style="color:var(--red); margin-bottom:14px;">ОПАСНЫЕ ЗОНЫ И СБРОС</h4>
                         <div style="display:flex; flex-direction:column; gap:14px;">
                             <div style="background:rgba(239, 68, 68, 0.08); border:1px solid rgba(239, 68, 68, 0.3); border-radius:var(--radius-sm); padding:16px;">
-                                <b style="color:#fff;">Принудительный выход всех сотрудников</b>
+                                <b style="color:var(--text-main);">Принудительный выход всех сотрудников</b>
                                 <div style="font-size:12px; color:var(--text-muted); margin-top:2px; margin-bottom:12px;">
-                                    Немедленно аннулирует все выданные сессии и токены всех пользователей, кроме вас.
+                                    Немедленно аннулирует все выданные сессии и токены всех пользователей, кроме вашей текущей сессии.
                                 </div>
-                                <button type="button" class="danger btn-sm" id="btn-danger-term-all">
-                                    ЗАВЕРШИТЬ ВСЕ СЕССИИ ПЕРСОНАЛА
+                                <button type="button" class="danger btn-sm" id="btn-danger-term-all" style="display:flex; align-items:center; gap:6px;">
+                                    ${renderSvgIcon('ban', 'white', 14)} ЗАВЕРШИТЬ ВСЕ СЕССИИ ПЕРСОНАЛА
                                 </button>
                             </div>
 
-                            <div style="background:#110a26; border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px;">
-                                <b style="color:#fff;">Перезагрузка конфигурации плагина</b>
+                            <div style="background:var(--card-inner-bg); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px;">
+                                <b style="color:var(--text-main);">Перезагрузка конфигурации плагина</b>
                                 <div style="font-size:12px; color:var(--text-muted); margin-top:2px; margin-bottom:12px;">
-                                    Выполняет /lovewebadmin reload на сервере без перезапуска ядра.
+                                    Выполняет команду /lovewebadmin reload на сервере без перезапуска ядра Minecraft.
                                 </div>
-                                <button type="button" class="secondary btn-sm" id="btn-danger-reload-plugin">
-                                    🔄 ПЕРЕЗАГРУЗИТЬ LOVEWEBADMIN
+                                <button type="button" class="secondary btn-sm" id="btn-danger-reload-plugin" style="display:flex; align-items:center; gap:6px;">
+                                    ${renderSvgIcon('refresh', 'gray', 14)} ПЕРЕЗАГРУЗИТЬ LOVEWEBADMIN
                                 </button>
                             </div>
                         </div>
@@ -7910,7 +8132,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
         openModal(`
             <div class="modal-header">
                 <h3>КИКНУТЬ ИГРОКА С СЕРВЕРА</h3>
-                <button type="button" class="close-btn" data-modal-close="true">✕</button>
+                <button type="button" class="close-btn" data-modal-close="true">${renderSvgIcon('close', 'gray', 16)}</button>
             </div>
             <div class="modal-body">
                 <div class="form-group">
@@ -7956,7 +8178,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
         openModal(`
             <div class="modal-header">
                 <h3>ТЕЛЕПОРТАЦИЯ НА СПАВН</h3>
-                <button type="button" class="close-btn" data-modal-close="true">✕</button>
+                <button type="button" class="close-btn" data-modal-close="true">${renderSvgIcon('close', 'gray', 16)}</button>
             </div>
             <div class="modal-body">
                 <div class="form-group">
@@ -7992,56 +8214,12 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
         });
     };
 
-    // Modal: Quick Freeze
-    window.openQuickFreezeModal = function() {
-        openModal(`
-            <div class="modal-header">
-                <h3>ЗАМОРОЗКА ИГРОКА ДЛЯ ПРОВЕРКИ</h3>
-                <button type="button" class="close-btn" data-modal-close="true">✕</button>
-            </div>
-            <div class="modal-body">
-                <div class="form-group">
-                    <label>Никнейм игрока онлайн</label>
-                    <input type="text" id="quick-freeze-name" placeholder="Введите ник игрока..." required autofocus autocomplete="off">
-                </div>
-                <div style="font-size:12px; color:var(--text-muted);">
-                    Игрок будет обездвижен, экран заблокирован уведомлением о проверке на читы.
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="secondary" data-modal-close="true">ОТМЕНА</button>
-                <button type="button" class="primary" id="btn-submit-quick-freeze">ЗАМОРОЗИТЬ</button>
-            </div>
-        `, () => {
-            const nameInput = document.getElementById('quick-freeze-name');
-            if (nameInput) attachPlayerAutocomplete(nameInput);
-
-            document.getElementById('btn-submit-quick-freeze')?.addEventListener('click', async () => {
-                const name = nameInput ? nameInput.value.trim() : '';
-                if (!name) return;
-
-                try {
-                    await api('POST', `/api/players/${encodeURIComponent(name)}/action`, { action: 'freeze' });
-                    recordShiftAction(`Заморозил ${name}`);
-                    showToast('Заморозка', `Игрок ${name} заморожен для проверки`, 'warning');
-                    closeModal();
-                } catch (e) {
-                    if (e.message && e.message.includes('не в сети')) {
-                        showToast('Игрок оффлайн', `Игрок ${name} не в сети или не найден`, 'warning');
-                    } else {
-                        showToast('Ошибка', e.message || 'Не удалось заморозить игрока', 'danger');
-                    }
-                }
-            });
-        });
-    };
-
     // Modal: Quick Vanish Modal
     window.openQuickVanishModal = function() {
         openModal(`
             <div class="modal-header">
                 <h3>РЕЖИМ НЕВИДИМОСТИ (VANISH)</h3>
-                <button type="button" class="close-btn" onclick="window.closeCurrentModal()">✕</button>
+                <button type="button" class="close-btn" onclick="window.closeCurrentModal()">${renderSvgIcon('close', 'gray', 16)}</button>
             </div>
             <div class="modal-body">
                 <div class="form-group">
@@ -8081,7 +8259,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
         openModal(`
             <div class="modal-header">
                 <h3>ЗАГЛУШИТЬ ИГРОКА (MUTE)</h3>
-                <button type="button" class="close-btn" onclick="window.closeCurrentModal()">✕</button>
+                <button type="button" class="close-btn" onclick="window.closeCurrentModal()">${renderSvgIcon('close', 'gray', 16)}</button>
             </div>
             <div class="modal-body">
                 <div class="form-group">
