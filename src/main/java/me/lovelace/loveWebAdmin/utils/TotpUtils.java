@@ -24,6 +24,7 @@ public final class TotpUtils {
     private static final int TIME_STEP_SECONDS = 30;
     private static final int DIGITS = 6;
     private static final int MODULUS = 1_000_000;
+    private static final java.util.concurrent.ConcurrentHashMap<String, Long> USED_CODES = new java.util.concurrent.ConcurrentHashMap<>();
 
     private TotpUtils() {}
 
@@ -38,10 +39,11 @@ public final class TotpUtils {
 
     /**
      * Проверяет 6-значный TOTP-код с допуском ±1 шаг времени (окно 90 секунд).
+     * Повторное использование одного и того же кода в окне 90 секунд отклоняется (защита от replay-атак).
      *
      * @param base32Secret секрет пользователя
      * @param codeString   введённый 6-значный код
-     * @return true если код валиден
+     * @return true если код валиден и ранее не использовался в пределах 90с
      */
     public static boolean verifyCode(String base32Secret, String codeString) {
         if (base32Secret == null || codeString == null) return false;
@@ -62,9 +64,20 @@ public final class TotpUtils {
             return false;
         }
 
-        long currentStep = (System.currentTimeMillis() / 1000L) / TIME_STEP_SECONDS;
+        String replayKey = base32Secret.trim().toUpperCase() + ":" + cleanCode;
+        long now = System.currentTimeMillis();
+        Long lastUsed = USED_CODES.get(replayKey);
+        if (lastUsed != null && (now - lastUsed) < 90_000L) {
+            return false;
+        }
+
+        long currentStep = (now / 1000L) / TIME_STEP_SECONDS;
         for (int i = -1; i <= 1; i++) {
             if (generateCodeForStep(key, currentStep + i) == expectedCode) {
+                USED_CODES.put(replayKey, now);
+                if (USED_CODES.size() > 200) {
+                    USED_CODES.entrySet().removeIf(entry -> (now - entry.getValue()) > 120_000L);
+                }
                 return true;
             }
         }

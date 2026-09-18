@@ -77,8 +77,8 @@
             modAllowed: false 
         },
         { 
-            id: 'admins', 
-            label: 'Администраторы и роли', 
+            id: 'staff',
+            label: 'Персонал', 
             icon: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`, 
             num: 7, 
             perm: 'MANAGE_ADMINS', 
@@ -894,7 +894,7 @@
                     height: 180,
                     colorDark: '#000000',
                     colorLight: '#ffffff',
-                    correctLevel: (typeof QRCode.CorrectLevel !== 'undefined' ? QRCode.CorrectLevel.M : 0)
+                    correctLevel: (typeof QRCode.CorrectLevel !== 'undefined' ? (QRCode.CorrectLevel.H || QRCode.CorrectLevel.M) : 0)
                 });
                 // qrcode.js: гарантируем корректное отображение img или canvas
                 setTimeout(() => {
@@ -925,6 +925,90 @@
                 <div style="margin-bottom:8px; display:flex; justify-content:center;">${renderSvgIcon('key', 'violet', 24)}</div>
                 Используйте вкладку <b>«Секретный код»</b><br>для ввода ключа в Authenticator.
             </div>`;
+    }
+
+    function validatePasswordClient(p) {
+        if (!p || p.length < 10) return 'Минимум 10 символов';
+        if (!/[A-Za-zА-Яа-я]/.test(p)) return 'Нужна хотя бы одна буква';
+        if (!/\d/.test(p)) return 'Нужна хотя бы одна цифра';
+        if (!/[^A-Za-zА-Яа-я0-9]/.test(p)) return 'Нужен спецсимвол';
+        return null;
+    }
+
+    function updatePasswordMeter(password, fillEl, hintsEl) {
+        if (!fillEl) return;
+        const p = password || '';
+        const hasLen = p.length >= 10;
+        const hasLetter = /[A-Za-zА-Яа-я]/.test(p);
+        const hasDigit = /\d/.test(p);
+        const hasSpecial = /[^A-Za-zА-Яа-я0-9]/.test(p);
+
+        if (hintsEl) {
+            const hints = hintsEl.querySelectorAll('span');
+            if (hints.length >= 4) {
+                hints[0].className = hasLen ? 'valid' : 'invalid';
+                hints[0].textContent = (hasLen ? '✓ ' : '• ') + '10+ симв.';
+                hints[1].className = hasLetter ? 'valid' : 'invalid';
+                hints[1].textContent = (hasLetter ? '✓ ' : '• ') + 'буква';
+                hints[2].className = hasDigit ? 'valid' : 'invalid';
+                hints[2].textContent = (hasDigit ? '✓ ' : '• ') + 'цифра';
+                hints[3].className = hasSpecial ? 'valid' : 'invalid';
+                hints[3].textContent = (hasSpecial ? '✓ ' : '• ') + 'спецсимвол';
+            }
+        }
+
+        const score = (hasLen ? 1 : 0) + (hasLetter ? 1 : 0) + (hasDigit ? 1 : 0) + (hasSpecial ? 1 : 0);
+        const pct = (score / 4) * 100;
+        fillEl.style.width = pct + '%';
+        if (score <= 1) fillEl.style.background = 'var(--red, #ef4444)';
+        else if (score <= 3) fillEl.style.background = 'var(--yellow, #eab308)';
+        else fillEl.style.background = 'var(--green, #22c55e)';
+    }
+
+    function renderSecretMasked(el, secret) {
+        if (!el || !secret) return;
+        const groups = secret.match(/.{1,4}/g)?.join(' ') || secret;
+        const maskedText = '•••• •••• •••• ••••';
+        el.innerHTML = `
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; background:var(--card-inner-bg, rgba(255,255,255,0.03)); border:1px solid var(--border); border-radius:6px; padding:8px 12px;">
+                <span class="totp-secret-mask" title="Нажмите, чтобы показать/скрыть">${maskedText}</span>
+                <button type="button" class="secondary btn-sm" id="btn-copy-secret" style="display:inline-flex; align-items:center; gap:4px; font-size:11px;">
+                    ${renderSvgIcon('copy', 'gray', 12)} Копировать
+                </button>
+            </div>
+        `;
+        const mask = el.querySelector('.totp-secret-mask');
+        let shown = false;
+        const show = () => { if (mask) { mask.textContent = groups; shown = true; } };
+        const hide = () => { if (mask) { mask.textContent = maskedText; shown = false; } };
+        mask?.addEventListener('click', () => shown ? hide() : show());
+        mask?.addEventListener('mouseenter', show);
+        mask?.addEventListener('mouseleave', hide);
+
+        el.querySelector('#btn-copy-secret')?.addEventListener('click', async () => {
+            try {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    await navigator.clipboard.writeText(secret);
+                } else {
+                    const ta = document.createElement('textarea');
+                    ta.value = secret;
+                    document.body.appendChild(ta);
+                    ta.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(ta);
+                }
+                showToast('Скопировано', 'Секретный ключ скопирован в буфер обмена', 'info');
+            } catch (_) {}
+        });
+    }
+
+    function bindTotpInput(input) {
+        if (!input) return;
+        input.classList.add('totp-input-masked');
+        input.addEventListener('input', () => {
+            let d = input.value.replace(/\D/g, '').slice(0, 6);
+            input.value = d.length > 3 ? d.slice(0, 3) + '-' + d.slice(3) : d;
+        });
     }
 
     function setupSecretCopy(buttonId, textToCopy) {
@@ -1037,24 +1121,24 @@
                     <form id="login-form">
                         <div class="form-group">
                             <label>Никнейм сотрудника</label>
-                            <input type="text" id="login-user" placeholder="Например: Lovelace" required autofocus>
+                            <input type="text" id="login-user" placeholder="Например: Lovelace" required autofocus autocomplete="username">
                         </div>
                         <div class="form-group">
                             <label>Пароль</label>
-                            <input type="password" id="login-pass" placeholder="••••••••" required>
+                            <input type="password" id="login-pass" placeholder="••••••••" required autocomplete="current-password">
                         </div>
                         <div id="login-err" class="error" style="display:none;"></div>
                         <button type="submit" class="primary" id="login-submit" style="width:100%; margin-top:10px;">ВОЙТИ В СИСТЕМУ</button>
                     </form>
                     <div class="auth-switch-box">
-                        Новый сотрудник? <a href="#" class="auth-switch-link" id="link-register-candidate">Подать заявку на регистрацию</a>
+                        Новый сотрудник? <a href="#" class="auth-switch-link" id="link-register-invite">Регистрация по приглашению</a>
                     </div>
                 </div>
             </div>`;
 
-        document.getElementById('link-register-candidate')?.addEventListener('click', (e) => {
+        document.getElementById('link-register-invite')?.addEventListener('click', (e) => {
             e.preventDefault();
-            renderCandidateRegistration();
+            renderInviteRegister();
         });
 
         document.getElementById('login-form')?.addEventListener('submit', async (e) => {
@@ -1085,293 +1169,215 @@
         });
     }
 
-    function renderCandidateRegistration() {
-        const isDebug = serverStatus && serverStatus.debugMode;
+    function renderInviteRegister() {
         app.innerHTML = `
             <div class="auth-screen">
                 <div class="auth-card" style="max-width:480px;">
-                    <div class="logo"><span style="color:var(--accent);">◈</span> Регистрация сотрудника</div>
-                    <div class="sub">Подача заявки на доступ к панели WebAdmin. Главный администратор утвердит вашу заявку.</div>
-                    ${isDebug ? `<div class="auth-debug-badge" style="display:inline-flex; align-items:center; gap:6px;">${renderSvgIcon('zap', 'violet', 13)} Режим отладки: можно подать заявку без сканирования QR</div>` : ''}
+                    <div class="logo"><span style="color:var(--accent);">◈</span> Регистрация по приглашению</div>
+                    <div class="sub">Введите код приглашения, полученный от руководства сервера</div>
 
-                    <div class="stepper">
-                        <div class="step-item active">
-                            <span class="step-badge">1</span>
-                            <span>Данные</span>
-                        </div>
-                        <div class="step-connector"></div>
-                        <div class="step-item">
-                            <span class="step-badge">2</span>
-                            <span>2FA Привязка</span>
-                        </div>
-                    </div>
-
-                    <form id="cand-reg-form">
+                    <!-- Step A: Code Form -->
+                    <form id="invite-code-form">
                         <div class="form-group">
-                            <label>Ваш никнейм в игре</label>
-                            <input type="text" id="cand-user" placeholder="Например: Steve" required autofocus>
+                            <label>Код приглашения</label>
+                            <input id="reg-invite-code" placeholder="LWA-XXXXXXXX"
+                                   autocomplete="one-time-code" style="text-transform:uppercase; text-align:center; font-family:'JetBrains Mono'; font-size:18px; font-weight:700; letter-spacing:2px;" required autofocus>
                         </div>
-                        <div class="form-group">
-                            <label>Придумайте пароль</label>
-                            <input type="password" id="cand-pass" placeholder="Минимум 10 символов" required>
-                        </div>
-                        <div class="form-group">
-                            <label>Повторите пароль</label>
-                            <input type="password" id="cand-pass2" placeholder="••••••••" required>
-                        </div>
-                        <div id="cand-reg-err" class="error" style="display:none;"></div>
-                        <button type="submit" class="primary" id="btn-cand-next" style="width:100%; margin-top:10px;">ПРОДОЛЖИТЬ (2FA)</button>
-                        ${isDebug ? `<button type="button" class="btn-debug-bypass" id="btn-cand-debug-direct" style="width:100%; margin-top:8px; display:inline-flex; align-items:center; justify-content:center; gap:6px;">${renderSvgIcon('zap', 'violet', 13)} ПОДАТЬ ЗАЯВКУ БЕЗ 2FA / QR (ДЕБАГ)</button>` : ''}
-                        <button type="button" class="secondary" id="btn-cand-cancel" style="width:100%; margin-top:8px;">← ВЕРНУТЬСЯ КО ВХОДУ</button>
+                        <div id="invite-code-err" class="error" style="display:none; margin-bottom:12px;"></div>
+                        <button type="submit" class="primary" id="btn-validate-code" style="width:100%; margin-top:6px;">ПРОВЕРИТЬ КОД</button>
+                        <button type="button" class="secondary" id="btn-invite-cancel" style="width:100%; margin-top:8px;">← ВЕРНУТЬСЯ КО ВХОДУ</button>
                     </form>
+
+                    <!-- Step B: Account + Password + 2FA Form (Hidden initially) -->
+                    <div id="invite-step-b" style="display:none;"></div>
                 </div>
             </div>`;
 
-        document.getElementById('btn-cand-cancel')?.addEventListener('click', () => {
+        document.getElementById('btn-invite-cancel')?.addEventListener('click', () => {
             renderLogin();
         });
 
-        if (isDebug) {
-            document.getElementById('btn-cand-debug-direct')?.addEventListener('click', async () => {
-                const username = document.getElementById('cand-user').value.trim();
-                const pass = document.getElementById('cand-pass').value;
-                const pass2 = document.getElementById('cand-pass2').value;
-                const err = document.getElementById('cand-reg-err');
-                err.style.display = 'none';
-
-                if (username.length < 2) {
-                    err.textContent = 'Никнейм должен быть не менее 2 символов';
-                    err.style.display = 'block';
-                    return;
-                }
-                if (pass.length < 10) {
-                    err.textContent = 'Пароль должен содержать минимум 10 символов';
-                    err.style.display = 'block';
-                    return;
-                }
-                if (pass !== pass2) {
-                    err.textContent = 'Пароли не совпадают';
-                    err.style.display = 'block';
-                    return;
-                }
-
-                try {
-                    const res = await api('POST', '/api/auth/register', {
-                        username, password: pass, totpSecret: 'debug', totpCode: 'debug'
-                    });
-                    renderCandidateSuccessScreen(username, res.backupCodes || []);
-                } catch (ex) {
-                    err.textContent = ex.message;
-                    err.style.display = 'block';
-                }
-            });
-        }
-
-        document.getElementById('cand-reg-form')?.addEventListener('submit', async (e) => {
+        document.getElementById('invite-code-form')?.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const username = document.getElementById('cand-user').value.trim();
-            const pass = document.getElementById('cand-pass').value;
-            const pass2 = document.getElementById('cand-pass2').value;
-            const err = document.getElementById('cand-reg-err');
-            const btn = document.getElementById('btn-cand-next');
-            err.style.display = 'none';
+            const codeInput = document.getElementById('reg-invite-code');
+            const code = (codeInput?.value || '').trim().toUpperCase();
+            const errEl = document.getElementById('invite-code-err');
+            const btn = document.getElementById('btn-validate-code');
 
-            if (username.length < 2) {
-                err.textContent = 'Никнейм должен быть не менее 2 символов';
-                err.style.display = 'block';
-                return;
-            }
-            if (pass.length < 10) {
-                err.textContent = 'Пароль должен содержать минимум 10 символов';
-                err.style.display = 'block';
-                return;
-            }
-            if (pass !== pass2) {
-                err.textContent = 'Пароли не совпадают';
-                err.style.display = 'block';
-                return;
-            }
-
+            if (!code) return;
+            if (errEl) errEl.style.display = 'none';
             btn.disabled = true;
-            btn.textContent = 'ГЕНЕРАЦИЯ КЛЮЧА 2FA...';
+            btn.textContent = 'ПРОВЕРКА...';
 
             try {
-                const totp = await api('GET', `/api/auth/totp-setup?username=${encodeURIComponent(username)}`);
-                renderCandidateRegistration2fa(username, pass, totp.secret, totp.otpUrl);
+                const inviteData = await api('POST', '/api/auth/validate-invite', { code });
+                renderInviteStepB(code, inviteData);
             } catch (ex) {
-                err.textContent = ex.message;
-                err.style.display = 'block';
+                if (errEl) {
+                    errEl.textContent = ex.message || 'Недействительный код приглашения';
+                    errEl.style.display = 'block';
+                }
                 btn.disabled = false;
-                btn.textContent = 'ПРОДОЛЖИТЬ (2FA)';
+                btn.textContent = 'ПРОВЕРИТЬ КОД';
             }
         });
     }
 
-    function renderCandidateRegistration2fa(username, password, totpSecret, otpUrl) {
-        const isDebug = serverStatus && serverStatus.debugMode;
-        app.innerHTML = `
-            <div class="auth-screen">
-                <div class="auth-card" style="max-width:500px;">
-                    <div class="logo"><span style="color:var(--accent);">◈</span> Привязка 2FA</div>
-                    ${isDebug ? `<div class="auth-debug-badge" style="display:inline-flex; align-items:center; gap:6px;">${renderSvgIcon('zap', 'violet', 13)} Режим отладки: QR код необязателен</div>` : ''}
-                    <div class="stepper">
-                        <div class="step-item completed">
-                            <span class="step-badge">${renderSvgIcon('check', 'green', 11)}</span>
-                            <span>Данные</span>
-                        </div>
-                        <div class="step-connector"></div>
-                        <div class="step-item active">
-                            <span class="step-badge">2</span>
-                            <span>2FA Привязка</span>
-                        </div>
-                    </div>
+    async function renderInviteStepB(inviteCode, inviteData) {
+        const stepB = document.getElementById('invite-step-b');
+        const codeForm = document.getElementById('invite-code-form');
+        if (!stepB) return;
 
-                    <div class="totp-method-toggle">
-                        <button type="button" class="totp-toggle-btn active" id="cand-toggle-qr" style="display:inline-flex; align-items:center; justify-content:center; gap:6px;">${renderSvgIcon('phone', 'violet', 13)} QR-код</button>
-                        <button type="button" class="totp-toggle-btn" id="cand-toggle-code" style="display:inline-flex; align-items:center; justify-content:center; gap:6px;">${renderSvgIcon('key', 'violet', 13)} Секретный код</button>
-                    </div>
+        codeForm.style.display = 'none';
+        stepB.style.display = 'block';
 
-                    <div id="cand-pane-qr" class="totp-method-pane">
-                        <div class="sub" style="margin-bottom:12px;">Отсканируйте QR-код в <b>Google Authenticator</b> или <b>Aegis</b>:</div>
-                        <div class="totp-qr-wrapper">
-                            <div class="totp-qr-box" id="cand-qrcode-box"></div>
-                            <a href="${esc(otpUrl)}" class="totp-copy-btn" style="text-decoration:none; margin-top:2px; display:inline-flex; align-items:center; gap:6px;">
-                                ${renderSvgIcon('zap', 'violet', 13)} Открыть в приложении Authenticator
-                            </a>
-                        </div>
-                    </div>
+        const username = inviteData.username || '';
+        const roleName = inviteData.roleName || 'Сотрудник';
 
-                    <div id="cand-pane-code" class="totp-method-pane" style="display:none;">
-                        <div class="sub" style="margin-bottom:12px;">Введите ключ вручную в приложении Authenticator:</div>
-                        <div class="totp-secret-box" style="margin-bottom:16px;">
-                            <span class="totp-secret-code" title="${esc(totpSecret)}">${esc(totpSecret)}</span>
-                            <button type="button" class="totp-copy-btn" id="btn-copy-cand-secret" style="display:inline-flex; align-items:center; gap:6px;">${renderSvgIcon('copy', 'gray', 13)} Скопировать</button>
-                        </div>
-                    </div>
+        stepB.innerHTML = `
+            <div style="background:var(--card-inner-bg, rgba(255,255,255,0.03)); border:1px solid var(--border); border-radius:6px; padding:12px 14px; margin-bottom:16px;">
+                <div style="font-size:13px; color:var(--text-main);">Сотрудник: <b>${esc(username)}</b></div>
+                <div style="font-size:12px; color:var(--text-muted); margin-top:3px;">Назначенная роль: <b style="color:var(--accent);">${esc(roleName)}</b></div>
+            </div>
 
-                    <form id="cand-2fa-form">
-                        <div class="form-group">
-                            <label>6-значный код подтверждения из приложения</label>
-                            <input type="text" id="cand-code" placeholder="123456" maxlength="6" inputmode="numeric" pattern="[0-9]*" ${isDebug ? '' : 'required'} autofocus
-                                   style="text-align:center; font-size:22px; font-weight:700; letter-spacing:6px; font-family:'JetBrains Mono';">
-                        </div>
-                        <div id="cand-2fa-err" class="error" style="display:none;"></div>
-                        <button type="submit" class="primary" id="btn-cand-submit" style="width:100%; margin-top:10px;">ОТПРАВИТЬ ЗАЯВКУ</button>
-                        ${isDebug ? `<button type="button" class="btn-debug-bypass" id="btn-cand-debug-submit" style="width:100%; margin-top:8px; display:inline-flex; align-items:center; justify-content:center; gap:6px;">${renderSvgIcon('zap', 'violet', 13)} ОТПРАВИТЬ ЗАЯВКУ БЕЗ 2FA (ДЕБАГ)</button>` : ''}
-                        <button type="button" class="secondary" id="btn-cand-back" style="width:100%; margin-top:8px;">← НАЗАД К ДАННЫМ</button>
-                    </form>
+            <form id="invite-reg-final-form">
+                <div class="form-group">
+                    <label>Придумайте пароль *</label>
+                    <input type="password" id="reg-password"
+                           autocomplete="new-password"
+                           placeholder="Минимум 10 символов"
+                           passwordrules="minlength: 10; required: lower; required: upper; required: digit; required: special;" required>
+                    <div class="password-strength-bar">
+                        <div class="password-strength-fill" id="reg-pass-strength-fill"></div>
+                    </div>
+                    <div class="password-strength-hints" id="reg-pass-strength-hints">
+                        <span class="invalid">• 10+ симв.</span>
+                        <span class="invalid">• буква</span>
+                        <span class="invalid">• цифра</span>
+                        <span class="invalid">• спецсимвол</span>
+                    </div>
                 </div>
-            </div>`;
 
-        renderTotpQrCode(document.getElementById('cand-qrcode-box'), otpUrl);
-        setupSecretCopy('btn-copy-cand-secret', totpSecret);
+                <div class="form-group">
+                    <label>Повторите пароль *</label>
+                    <input type="password" id="reg-password2" autocomplete="new-password" placeholder="••••••••" required>
+                </div>
 
-        const candTabQr = document.getElementById('cand-toggle-qr');
-        const candTabCode = document.getElementById('cand-toggle-code');
-        const candPaneQr = document.getElementById('cand-pane-qr');
-        const candPaneCode = document.getElementById('cand-pane-code');
-        candTabQr?.addEventListener('click', () => {
-            candTabQr.classList.add('active');
-            candTabCode?.classList.remove('active');
-            if (candPaneQr) candPaneQr.style.display = 'block';
-            if (candPaneCode) candPaneCode.style.display = 'none';
+                <!-- 2FA Section -->
+                <div style="margin-top:16px; margin-bottom:12px;">
+                    <div style="font-weight:700; font-size:13px; color:var(--text-heading); margin-bottom:4px;">Двухфакторная защита (2FA)</div>
+                    <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">
+                        Отсканируйте QR в Google Authenticator или Aegis. Кликните по QR для обновления ключа.
+                    </div>
+                </div>
+
+                <div class="totp-qr-wrapper" style="margin-bottom:12px;">
+                    <div class="totp-qr-box" id="reg-qrcode-box" title="Нажмите, чтобы перегенерировать QR-код" style="cursor:pointer;"></div>
+                </div>
+
+                <div class="form-group">
+                    <label>Секретный ключ (для ручного ввода)</label>
+                    <div id="reg-secret-container"></div>
+                </div>
+
+                <div class="form-group">
+                    <label>Одноразовый 6-значный код из Authenticator *</label>
+                    <input id="reg-totp" inputmode="numeric" autocomplete="one-time-code"
+                           placeholder="000-000" maxlength="7" required>
+                </div>
+
+                <div id="reg-final-err" class="error" style="display:none; margin-bottom:12px;"></div>
+                <button type="submit" class="primary" id="btn-reg-finish" style="width:100%; margin-top:6px;">ЗАВЕРШИТЬ РЕГИСТРАЦИЮ</button>
+                <button type="button" class="secondary" id="btn-reg-back" style="width:100%; margin-top:8px;">← НАЗАД К ВВОДУ КОДА</button>
+            </form>
+        `;
+
+        const passInput = document.getElementById('reg-password');
+        const pass2Input = document.getElementById('reg-password2');
+        const fillEl = document.getElementById('reg-pass-strength-fill');
+        const hintsEl = document.getElementById('reg-pass-strength-hints');
+        const qrBox = document.getElementById('reg-qrcode-box');
+        const secretContainer = document.getElementById('reg-secret-container');
+        const totpInput = document.getElementById('reg-totp');
+
+        passInput?.addEventListener('input', () => {
+            updatePasswordMeter(passInput.value, fillEl, hintsEl);
         });
-        candTabCode?.addEventListener('click', () => {
-            candTabCode.classList.add('active');
-            candTabQr?.classList.remove('active');
-            if (candPaneCode) candPaneCode.style.display = 'block';
-            if (candPaneQr) candPaneQr.style.display = 'none';
+
+        bindTotpInput(totpInput);
+
+        let currentSecret = '';
+
+        const fetchAndRenderTotp = async () => {
+            try {
+                const res = await api('GET', `/api/auth/totp-setup?username=${encodeURIComponent(username)}`);
+                currentSecret = res.secret;
+                if (qrBox) renderTotpQrCode(qrBox, res.otpUrl);
+                if (secretContainer) renderSecretMasked(secretContainer, res.secret);
+            } catch (e) {
+                console.error('TOTP setup error:', e);
+            }
+        };
+
+        await fetchAndRenderTotp();
+
+        qrBox?.addEventListener('click', async () => {
+            await fetchAndRenderTotp();
+            showToast('2FA обновлен', 'Сгенерирован новый секретный ключ', 'info');
         });
 
-        document.getElementById('btn-cand-back')?.addEventListener('click', () => {
-            renderCandidateRegistration();
+        document.getElementById('btn-reg-back')?.addEventListener('click', () => {
+            renderInviteRegister();
         });
 
-        if (isDebug) {
-            document.getElementById('btn-cand-debug-submit')?.addEventListener('click', async () => {
-                const err = document.getElementById('cand-2fa-err');
-                err.style.display = 'none';
-                try {
-                    const res = await api('POST', '/api/auth/register', {
-                        username, password, totpSecret, totpCode: 'debug'
-                    });
-                    renderCandidateSuccessScreen(username, res.backupCodes || []);
-                } catch (ex) {
-                    err.textContent = ex.message;
-                    err.style.display = 'block';
-                }
-            });
-        }
-
-        document.getElementById('cand-2fa-form')?.addEventListener('submit', async (e) => {
+        document.getElementById('invite-reg-final-form')?.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const code = document.getElementById('cand-code').value.trim() || (isDebug ? 'debug' : '');
-            const err = document.getElementById('cand-2fa-err');
-            const btn = document.getElementById('btn-cand-submit');
-            err.style.display = 'none';
-            btn.disabled = true;
-            btn.textContent = 'ОТПРАВКА...';
+            const password = passInput.value;
+            const pass2 = pass2Input.value;
+            const digitsOnly = (totpInput.value || '').replace(/\D/g, '');
+            const errEl = document.getElementById('reg-final-err');
+            const submitBtn = document.getElementById('btn-reg-finish');
+
+            if (errEl) errEl.style.display = 'none';
+
+            const passErr = validatePasswordClient(password);
+            if (passErr) {
+                if (errEl) { errEl.textContent = passErr; errEl.style.display = 'block'; }
+                return;
+            }
+
+            if (password !== pass2) {
+                if (errEl) { errEl.textContent = 'Пароли не совпадают'; errEl.style.display = 'block'; }
+                return;
+            }
+
+            if (digitsOnly.length !== 6) {
+                if (errEl) { errEl.textContent = 'Введите 6 цифр кода подтверждения 2FA'; errEl.style.display = 'block'; }
+                return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'РЕГИСТРАЦИЯ...';
 
             try {
                 const res = await api('POST', '/api/auth/register', {
-                    username, password, totpSecret, totpCode: code
+                    inviteCode,
+                    password,
+                    totpSecret: currentSecret,
+                    totpCode: digitsOnly
                 });
-                renderCandidateSuccessScreen(username, res.backupCodes || []);
+
+                renderBackupCodesScreen(username, res.backupCodes || [], () => {
+                    renderLogin();
+                });
             } catch (ex) {
-                err.textContent = ex.message;
-                err.style.display = 'block';
-                btn.disabled = false;
-                btn.textContent = 'ОТПРАВИТЬ ЗАЯВКУ';
-            }
-        });
-    }
-
-    function renderCandidateSuccessScreen(username, backupCodes) {
-        const codes = backupCodes && backupCodes.length ? backupCodes : [];
-        app.innerHTML = `
-            <div class="auth-screen">
-                <div class="auth-card" style="max-width:520px;">
-                    <div class="logo"><span style="color:var(--green); display:inline-flex; align-items:center;">${renderSvgIcon('check', 'green', 18)}</span> Заявка отправлена</div>
-                    <div class="sub">Заявка для аккаунта <b>${esc(username)}</b> успешно зарегистрирована и ожидает утверждения главным администратором сервера.</div>
-
-                    <div style="font-size:12px; font-weight:600; color:var(--text-main); margin-top:16px;">Ваши резервные коды 2FA:</div>
-                    <div class="sub" style="font-size:11px; margin-bottom:10px;">Обязательно сохраните их прямо сейчас!</div>
-
-                    <div class="backup-codes-grid">
-                        ${codes.map(c => `<div class="backup-code-pill">${esc(c)}</div>`).join('')}
-                    </div>
-
-                    <div style="display:flex; gap:10px; margin-bottom:16px;">
-                        <button type="button" class="secondary" id="btn-copy-cand-codes" style="flex:1; display:inline-flex; align-items:center; justify-content:center; gap:6px;">${renderSvgIcon('copy', 'gray', 13)} Скопировать коды</button>
-                    </div>
-
-                    <button type="button" class="primary" id="btn-back-to-login" style="width:100%; margin-top:10px;">
-                        ВЕРНУТЬСЯ К АВТОРИЗАЦИИ
-                    </button>
-                </div>
-            </div>`;
-
-        document.getElementById('btn-copy-cand-codes')?.addEventListener('click', async (e) => {
-            const btn = e.currentTarget;
-            const text = codes.join('\n');
-            try {
-                if (navigator.clipboard && navigator.clipboard.writeText) {
-                    await navigator.clipboard.writeText(text);
-                } else {
-                    const ta = document.createElement('textarea');
-                    ta.value = text;
-                    document.body.appendChild(ta);
-                    ta.select();
-                    document.execCommand('copy');
-                    document.body.removeChild(ta);
+                if (errEl) {
+                    errEl.textContent = ex.message || 'Ошибка регистрации';
+                    errEl.style.display = 'block';
                 }
-                btn.innerHTML = `${renderSvgIcon('check', 'green', 13)} Коды скопированы!`;
-                setTimeout(() => { btn.innerHTML = `${renderSvgIcon('copy', 'gray', 13)} Скопировать коды`; }, 2000);
-            } catch (_) {}
-        });
-
-        document.getElementById('btn-back-to-login')?.addEventListener('click', () => {
-            renderLogin();
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'ЗАВЕРШИТЬ РЕГИСТРАЦИЮ';
+            }
         });
     }
 
@@ -1386,7 +1392,7 @@
                     <form id="form-2fa">
                         <div class="form-group">
                             <label>Код подтверждения</label>
-                            <input type="text" id="code-2fa" placeholder="123456" maxlength="8" autofocus
+                            <input type="text" id="code-2fa" class="totp-input-masked" inputmode="numeric" autocomplete="one-time-code" placeholder="000-000" maxlength="8" autofocus
                                    style="text-align:center; font-size:20px; font-weight:700; letter-spacing:4px;">
                         </div>
                         <div id="err-2fa" class="error" style="display:none;"></div>
@@ -1413,9 +1419,14 @@
             });
         }
 
+        const codeInput = document.getElementById('code-2fa');
+        bindTotpInput(codeInput);
+
         document.getElementById('form-2fa')?.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const code = document.getElementById('code-2fa').value.trim() || (isDebug ? 'debug' : '');
+            const rawVal = document.getElementById('code-2fa').value.trim();
+            const digits = rawVal.replace(/\D/g, '');
+            const code = (digits.length === 6 ? digits : rawVal) || (isDebug ? 'debug' : '');
             const err = document.getElementById('err-2fa');
             err.style.display = 'none';
 
@@ -1920,7 +1931,8 @@
         // Update active class in sidebar
         document.querySelectorAll('#sidebar-nav .nav-item').forEach(el => {
             const isMatch = el.dataset.nav === sectionId || 
-                (el.dataset.nav === 'punishments' && (sectionId === 'bans' || sectionId === 'reports'));
+                (el.dataset.nav === 'punishments' && (sectionId === 'bans' || sectionId === 'reports')) ||
+                (el.dataset.nav === 'staff' && sectionId === 'admins');
             el.classList.toggle('active', isMatch);
         });
 
@@ -1954,7 +1966,8 @@
             case 'anticheat': renderAnticheatView(); break;
             case 'server': renderServerView(); break;
             case 'auth': renderAuthView(); break;
-            case 'admins': renderAdminsView(); break;
+            case 'staff':
+            case 'admins': renderStaffView(); break;
             case 'database': renderDatabaseView(); break;
             default: renderDashboardView(); break;
         }
@@ -2787,7 +2800,7 @@
             if (s.includes('жалоб') || s.includes('репорт')) {
                 return { type: 'ЖАЛОБЫ', typeClass: 'purple' };
             }
-            if (s.includes('рол') || s.includes('персонал') || s.includes('сотрудник') || s.includes('прав')) {
+            if (s.includes('рол') || s.includes('персонал') || s.includes('сотрудник') || s.includes('прав') || s.includes('приглаш') || s.includes('инвайт')) {
                 return { type: 'ПЕРСОНАЛ', typeClass: 'yellow' };
             }
             if (s.includes('тех') || s.includes('maintenance')) {
@@ -3887,18 +3900,30 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                     <label>Причина бана (пункт правил)</label>
                     <select id="ban-reason-select" required>
                         <option value="">-- Выберите причину из списка --</option>
-                        ${reasons.map(r => {
-                            const isSel = defaultReason && (
-                                r.name.toLowerCase() === defaultReason.toLowerCase() ||
-                                r.name.toLowerCase().startsWith(defaultReason.toLowerCase()) ||
-                                defaultReason.toLowerCase().startsWith(r.name.toLowerCase())
-                            );
-                            return `
-                                <option value="${esc(r.name)}" data-comment="${r.require_comment ? 'true' : 'false'}" ${isSel ? 'selected' : ''}>
-                                    ${esc(r.name)}
-                                </option>
-                            `;
-                        }).join('')}
+                        ${(() => {
+                            const grouped = {};
+                            reasons.forEach(r => {
+                                const cat = r.category || 'Прочее';
+                                if (!grouped[cat]) grouped[cat] = [];
+                                grouped[cat].push(r);
+                            });
+                            return Object.keys(grouped).map(cat => `
+                                <optgroup label="${esc(cat)}">
+                                    ${grouped[cat].map(r => {
+                                        const isSel = defaultReason && (
+                                            r.name.toLowerCase() === defaultReason.toLowerCase() ||
+                                            r.name.toLowerCase().startsWith(defaultReason.toLowerCase()) ||
+                                            defaultReason.toLowerCase().startsWith(r.name.toLowerCase())
+                                        );
+                                        return `
+                                            <option value="${esc(r.name)}" data-comment="${r.require_comment ? 'true' : 'false'}" ${isSel ? 'selected' : ''}>
+                                                ${esc(r.name)}
+                                            </option>
+                                        `;
+                                    }).join('')}
+                                </optgroup>
+                            `).join('');
+                        })()}
                     </select>
                 </div>
 
@@ -4437,8 +4462,8 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
             `Вы подтверждаете, что нарушение игрока ${targetName} доказано?\nНарушитель будет помечен как наказанный, а заявителю начислится репутация.`,
             async () => {
                 try {
-                    await api('POST', `/api/reports/${id}/accept`);
-                    recordShiftAction(`Принял жалобу #${id} на игрока ${targetName}`);
+                    await api('POST', `/api/reports/me.lovelace:LoveWebAdmin:jar:1.1.0/accept`);
+                    recordShiftAction(`Принял жалобу #me.lovelace:LoveWebAdmin:jar:1.1.0 на игрока ${targetName}`);
                     showToast('Жалоба принята', `Наказание подтверждено. Заявитель уведомлен.`, 'success');
                     if (window.refreshPunishmentsView) window.refreshPunishmentsView();
                     updateReportsBadge();
@@ -4457,8 +4482,8 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
             `Пометить жалобу как ложную?\nИгроку ${targetName} будет возвращена снятая репутация (+25), а заявитель уведомлен в игре.`,
             async () => {
                 try {
-                    await api('POST', `/api/reports/${id}/reject`);
-                    recordShiftAction(`Отклонил жалобу #${id} на игрока ${targetName} как ложную`);
+                    await api('POST', `/api/reports/me.lovelace:LoveWebAdmin:jar:1.1.0/reject`);
+                    recordShiftAction(`Отклонил жалобу #me.lovelace:LoveWebAdmin:jar:1.1.0 на игрока ${targetName} как ложную`);
                     showToast('Жалоба отклонена', 'Помечена как ложная. Репутация возвращена цели.', 'info');
                     if (window.refreshPunishmentsView) window.refreshPunishmentsView();
                     updateReportsBadge();
@@ -4477,9 +4502,9 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
             'Вы действительно хотите удалить запись этой жалобы из базы данных?',
             async () => {
                 try {
-                    await api('DELETE', `/api/reports/${id}`);
-                    recordShiftAction(`Удалил запись жалобы #${id}`);
-                    showToast('Удалено', `Жалоба #${id} успешно удалена`, 'info');
+                    await api('DELETE', `/api/reports/me.lovelace:LoveWebAdmin:jar:1.1.0`);
+                    recordShiftAction(`Удалил запись жалобы #me.lovelace:LoveWebAdmin:jar:1.1.0`);
+                    showToast('Удалено', `Жалоба #me.lovelace:LoveWebAdmin:jar:1.1.0 успешно удалена`, 'info');
                     if (window.refreshPunishmentsView) window.refreshPunishmentsView();
                     updateReportsBadge();
                 } catch (e) {
@@ -5080,7 +5105,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
 
         const renderStream = async (container) => {
             try {
-                const res = await api('GET', '/api/vesuvio/violations?limit=50');
+                const res = await api('GET', `/api/vesuvio/violations?player=${encodeURIComponent(playerName)}&limit=50`).catch(() => api('GET', '/api/vesuvio/violations?limit=50'));
                 const list = Array.isArray(res) ? res : (res.violations || []);
 
                 let filtered = list;
@@ -5109,7 +5134,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                                 </div>
                             </div>
                             <div style="display:flex; gap:8px;">
-                                <button type="button" class="secondary btn-sm" onclick="window.togglePlayerSuspect('${esc(name)}')">НАБЛЮДЕНИЕ</button>
+                                <button type="button" class="secondary btn-sm" onclick="window.openObservationView('${esc(name)}', '${esc(v.playerUuid || v.uuid || '')}')">НАБЛЮДЕНИЕ</button>
                                 <button type="button" class="danger btn-sm" onclick="window.openQuickBanModal('${esc(name)}', 'Читы')">ЗАБАНИТЬ</button>
                                 <button type="button" class="secondary btn-sm" onclick="window.viewPlayerProfile('${esc(name)}')">ДОСЬЕ</button>
                             </div>
@@ -5202,8 +5227,8 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                                             <div style="display:flex; justify-content:flex-end; gap:6px;">
                                                 <button type="button" class="secondary btn-sm" onclick="window.viewPlayerProfile('${esc(s.name)}')">ДОСЬЕ</button>
                                                 <button type="button" class="danger btn-sm" onclick="window.openQuickBanModal('${esc(s.name)}', 'Читы')">БАН</button>
-                                                <button type="button" class="secondary btn-sm" onclick="window.togglePlayerSuspect('${esc(s.name)}', ${s.isAutomated ? 'true' : 'false'})">
-                                                    ${s.isAutomated ? 'НАБЛЮДЕНИЕ' : 'СНЯТЬ'}
+                                                <button type="button" class="secondary btn-sm" onclick="window.openObservationView('${esc(s.name)}', '${esc(s.uuid || '')}')">
+                                                    НАБЛЮДЕНИЕ
                                                 </button>
                                             </div>
                                         </td>
@@ -5292,6 +5317,266 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
             }
         }, 3000);
     }
+
+    // Observation Mode (Карточка прямого наблюдения за подозреваемым)
+    window.openObservationView = async function(playerName, uuid = '') {
+        const area = document.getElementById('content-area');
+        if (!area) return;
+
+        // Clear live stream poller if running
+        if (pollers['vesuvio_live_stream']) {
+            clearInterval(pollers['vesuvio_live_stream']);
+            delete pollers['vesuvio_live_stream'];
+        }
+        if (pollers['observation']) {
+            clearInterval(pollers['observation']);
+            delete pollers['observation'];
+        }
+
+        let playerUuid = uuid;
+        let isSuspect = true;
+        let playerDossier = null;
+
+        area.innerHTML = `
+            <div class="observation-view-layout">
+                <div style="margin-bottom:8px;">
+                    <button type="button" class="secondary btn-sm" id="btn-close-observation" style="display:inline-flex; align-items:center; gap:6px;">
+                        ${renderSvgIcon('arrowLeft', 'gray', 14)} ← Выйти из наблюдения
+                    </button>
+                </div>
+
+                <!-- Top Header Card -->
+                <div class="observation-header-card">
+                    <div style="display:flex; align-items:center; gap:14px;">
+                        <img src="https://mc-heads.net/avatar/${encodeURIComponent(playerName)}/48" class="player-avatar-sm" style="width:48px; height:48px; border-radius:6px;" alt="">
+                        <div>
+                            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                                <h3 style="font-size:18px; margin:0; color:var(--text-heading);">${esc(playerName)}</h3>
+                                <span class="badge red" id="obs-badge-suspect">ПОДОЗРЕНИЕ: ДА</span>
+                                <span class="badge yellow" id="obs-badge-vl">MAX VL: ...</span>
+                            </div>
+                            <div class="font-mono" style="font-size:11.5px; color:var(--text-dim); margin-top:4px;" id="obs-uuid-display">
+                                UUID: ${esc(playerUuid || 'Поиск...')}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                        <button type="button" class="danger" id="btn-obs-ban-draft" style="display:inline-flex; align-items:center; gap:6px;">
+                            ${renderSvgIcon('shieldAlert', 'white', 14)} Черновик бана
+                        </button>
+                        <button type="button" class="secondary" id="btn-obs-toggle-suspect" style="display:inline-flex; align-items:center; gap:6px;">
+                            Снять наблюдение
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 2 Columns Grid -->
+                <div class="observation-grid">
+                    <!-- Left: Stream of Flags -->
+                    <div class="observation-stream-panel">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; border-bottom:1px solid var(--border); padding-bottom:10px;">
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <span class="live-beacon-dot" style="width:8px; height:8px; background:var(--red); border-radius:50%; box-shadow:0 0 8px var(--red);"></span>
+                                <h4 style="margin:0; font-size:13.5px; color:var(--text-heading);">ПОТОК СРАБАТЫВАНИЙ ИГРОКА (LIVE 3S)</h4>
+                            </div>
+                            <span id="obs-flags-count" class="badge gray">0 флагов</span>
+                        </div>
+                        <div id="obs-violations-stream" style="display:flex; flex-direction:column; gap:8px; max-height:550px; overflow-y:auto; padding-right:4px;">
+                            <div style="text-align:center; padding:30px; color:var(--text-muted);">Загрузка нарушений...</div>
+                        </div>
+                    </div>
+
+                    <!-- Right: Dossier Info -->
+                    <div class="observation-dossier-panel">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; border-bottom:1px solid var(--border); padding-bottom:10px;">
+                            <h4 style="margin:0; font-size:13.5px; color:var(--text-heading);">ДОСЬЕ И АНАЛИТИКА</h4>
+                            <button type="button" class="btn-tag-link" id="btn-obs-full-profile" style="font-size:11.5px;">Открыть полное досье →</button>
+                        </div>
+                        <div id="obs-dossier-body">
+                            <div style="text-align:center; padding:30px; color:var(--text-muted);">Загрузка досье игрока...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.getElementById('btn-close-observation')?.addEventListener('click', closeObservationView);
+        document.getElementById('btn-obs-ban-draft')?.addEventListener('click', () => {
+            window.openQuickBanModal(playerName, 'Читы');
+        });
+        document.getElementById('btn-obs-full-profile')?.addEventListener('click', () => {
+            window.viewPlayerProfile(playerName);
+        });
+
+        const toggleSuspectBtn = document.getElementById('btn-obs-toggle-suspect');
+        toggleSuspectBtn?.addEventListener('click', async () => {
+            if (!playerUuid) return;
+            isSuspect = !isSuspect;
+            try {
+                await api('POST', `/api/vesuvio/player/${encodeURIComponent(playerUuid)}/suspect`, { suspect: isSuspect });
+                toggleSuspectBtn.textContent = isSuspect ? 'Снять наблюдение' : 'Поставить на наблюдение';
+                const sBadge = document.getElementById('obs-badge-suspect');
+                if (sBadge) {
+                    sBadge.className = isSuspect ? 'badge red' : 'badge gray';
+                    sBadge.textContent = isSuspect ? 'ПОДОЗРЕНИЕ: ДА' : 'ПОДОЗРЕНИЕ: НЕТ';
+                }
+                showToast('Наблюдение', isSuspect ? 'Игрок добавлен в список наблюдения' : 'С игрока снято наблюдение', 'info');
+            } catch (e) {
+                alert('Ошибка: ' + e.message);
+            }
+        });
+
+        // Ensure suspect state and fetch dossier
+        try {
+            const p = await api('GET', `/api/players/${encodeURIComponent(playerName)}`);
+            playerDossier = p;
+            if (p.uuid) {
+                playerUuid = p.uuid;
+                const uuidEl = document.getElementById('obs-uuid-display');
+                if (uuidEl) uuidEl.textContent = 'UUID: ' + playerUuid;
+                // auto-suspect
+                await api('POST', `/api/vesuvio/player/${encodeURIComponent(playerUuid)}/suspect`, { suspect: true }).catch(() => {});
+            }
+            renderObsDossier(playerDossier);
+        } catch (e) {
+            const db = document.getElementById('obs-dossier-body');
+            if (db) db.innerHTML = `<div style="color:var(--text-dim); padding:16px;">Досье недоступно: ${esc(e.message)}</div>`;
+        }
+
+        // Render Dossier helper
+        function renderObsDossier(data) {
+            const db = document.getElementById('obs-dossier-body');
+            if (!db) return;
+            if (!data) {
+                db.innerHTML = `<div style="color:var(--text-dim); padding:16px;">Данные отсутствуют</div>`;
+                return;
+            }
+
+            const alts = Array.isArray(data.alts) ? data.alts : [];
+            const kicks = data.kicksCount || 0;
+            const bans = data.bansCount || 0;
+            const notes = data.notes || data.staffNotes || 'Заметок персонала нет';
+
+            db.innerHTML = `
+                <div style="display:flex; flex-direction:column; gap:12px; font-size:12.5px;">
+                    <div style="background:var(--card-inner-bg, rgba(255,255,255,0.03)); padding:12px; border-radius:6px; border:1px solid var(--border);">
+                        <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                            <span style="color:var(--text-muted);">IP адрес:</span>
+                            <b class="font-mono" style="color:var(--accent-light);">${esc(data.ip || data.lastIp || '—')}</b>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                            <span style="color:var(--text-muted);">Клиент:</span>
+                            <b>${esc(data.clientBrand || data.client || 'Vanilla')}</b>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                            <span style="color:var(--text-muted);">Первый вход:</span>
+                            <span style="color:var(--text-dim);">${fmtTime(data.firstJoin || data.registeredAt || 0)}</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between;">
+                            <span style="color:var(--text-muted);">Последний вход:</span>
+                            <span style="color:var(--text-dim);">${fmtTime(data.lastJoin || data.lastSeen || 0)}</span>
+                        </div>
+                    </div>
+
+                    <div style="background:var(--card-inner-bg, rgba(255,255,255,0.03)); padding:12px; border-radius:6px; border:1px solid var(--border);">
+                        <div style="color:var(--text-muted); font-size:11.5px; text-transform:uppercase; font-weight:700; margin-bottom:6px;">Связанные твинки (альты)</div>
+                        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                            ${alts.length ? alts.map(a => `
+                                <span class="badge gray" style="font-size:11px; cursor:pointer;" onclick="window.openObservationView('${esc(a)}')">${esc(a)}</span>
+                            `).join('') : '<span style="color:var(--text-dim);">Других аккаунтов по IP не зафиксировано</span>'}
+                        </div>
+                    </div>
+
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                        <div style="background:var(--card-inner-bg, rgba(255,255,255,0.03)); padding:10px 12px; border-radius:6px; border:1px solid var(--border);">
+                            <div style="font-size:11px; color:var(--text-muted);">КИКОВ СЕРВЕРА</div>
+                            <div style="font-size:16px; font-weight:700; color:var(--yellow); margin-top:2px;">${kicks}</div>
+                        </div>
+                        <div style="background:var(--card-inner-bg, rgba(255,255,255,0.03)); padding:10px 12px; border-radius:6px; border:1px solid var(--border);">
+                            <div style="font-size:11px; color:var(--text-muted);">БАНОВ СЕРВЕРА</div>
+                            <div style="font-size:16px; font-weight:700; color:${bans > 0 ? 'var(--red)' : 'var(--green)'}; margin-top:2px;">${bans}</div>
+                        </div>
+                    </div>
+
+                    <div style="background:var(--card-inner-bg, rgba(255,255,255,0.03)); padding:12px; border-radius:6px; border:1px solid var(--border);">
+                        <div style="color:var(--text-muted); font-size:11.5px; text-transform:uppercase; font-weight:700; margin-bottom:4px;">Заметки модераторов</div>
+                        <div style="font-size:12px; color:var(--text-dim); line-height:1.4;">${esc(notes)}</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Polling Violations filtered by player
+        async function fetchPlayerViolations() {
+            try {
+                const res = await api('GET', '/api/vesuvio/violations?limit=50');
+                const list = Array.isArray(res) ? res : (res.violations || []);
+                const playerViolations = list.filter(v => {
+                    const vName = (v.playerName || v.name || '').toLowerCase();
+                    const vUuid = (v.playerUuid || v.uuid || '').toLowerCase();
+                    return vName === playerName.toLowerCase() || (playerUuid && vUuid === playerUuid.toLowerCase());
+                });
+
+                const streamEl = document.getElementById('obs-violations-stream');
+                const countEl = document.getElementById('obs-flags-count');
+                const vlEl = document.getElementById('obs-badge-vl');
+                if (!streamEl) return;
+
+                if (countEl) countEl.textContent = playerViolations.length + ' флагов';
+
+                let maxVl = 0;
+                playerViolations.forEach(v => {
+                    const vl = v.vl || v.vlScore || 1;
+                    if (vl > maxVl) maxVl = vl;
+                });
+                if (vlEl) vlEl.textContent = 'MAX VL: ' + (maxVl || 0);
+
+                if (!playerViolations.length) {
+                    streamEl.innerHTML = `
+                        <div style="text-align:center; padding:30px; color:var(--text-dim); background:var(--card-inner-bg, rgba(255,255,255,0.02)); border-radius:6px; border:1px dashed var(--border);">
+                            Нет активных флагов античита за последнее время
+                        </div>
+                    `;
+                    return;
+                }
+
+                streamEl.innerHTML = playerViolations.map(v => {
+                    const check = v.check || v.type || 'Movement';
+                    const vl = v.vl || v.vlScore || 1;
+                    return `
+                        <div style="background:var(--card-inner-bg, rgba(255,255,255,0.03)); border:1px solid var(--border); border-radius:6px; padding:10px 12px; display:flex; justify-content:space-between; align-items:center;">
+                            <div>
+                                <div style="display:flex; align-items:center; gap:6px;">
+                                    <span class="badge red" style="font-size:11px;">${esc(check)}</span>
+                                    <span class="font-mono" style="font-size:11px; color:var(--text-dim);">${fmtTime(v.timestamp || Date.now() / 1000)}</span>
+                                </div>
+                                <div style="font-size:11.5px; color:var(--text-muted); margin-top:3px;">
+                                    ${esc(v.details || v.description || 'Эвристическое отклонение пакетов')}
+                                </div>
+                            </div>
+                            <div style="text-align:right;">
+                                <div style="font-size:11px; color:var(--text-dim);">VL</div>
+                                <div class="font-mono" style="font-size:14px; font-weight:700; color:var(--yellow);">+${vl}</div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } catch (_) {}
+        }
+
+        await fetchPlayerViolations();
+        pollers['observation'] = setInterval(fetchPlayerViolations, 3000);
+    };
+
+    window.closeObservationView = function() {
+        if (pollers['observation']) {
+            clearInterval(pollers['observation']);
+            delete pollers['observation'];
+        }
+        renderAnticheatView();
+    };
+
 
     window.togglePlayerSuspect = async function(playerName, forceVal = null) {
         try {
@@ -5887,31 +6172,31 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
             if (!name) return;
             await api('POST', '/api/server/whitelist', { action: 'add', player: name });
             document.getElementById('whitelist-add-name').value = '';
-            showToast('Whitelist', `Игрок ${name} добавлен в whitelist`, 'success');
+            showToast('Whitelist', `Игрок LoveWebAdmin добавлен в whitelist`, 'success');
             refreshWhitelist();
         });
 
         document.getElementById('ops-add-btn')?.addEventListener('click', () => {
             const name = document.getElementById('ops-add-name').value.trim();
             if (!name) return;
-            confirmAction('ВЫДАЧА ПРАВ OP', `Выдать полные права оператора игроку ${name}? Операторы имеют доступ ко всем командам ядра!`, async () => {
+            confirmAction('ВЫДАЧА ПРАВ OP', `Выдать полные права оператора игроку LoveWebAdmin? Операторы имеют доступ ко всем командам ядра!`, async () => {
                 await api('POST', '/api/server/ops', { action: 'add', player: name });
                 document.getElementById('ops-add-name').value = '';
-                showToast('Операторы', `Права OP выданы игроку ${name}`, 'warning');
+                showToast('Операторы', `Права OP выданы игроку LoveWebAdmin`, 'warning');
                 refreshOps();
             }, 'ВЫДАТЬ OP');
         });
 
         window.removeWhitelistPlayer = async (name) => {
             await api('POST', '/api/server/whitelist', { action: 'remove', player: name });
-            showToast('Whitelist', `Игрок ${name} удален из whitelist`, 'info');
+            showToast('Whitelist', `Игрок LoveWebAdmin удален из whitelist`, 'info');
             refreshWhitelist();
         };
 
         window.removeOpPlayer = (name) => {
-            confirmAction('СНЯТИЕ OP', `Снять права оператора с игрока ${name}?`, async () => {
+            confirmAction('СНЯТИЕ OP', `Снять права оператора с игрока LoveWebAdmin?`, async () => {
                 await api('POST', '/api/server/ops', { action: 'remove', player: name });
-                showToast('Операторы', `Права OP сняты с ${name}`, 'info');
+                showToast('Операторы', `Права OP сняты с LoveWebAdmin`, 'info');
                 refreshOps();
             }, 'СНЯТЬ');
         };
@@ -6311,11 +6596,11 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
 
         // Auth Operations Handlers
         window.loveAuthResetSession = (name) => {
-            confirmAction('СБРОС СЕССИИ', `Завершить сессию игрока ${name} на игровом сервере? Он будет немедленно отключен.`, async () => {
+            confirmAction('СБРОС СЕССИИ', `Завершить сессию игрока LoveWebAdmin на игровом сервере? Он будет немедленно отключен.`, async () => {
                 try {
                     await api('POST', `/api/loveauth/player/${encodeURIComponent(name)}/reset-session`);
-                    showToast('Сессия сброшена', `Игрок ${name} отключен от игрового сервера`, 'info');
-                    recordShiftAction(`Авторизация: сбросил сессию игроку ${name}`);
+                    showToast('Сессия сброшена', `Игрок LoveWebAdmin отключен от игрового сервера`, 'info');
+                    recordShiftAction(`Авторизация: сбросил сессию игроку LoveWebAdmin`);
                     window.inspectLoveAuthPlayer(name);
                 } catch (e) {
                     alert('Ошибка: ' + e.message);
@@ -6351,8 +6636,8 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                     }
                     try {
                         await api('POST', `/api/loveauth/player/${encodeURIComponent(name)}/password`, { password: pass });
-                        showToast('Пароль обновлен', `Пароль для ${name} успешно изменен`, 'success');
-                        recordShiftAction(`Авторизация: изменил пароль ${name}`);
+                        showToast('Пароль обновлен', `Пароль для LoveWebAdmin успешно изменен`, 'success');
+                        recordShiftAction(`Авторизация: изменил пароль LoveWebAdmin`);
                         closeModal();
                         window.inspectLoveAuthPlayer(name);
                     } catch (e) {
@@ -6363,11 +6648,11 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
         };
 
         window.loveAuthUnlock = (name) => {
-            confirmAction('РАЗБЛОКИРОВКА АККАУНТА', `Снять блокировку подбора пароля (lockout) с аккаунта ${name}?`, async () => {
+            confirmAction('РАЗБЛОКИРОВКА АККАУНТА', `Снять блокировку подбора пароля (lockout) с аккаунта LoveWebAdmin?`, async () => {
                 try {
                     await api('POST', `/api/loveauth/player/${encodeURIComponent(name)}/unlock`);
-                    showToast('Разблокирован', `Аккаунт ${name} успешно разблокирован`, 'success');
-                    recordShiftAction(`Авторизация: разблокировал аккаунт ${name}`);
+                    showToast('Разблокирован', `Аккаунт LoveWebAdmin успешно разблокирован`, 'success');
+                    recordShiftAction(`Авторизация: разблокировал аккаунт LoveWebAdmin`);
                     window.inspectLoveAuthPlayer(name);
                 } catch (e) {
                     alert('Ошибка разблокировки: ' + e.message);
@@ -6389,11 +6674,11 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
         };
 
         window.loveAuthDelete = (name) => {
-            confirmAction('УДАЛЕНИЕ АККАУНТА', `ВНИМАНИЕ! Вы действительно хотите безвозвратно удалить регистрацию игрока ${name}?`, async () => {
+            confirmAction('УДАЛЕНИЕ АККАУНТА', `ВНИМАНИЕ! Вы действительно хотите безвозвратно удалить регистрацию игрока LoveWebAdmin?`, async () => {
                 try {
                     await api('POST', `/api/loveauth/player/${encodeURIComponent(name)}/delete`);
-                    showToast('Аккаунт удален', `Регистрация ${name} удалена из авторизации`, 'warning');
-                    recordShiftAction(`Авторизация: удалил аккаунт ${name}`);
+                    showToast('Аккаунт удален', `Регистрация LoveWebAdmin удалена из авторизации`, 'warning');
+                    recordShiftAction(`Авторизация: удалил аккаунт LoveWebAdmin`);
                     window.inspectLoveAuthPlayer(name);
                 } catch (e) {
                     alert('Ошибка удаления: ' + e.message);
@@ -6421,149 +6706,625 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
     }
 
     // ==========================================================================
-    // 7. АДМИНИСТРАТОРЫ И РОЛИ (СОТРУДНИКИ, ВРЕМЕННЫЕ СРОКИ, МАТРИЦА ПРАВ)
+    // 7. ПЕРСОНАЛ И РОЛИ (СОТРУДНИКИ, ПРИГЛАШЕНИЯ, ИСПЫТАТЕЛЬНЫЙ СРОК, РОЛИ)
     // ==========================================================================
 
-    async function renderAdminsView() {
+    async function renderStaffView() {
         const area = document.getElementById('content-area');
+        let sub = 'personnel'; // personnel | roles
+        let currentFilter = 'active'; // active | invites | review
 
         area.innerHTML = `
             <div class="view-header">
                 <div class="view-title-block">
-                    <h2>АДМИНИСТРАТОРЫ И РОЛИ</h2>
-                    <p>Управление составом персонала, матрицей разрешений и временными статусами</p>
+                    <h2>ПЕРСОНАЛ</h2>
+                    <p>Сотрудники, приглашения и роли веб-панели</p>
                 </div>
-                <div class="view-actions">
-                    <button type="button" class="primary" id="btn-create-admin">+ ДОБАВИТЬ СОТРУДНИКА</button>
-                    <button type="button" class="primary" id="btn-create-role">+ СОЗДАТЬ РОЛЬ</button>
+                <div class="view-actions" id="staff-header-actions">
+                    <button type="button" class="primary" id="btn-add-staff">+ ДОБАВИТЬ СОТРУДНИКА</button>
                 </div>
             </div>
+            <div class="filter-tags" id="staff-sub-tabs" style="margin-bottom:18px;">
+                <button type="button" class="filter-tag-btn active" data-sub="personnel">Персонал</button>
+                <button type="button" class="filter-tag-btn" data-sub="roles">Роли</button>
+            </div>
+            <div id="staff-tab-body"></div>
+        `;
 
-            <!-- Staff Members Table -->
-            <div style="background:var(--card-bg); border:1px solid var(--border); border-radius:var(--radius-md); padding:18px; margin-bottom:24px;">
-                <h3 style="font-size:15px; margin-bottom:12px; color:var(--text-heading);">СОСТАВ ПЕРСОНАЛА</h3>
-                <div class="table-wrap">
+        let rolesCache = [];
+        let adminsCache = [];
+        let invitesCache = [];
+
+        const mount = () => {
+            const headerActions = document.getElementById('staff-header-actions');
+            if (headerActions) {
+                if (sub === 'personnel') {
+                    headerActions.innerHTML = `<button type="button" class="primary" id="btn-add-staff">+ ДОБАВИТЬ СОТРУДНИКА</button>`;
+                    document.getElementById('btn-add-staff')?.addEventListener('click', openInviteWizardModal);
+                } else {
+                    headerActions.innerHTML = `<button type="button" class="primary" id="btn-create-role">+ СОЗДАТЬ РОЛЬ</button>`;
+                    document.getElementById('btn-create-role')?.addEventListener('click', openCreateRoleModal);
+                }
+            }
+
+            if (sub === 'personnel') {
+                renderPersonnelTab();
+            } else {
+                renderRolesTab();
+            }
+        };
+
+        document.getElementById('staff-sub-tabs')?.addEventListener('click', (e) => {
+            const btn = e.target.closest('[data-sub]');
+            if (!btn) return;
+            sub = btn.dataset.sub;
+            document.querySelectorAll('#staff-sub-tabs .filter-tag-btn')
+                .forEach(b => b.classList.toggle('active', b.dataset.sub === sub));
+            mount();
+        });
+
+        // ---------------- Personnel Tab ----------------
+        async function renderPersonnelTab() {
+            const container = document.getElementById('staff-tab-body');
+            if (!container) return;
+
+            container.innerHTML = `
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
+                    <div class="filter-tags" id="personnel-filter-tags">
+                        <button type="button" class="filter-tag-btn ${currentFilter === 'active' ? 'active' : ''}" data-filter="active">
+                            Активные сотрудники (<span id="count-active">0</span>)
+                        </button>
+                        <button type="button" class="filter-tag-btn ${currentFilter === 'invites' ? 'active' : ''}" data-filter="invites">
+                            Приглашения (<span id="count-invites">0</span>)
+                        </button>
+                        <button type="button" class="filter-tag-btn ${currentFilter === 'review' ? 'active' : ''}" data-filter="review">
+                            Требуют решения (<span id="count-review">0</span>)
+                        </button>
+                    </div>
+                    <button type="button" class="secondary btn-sm" id="btn-refresh-staff">
+                        ${renderSvgIcon('refresh', 'gray', 13)} Обновить
+                    </button>
+                </div>
+                <div id="personnel-table-container">
+                    <div style="text-align:center; padding:30px; color:var(--text-muted);">Загрузка данных...</div>
+                </div>
+            `;
+
+            document.getElementById('personnel-filter-tags')?.addEventListener('click', (e) => {
+                const btn = e.target.closest('[data-filter]');
+                if (!btn) return;
+                currentFilter = btn.dataset.filter;
+                document.querySelectorAll('#personnel-filter-tags .filter-tag-btn')
+                    .forEach(b => b.classList.toggle('active', b.dataset.filter === currentFilter));
+                renderPersonnelList();
+            });
+
+            document.getElementById('btn-refresh-staff')?.addEventListener('click', loadPersonnelData);
+            await loadPersonnelData();
+        }
+
+        async function loadPersonnelData() {
+            try {
+                const [admins, roles, invites] = await Promise.all([
+                    api('GET', '/api/admins'),
+                    api('GET', '/api/roles'),
+                    api('GET', '/api/admins/invites').catch(() => [])
+                ]);
+                adminsCache = admins;
+                rolesCache = roles;
+                invitesCache = invites;
+
+                const activeCount = admins.filter(a => a.status === 'ACTIVE').length;
+                const invitesCount = invites.length;
+                const reviewCount = admins.filter(a => {
+                    const expiry = a.roleExpiresAt || 0;
+                    const expired = expiry > 0 && expiry <= Math.floor(Date.now() / 1000);
+                    return a.pendingRoleReview || expired;
+                }).length;
+
+                const cAct = document.getElementById('count-active');
+                const cInv = document.getElementById('count-invites');
+                const cRev = document.getElementById('count-review');
+                if (cAct) cAct.textContent = activeCount;
+                if (cInv) cInv.textContent = invitesCount;
+                if (cRev) cRev.textContent = reviewCount;
+
+                renderPersonnelList();
+            } catch (e) {
+                const tc = document.getElementById('personnel-table-container');
+                if (tc) tc.innerHTML = `<div style="text-align:center; color:var(--red); padding:20px;">Ошибка загрузки: ${esc(e.message)}</div>`;
+            }
+        }
+
+        function renderPersonnelList() {
+            const container = document.getElementById('personnel-table-container');
+            if (!container) return;
+
+            if (currentFilter === 'invites') {
+                if (!invitesCache.length) {
+                    container.innerHTML = `
+                        <div style="text-align:center; padding:40px 20px; background:var(--card-bg); border:1px solid var(--border); border-radius:var(--radius-md); color:var(--text-muted);">
+                            <div style="margin-bottom:8px;">${renderSvgIcon('mail', 'gray', 28)}</div>
+                            <div style="font-size:14px; font-weight:600; color:var(--text-main);">Нет активных приглашений</div>
+                            <div style="font-size:12px; margin-top:4px;">Нажмите «+ Добавить сотрудника», чтобы создать новый код приглашения</div>
+                        </div>
+                    `;
+                    return;
+                }
+
+                container.innerHTML = `
+                    <div class="table-wrap" style="background:var(--card-bg); border:1px solid var(--border); border-radius:var(--radius-md);">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>СОТРУДНИК</th>
+                                    <th>РОЛЬ</th>
+                                    <th>КОД ПРИГЛАШЕНИЯ</th>
+                                    <th>КЕМ СОЗДАН</th>
+                                    <th>ДЕЙСТВИТЕЛЕН ДО</th>
+                                    <th style="text-align:right;">ДЕЙСТВИЯ</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${invitesCache.map(inv => {
+                                    const code = inv.code || '';
+                                    const masked = code.length > 4 ? (code.slice(0, 4) + '••••' + code.slice(-4)) : code;
+                                    const roleObj = rolesCache.find(r => r.id === inv.roleId);
+                                    const roleName = inv.roleName || (roleObj ? roleObj.name : `Роль #${inv.roleId}`);
+                                    const roleColor = (roleObj && roleObj.color) || '#6366f1';
+                                    const expiry = inv.expiresAt ? fmtTime(inv.expiresAt) : '7 дней';
+
+                                    return `
+                                        <tr>
+                                            <td>
+                                                <div style="display:flex; align-items:center; gap:8px;">
+                                                    <img src="https://mc-heads.net/avatar/${encodeURIComponent(inv.username || '')}/24" class="player-avatar-sm" alt="" style="width:24px; height:24px; border-radius:4px;">
+                                                    <b style="color:var(--text-main);">${esc(inv.username)}</b>
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <span class="badge" style="background:${roleColor}22; color:${roleColor}; border:1px solid ${roleColor}44;">
+                                                    ${esc(roleName)}
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <span class="font-mono invite-code-preview" data-full="${esc(code)}" data-masked="${esc(masked)}" title="Нажмите, чтобы показать/скрыть" style="cursor:pointer; font-weight:700; color:var(--accent);">
+                                                    ${esc(masked)}
+                                                </span>
+                                            </td>
+                                            <td style="font-size:12px; color:var(--text-muted);">${esc(inv.createdBy || '—')}</td>
+                                            <td style="font-size:12px; color:var(--text-dim);">${expiry}</td>
+                                            <td style="text-align:right;">
+                                                <button type="button" class="danger btn-sm" onclick="window.cancelStaffInvite(${inv.id}, '${esc(inv.username)}')">
+                                                    ОТМЕНИТЬ
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    `;
+                                }).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+
+                container.querySelectorAll('.invite-code-preview').forEach(el => {
+                    let revealed = false;
+                    el.addEventListener('click', () => {
+                        revealed = !revealed;
+                        el.textContent = revealed ? el.dataset.full : el.dataset.masked;
+                    });
+                });
+                return;
+            }
+
+            // Filter admins: active or review
+            let filteredAdmins = adminsCache.filter(a => a.status === 'ACTIVE');
+            if (currentFilter === 'review') {
+                filteredAdmins = filteredAdmins.filter(a => {
+                    const expiry = a.roleExpiresAt || 0;
+                    const expired = expiry > 0 && expiry <= Math.floor(Date.now() / 1000);
+                    return a.pendingRoleReview || expired;
+                });
+            }
+
+            if (!filteredAdmins.length) {
+                container.innerHTML = `
+                    <div style="text-align:center; padding:40px 20px; background:var(--card-bg); border:1px solid var(--border); border-radius:var(--radius-md); color:var(--text-muted);">
+                        <div style="font-size:14px; font-weight:600; color:var(--text-main);">
+                            ${currentFilter === 'review' ? 'Нет сотрудников, требующих решения по испытательному сроку' : 'Нет активных сотрудников'}
+                        </div>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = `
+                <div class="table-wrap" style="background:var(--card-bg); border:1px solid var(--border); border-radius:var(--radius-md);">
                     <table>
                         <thead>
                             <tr>
                                 <th>СОТРУДНИК</th>
                                 <th>ТЕКУЩАЯ РОЛЬ</th>
                                 <th>2FA ЗАЩИТА</th>
-                                <th>СРОК ДОСТУПА</th>
+                                <th>СРОК РОЛИ</th>
                                 <th>ПОСЛЕДНИЙ ВХОД</th>
                                 <th style="text-align:right;">ДЕЙСТВИЯ</th>
                             </tr>
                         </thead>
-                        <tbody id="admins-table-body">
-                            <tr><td colspan="6" style="text-align:center; padding:18px; color:var(--text-dim);">Загрузка персонала...</td></tr>
+                        <tbody>
+                            ${filteredAdmins.map(a => {
+                                const roleObj = rolesCache.find(r => r.id === a.roleId) || { name: 'Неизвестно', color: '#6366f1' };
+                                const roleColor = roleObj.color || (roleObj.isOwner ? '#a855f7' : '#6366f1');
+                                const hasTotp = a.totpEnabled;
+                                const isSelf = me && (me.username === a.username || me.id === a.id);
+                                const hideChangeRole = isSelf && (Boolean(me?.isOwner) || Boolean(roleObj.isOwner));
+
+                                const expirySec = a.roleExpiresAt || 0;
+                                const isExpired = expirySec > 0 && expirySec <= Math.floor(Date.now() / 1000);
+                                const isPendingReview = a.pendingRoleReview || isExpired;
+
+                                let expiryHtml = 'Бессрочно';
+                                if (isPendingReview) {
+                                    expiryHtml = `<span class="badge badge-review">Срок истёк</span>`;
+                                } else if (expirySec > 0) {
+                                    expiryHtml = `<span style="color:var(--text-muted); font-size:12px;">до ${fmtTime(expirySec)}</span>`;
+                                }
+
+                                return `
+                                    <tr>
+                                        <td>
+                                            <div style="display:flex; align-items:center; gap:8px;">
+                                                <img src="https://mc-heads.net/avatar/${encodeURIComponent(a.username || '')}/26" class="player-avatar-sm" alt="" style="width:26px; height:26px; border-radius:4px;">
+                                                <div>
+                                                    <b style="color:var(--text-main);">${esc(a.username)}</b>
+                                                    ${isSelf ? '<span class="badge gray" style="font-size:10px; margin-left:4px;">ВЫ</span>' : ''}
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <span class="badge" style="background:${roleColor}22; color:${roleColor}; border:1px solid ${roleColor}44;">
+                                                ${esc(roleObj.name)}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <span class="badge ${hasTotp ? 'green' : 'yellow'}" style="display:inline-flex; align-items:center; gap:4px;">
+                                                ${hasTotp ? renderSvgIcon('check', 'green', 11) + ' 2FA ВКЛ' : 'НЕТ 2FA'}
+                                            </span>
+                                        </td>
+                                        <td>${expiryHtml}</td>
+                                        <td class="font-mono" style="font-size:12px; color:var(--text-dim);">${fmtTime(a.lastLoginAt)}</td>
+                                        <td style="text-align:right;">
+                                            <div style="display:flex; justify-content:flex-end; gap:6px; flex-wrap:wrap;">
+                                                ${isPendingReview ? `
+                                                    <button type="button" class="primary btn-sm" onclick="window.promoteToModerator(${a.id}, '${esc(a.username)}')">СДЕЛАТЬ МОДЕРАТОРОМ</button>
+                                                    <button type="button" class="secondary btn-sm" onclick="window.keepCurrentRole(${a.id}, '${esc(a.username)}')">ОСТАВИТЬ</button>
+                                                    <button type="button" class="danger btn-sm" onclick="window.revokeStaffAccess(${a.id}, '${esc(a.username)}')">СНЯТЬ ДОСТУП</button>
+                                                ` : `
+                                                    ${!hideChangeRole ? `
+                                                        <button type="button" class="secondary btn-sm" onclick="window.openEditAdminRoleModal(${a.id}, '${esc(a.username)}', ${a.roleId})">РОЛЬ</button>
+                                                    ` : ''}
+                                                    <button type="button" class="secondary btn-sm" onclick="window.resetStaffPassword(${a.id}, '${esc(a.username)}')">СБРОС ПАРОЛЯ</button>
+                                                    <button type="button" class="danger btn-sm" onclick="window.terminateStaffSessions(${a.id}, '${esc(a.username)}')">СБРОС СЕССИЙ</button>
+                                                `}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                `;
+                            }).join('')}
                         </tbody>
                     </table>
                 </div>
-            </div>
+            `;
+        }
 
-            <!-- Roles Table -->
-            <div style="background:var(--card-bg); border:1px solid var(--border); border-radius:var(--radius-md); padding:18px;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-                    <h3 style="font-size:15px; margin:0; color:var(--text-heading);">РОЛИ И МАТРИЦА ПРАВ</h3>
-                    <span style="font-size:12px; color:var(--text-muted);">Настройка ролей и матрицы прав доступа веб-панели</span>
-                </div>
-                <div class="table-wrap">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>НАЗВАНИЕ РОЛИ</th>
-                                <th>КОЛИЧЕСТВО ПРАВ</th>
-                                <th>ТИП</th>
-                                <th style="text-align:right;">ДЕЙСТВИЯ</th>
-                            </tr>
-                        </thead>
-                        <tbody id="roles-table-body">
-                            <tr><td colspan="4" style="text-align:center; padding:18px; color:var(--text-dim);">Загрузка ролей...</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        `;
+        // ---------------- Roles Tab ----------------
+        async function renderRolesTab() {
+            const container = document.getElementById('staff-tab-body');
+            if (!container) return;
 
-        let rolesCache = [];
-
-        const loadAdminsAndRoles = async () => {
-            const aBody = document.getElementById('admins-table-body');
-            const rBody = document.getElementById('roles-table-body');
-
+            container.innerHTML = `<div style="text-align:center; padding:30px; color:var(--text-muted);">Загрузка ролей...</div>`;
             try {
-                const [admins, roles] = await Promise.all([
-                    api('GET', '/api/admins'),
-                    api('GET', '/api/roles')
+                const [roles, admins] = await Promise.all([
+                    api('GET', '/api/roles'),
+                    api('GET', '/api/admins')
                 ]);
                 rolesCache = roles;
+                adminsCache = admins;
 
-                if (aBody) {
-                    aBody.innerHTML = admins.map(a => {
-                        const roleObj = roles.find(r => r.id === a.roleId) || { name: 'Неизвестно', color: '#6366f1' };
-                        const roleColor = roleObj.color || (roleObj.isOwner ? '#a855f7' : '#6366f1');
-                        const hasTotp = a.totpEnabled;
-                        const expiry = a.roleExpiresAt && a.roleExpiresAt > 0 ? fmtTime(a.roleExpiresAt) : 'Бессрочно';
+                // Category order: OWNER -> ADMIN -> MOD -> PROBATION -> CUSTOM
+                const catOrder = ['OWNER', 'ADMIN', 'MOD', 'PROBATION', 'CUSTOM'];
+                const catLabels = {
+                    'OWNER': 'Управляющие (OWNER)',
+                    'ADMIN': 'Администраторы (ADMIN)',
+                    'MOD': 'Модераторы (MOD)',
+                    'PROBATION': 'Испытательный срок (PROBATION)',
+                    'CUSTOM': 'Пользовательские роли (CUSTOM)'
+                };
 
-                        return `
-                            <tr>
-                                <td>
-                                    <div style="display:flex; align-items:center; gap:8px;">
-                                        <div class="sidebar-user-avatar" style="width:26px; height:26px; font-size:11px;">${esc((a.username || '').substring(0, 2).toUpperCase())}</div>
-                                        <b style="color:var(--text-main);">${esc(a.username)}</b>
+                const grouped = {};
+                catOrder.forEach(c => { grouped[c] = []; });
+                roles.forEach(r => {
+                    let c = (r.category || '').toUpperCase();
+                    if (!catOrder.includes(c)) c = 'CUSTOM';
+                    grouped[c].push(r);
+                });
+
+                container.innerHTML = `
+                    <div style="display:flex; flex-direction:column; gap:24px;">
+                        ${catOrder.map(cat => {
+                            const list = grouped[cat];
+                            if (!list || !list.length) return '';
+                            return `
+                                <div>
+                                    <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+                                        <h3 style="font-size:14px; font-weight:700; color:var(--text-heading); margin:0;">${esc(catLabels[cat] || cat)}</h3>
+                                        <span class="badge gray" style="font-size:11px;">${list.length}</span>
                                     </div>
-                                </td>
-                                <td><span class="badge" style="background:${roleColor}22; color:${roleColor}; border:1px solid ${roleColor}44;">${esc(roleObj.name)}</span></td>
-                                <td>
-                                    <span class="badge ${hasTotp ? 'green' : 'yellow'}" style="display:inline-flex; align-items:center; gap:4px;">${hasTotp ? renderSvgIcon('check', 'green', 11) + ' 2FA ВКЛ' : 'НЕТ 2FA'}</span>
-                                </td>
-                                <td style="color:var(--text-muted); font-size:12px;">${expiry}</td>
-                                <td class="font-mono" style="font-size:12px; color:var(--text-dim);">${fmtTime(a.lastLoginAt)}</td>
-                                <td style="text-align:right;">
-                                    <div style="display:flex; justify-content:flex-end; gap:6px;">
-                                        <button type="button" class="secondary btn-sm" onclick="window.openEditAdminRoleModal(${a.id}, '${esc(a.username)}', ${a.roleId})">РОЛЬ</button>
-                                        <button type="button" class="secondary btn-sm" onclick="window.resetStaffPassword(${a.id}, '${esc(a.username)}')">СБРОС ПАРОЛЯ</button>
-                                        <button type="button" class="danger btn-sm" onclick="window.terminateStaffSessions(${a.id}, '${esc(a.username)}')">СБРОС СЕССИЙ</button>
-                                    </div>
-                                </td>
-                            </tr>
-                        `;
-                    }).join('');
-                }
+                                    <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:14px;">
+                                        ${list.map(r => {
+                                            const rCol = r.color || (r.isOwner ? '#a855f7' : '#8b5cf6');
+                                            const assignedAdmins = admins.filter(a => a.roleId === r.id);
+                                            const hasAdmins = assignedAdmins.length > 0;
+                                            const canDelete = !r.isOwner && !hasAdmins;
+                                            
+                                            // Description rule: if empty or equals name, don't show duplicate; if empty show "Без описания"
+                                            let descText = (r.description || '').trim();
+                                            let isBlank = false;
+                                            if (!descText || descText.toLowerCase() === r.name.toLowerCase()) {
+                                                descText = 'Без описания';
+                                                isBlank = true;
+                                            }
 
-                if (rBody) {
-                    rBody.innerHTML = roles.map(r => {
-                        const rCol = r.color || (r.isOwner ? '#a855f7' : '#8b5cf6');
-                        return `
-                        <tr>
-                            <td>
-                                <div style="display:flex; align-items:center; gap:8px;">
-                                    <span style="display:inline-block; width:12px; height:12px; border-radius:50%; background:${esc(rCol)}; box-shadow:0 0 6px ${esc(rCol)};"></span>
-                                    <b style="color:var(--text-heading);">${esc(r.name)}</b>
+                                            const permsCount = (r.permissions || []).length;
+                                            const lpText = r.lpGroup ? ` · LP: ${esc(r.lpGroup)}` : '';
+
+                                            return `
+                                                <div style="background:var(--card-bg); border:1px solid var(--border); border-radius:var(--radius-md); padding:16px; display:flex; flex-direction:column; justify-content:space-between; gap:12px;">
+                                                    <div>
+                                                        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:6px;">
+                                                            <div style="display:flex; align-items:center; gap:8px;">
+                                                                <span style="display:inline-block; width:12px; height:12px; border-radius:50%; background:${esc(rCol)}; box-shadow:0 0 6px ${esc(rCol)};"></span>
+                                                                <h4 style="margin:0; font-size:15px; color:var(--text-heading);">${esc(r.name)}</h4>
+                                                            </div>
+                                                            <span class="badge" style="background:${rCol}22; color:${rCol}; border:1px solid ${rCol}44; font-size:10.5px;">
+                                                                ${r.isOwner ? 'ВЛАДЕЛЕЦ' : esc(r.category || 'РОЛЬ')}
+                                                            </span>
+                                                        </div>
+                                                        <p style="font-size:12px; color:${isBlank ? 'var(--text-dim)' : 'var(--text-muted)'}; margin:4px 0 10px 0; line-height:1.4;">
+                                                            ${esc(descText)}
+                                                        </p>
+                                                        <div style="font-size:11.5px; color:var(--text-muted); display:flex; align-items:center; gap:6px;">
+                                                            <span><b>${permsCount}</b> прав</span>${lpText}
+                                                            <span style="color:var(--text-dim);">•</span>
+                                                            <span>${assignedAdmins.length} сотр.</span>
+                                                        </div>
+                                                    </div>
+                                                    <div style="display:flex; justify-content:flex-end; gap:8px; border-top:1px solid var(--border); padding-top:10px;">
+                                                        ${!r.isOwner ? `
+                                                            <button type="button" class="secondary btn-sm" onclick="window.openEditRoleModal(${r.id})">РЕДАКТИРОВАТЬ</button>
+                                                            <button type="button" class="danger btn-sm" ${!canDelete ? 'disabled title="Нельзя удалить: к роли привязаны сотрудники"' : ''} onclick="window.deleteRole(${r.id}, '${esc(r.name)}')">
+                                                                УДАЛИТЬ
+                                                            </button>
+                                                        ` : `
+                                                            <span style="font-size:11.5px; color:var(--text-dim); padding:4px 0;">Полный доступ (системная роль)</span>
+                                                        `}
+                                                    </div>
+                                                </div>
+                                            `;
+                                        }).join('')}
+                                    </div>
                                 </div>
-                            </td>
-                            <td><b>${r.permissions ? r.permissions.length : 0}</b> прав</td>
-                            <td>
-                                <span class="badge" style="background:${rCol}22; color:${rCol}; border:1px solid ${rCol}44;">${r.isOwner ? 'УПРАВЛЯЮЩИЙ' : 'КАСТОМНАЯ'}</span>
-                            </td>
-                            <td style="text-align:right;">
-                                ${!r.isOwner ? `
-                                    <div style="display:flex; justify-content:flex-end; gap:6px;">
-                                        <button type="button" class="secondary btn-sm" onclick="window.openEditRoleModal(${r.id})">РЕДАКТИРОВАТЬ</button>
-                                        <button type="button" class="danger btn-sm" onclick="window.deleteRole(${r.id}, '${esc(r.name)}')">УДАЛИТЬ</button>
-                                    </div>
-                                ` : '<span style="font-size:11px; color:var(--text-dim);">Полный доступ</span>'}
-                            </td>
-                        </tr>
-                    `;
-                    }).join('');
-                }
+                            `;
+                        }).join('')}
+                    </div>
+                `;
             } catch (e) {
-                if (aBody) aBody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--red); padding:18px;">Ошибка: ${esc(e.message)}</td></tr>`;
+                container.innerHTML = `<div style="text-align:center; color:var(--red); padding:20px;">Ошибка загрузки ролей: ${esc(e.message)}</div>`;
+            }
+        }
+
+        // ---------------- Invite Creation Wizard ----------------
+        function openInviteWizardModal() {
+            const availableRoles = rolesCache.filter(r => !r.isOwner).sort((a, b) => (a.sortOrder || 99) - (b.sortOrder || 99));
+            
+            openModal(`
+                <div class="modal-header">
+                    <h3>ПРИГЛАШЕНИЕ СОТРУДНИКА</h3>
+                    <button type="button" class="close-btn" data-modal-close="true">${renderSvgIcon('close', 'gray', 16)}</button>
+                </div>
+                <div class="modal-body" id="invite-wizard-body">
+                    <!-- Step 1 -->
+                    <div id="invite-step-1">
+                        <div class="form-group">
+                            <label>Никнейм сотрудника в Minecraft *</label>
+                            <input id="invite-username" placeholder="Например: Steve" autocomplete="username" autofocus required>
+                        </div>
+                        <div class="form-group">
+                            <label>Назначаемая роль *</label>
+                            <select id="invite-role">
+                                ${availableRoles.map(r => `
+                                    <option value="${r.id}">${esc(r.name)} (${esc(r.category || 'Роль')})</option>
+                                `).join('')}
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Испытательный срок</label>
+                            <select id="invite-probation">
+                                <option value="0">Без срока (постоянный доступ)</option>
+                                <option value="7">7 дней (испытательный срок)</option>
+                                <option value="14">14 дней</option>
+                                <option value="30">30 дней</option>
+                            </select>
+                        </div>
+                        <div id="invite-err" class="error" style="display:none; margin-bottom:12px;"></div>
+                    </div>
+                    <!-- Step 2 -->
+                    <div id="invite-step-2" style="display:none;"></div>
+                </div>
+                <div class="modal-footer" id="invite-wizard-footer">
+                    <button type="button" class="secondary" data-modal-close="true">ОТМЕНА</button>
+                    <button type="button" class="primary" id="invite-next">ДАЛЕЕ</button>
+                </div>
+            `, () => {
+                const uInput = document.getElementById('invite-username');
+                if (uInput) attachPlayerAutocomplete(uInput);
+
+                document.getElementById('invite-next')?.addEventListener('click', async () => {
+                    const username = document.getElementById('invite-username').value.trim();
+                    const roleId = parseInt(document.getElementById('invite-role').value, 10);
+                    const probationDays = parseInt(document.getElementById('invite-probation').value, 10) || 0;
+                    const errEl = document.getElementById('invite-err');
+                    const nextBtn = document.getElementById('invite-next');
+
+                    if (!username) {
+                        if (errEl) { errEl.textContent = 'Укажите никнейм сотрудника'; errEl.style.display = 'block'; }
+                        return;
+                    }
+                    if (errEl) errEl.style.display = 'none';
+                    nextBtn.disabled = true;
+                    nextBtn.textContent = 'СОЗДАНИЕ...';
+
+                    try {
+                        const res = await api('POST', '/api/admins/invites', { username, roleId, probationDays });
+                        const code = res.code || '';
+                        const inviteId = res.id;
+
+                        // Switch to Step 2
+                        document.getElementById('invite-step-1').style.display = 'none';
+                        const step2 = document.getElementById('invite-step-2');
+                        step2.style.display = 'block';
+                        step2.innerHTML = `
+                            <div class="invite-code-box">
+                                <div class="code-label">Код для сотрудника ${esc(username)}</div>
+                                <div class="code-value" id="invite-code-display">${esc(code)}</div>
+                                <button type="button" class="primary" id="copy-invite-code" style="margin-bottom:14px; display:inline-flex; align-items:center; gap:6px;">
+                                    ${renderSvgIcon('copy', 'white', 14)} Скопировать код
+                                </button>
+                                <p style="font-size:12px; color:var(--text-muted); line-height:1.4; margin-bottom:16px;">
+                                    Передайте этот одноразовый код сотруднику лично. Сотрудник вводит его на экране «Регистрация по приглашению» для создания пароля и привязки 2FA.
+                                </p>
+                                <button type="button" id="cancel-invite-btn" class="danger btn-sm">
+                                    Отменить приглашение
+                                </button>
+                            </div>
+                        `;
+
+                        document.getElementById('invite-wizard-footer').innerHTML = `
+                            <button type="button" class="primary" data-modal-close="true">ГОТОВО</button>
+                        `;
+
+                        document.getElementById('copy-invite-code')?.addEventListener('click', async () => {
+                            try {
+                                if (navigator.clipboard && navigator.clipboard.writeText) {
+                                    await navigator.clipboard.writeText(code);
+                                } else {
+                                    const ta = document.createElement('textarea');
+                                    ta.value = code;
+                                    document.body.appendChild(ta);
+                                    ta.select();
+                                    document.execCommand('copy');
+                                    document.body.removeChild(ta);
+                                }
+                                const btn = document.getElementById('copy-invite-code');
+                                if (btn) {
+                                    btn.innerHTML = `${renderSvgIcon('check', 'green', 14)} Код скопирован!`;
+                                    setTimeout(() => {
+                                        if (btn) btn.innerHTML = `${renderSvgIcon('copy', 'white', 14)} Скопировать код`;
+                                    }, 2000);
+                                }
+                            } catch (_) {}
+                        });
+
+                        document.getElementById('cancel-invite-btn')?.addEventListener('click', async () => {
+                            try {
+                                await api('DELETE', `/api/admins/invites/${inviteId}`);
+                                showToast('Приглашение отменено', `Код для ${username} отозван`, 'info');
+                                closeModal();
+                                loadPersonnelData();
+                            } catch (e) {
+                                alert('Ошибка отмены: ' + e.message);
+                            }
+                        });
+
+                        loadPersonnelData();
+                    } catch (e) {
+                        if (errEl) { errEl.textContent = e.message; errEl.style.display = 'block'; }
+                        nextBtn.disabled = false;
+                        nextBtn.textContent = 'ДАЛЕЕ';
+                    }
+                });
+            });
+        }
+
+        // ---------------- Staff Actions ----------------
+        window.cancelStaffInvite = (inviteId, username) => {
+            confirmAction('ОТМЕНА ПРИГЛАШЕНИЯ', `Отозвать приглашение для сотрудника ${username}? Код станет недействительным.`, async () => {
+                try {
+                    await api('DELETE', `/api/admins/invites/${inviteId}`);
+                    showToast('Приглашение отменено', `Приглашение для ${username} успешно отменено`, 'info');
+                    loadPersonnelData();
+                } catch (e) {
+                    alert('Ошибка отмены: ' + e.message);
+                }
+            }, 'ОТОЗВАТЬ');
+        };
+
+        window.promoteToModerator = async (adminId, username) => {
+            // Find Moderator role (MOD category or name 'Модератор')
+            const modRole = rolesCache.find(r => (r.category || '').toUpperCase() === 'MOD' || r.name.toLowerCase().includes('модератор'));
+            if (!modRole) {
+                alert('Роль Модератора не найдена в системе');
+                return;
+            }
+            try {
+                await api('PUT', `/api/admins/${adminId}/role`, {
+                    roleId: modRole.id,
+                    expiresAt: 0,
+                    clearPendingRoleReview: true
+                });
+                showToast('Сотрудник переведён', `${username} успешно назначен на должность «${modRole.name}»`, 'success');
+                loadPersonnelData();
+            } catch (e) {
+                alert('Ошибка назначения: ' + e.message);
             }
         };
 
+        window.keepCurrentRole = async (adminId, username) => {
+            const admin = adminsCache.find(a => a.id === adminId);
+            if (!admin) return;
+            try {
+                await api('PUT', `/api/admins/${adminId}/role`, {
+                    roleId: admin.roleId,
+                    expiresAt: 0,
+                    clearPendingRoleReview: true
+                });
+                showToast('Статус подтвержден', `Сотрудник ${username} оставлен в текущей должности на постоянной основе`, 'info');
+                loadPersonnelData();
+            } catch (e) {
+                alert('Ошибка: ' + e.message);
+            }
+        };
+
+        window.revokeStaffAccess = (adminId, username) => {
+            confirmAction('СНЯТИЕ ДОСТУПА', `Снять доступ к панели для сотрудника ${username}? Учетная запись будет деактивирована.`, async () => {
+                try {
+                    await api('DELETE', `/api/admins/${adminId}`);
+                    showToast('Доступ снят', `Сотрудник ${username} удален из панели`, 'info');
+                    loadPersonnelData();
+                } catch (e) {
+                    alert('Ошибка: ' + e.message);
+                }
+            }, 'СНЯТЬ ДОСТУП');
+        };
+
         window.openEditAdminRoleModal = (adminId, username, currentRoleId) => {
+            const admin = adminsCache.find(a => a.id === adminId);
+            const currentRole = rolesCache.find(r => r.id === currentRoleId);
+            if (currentRole && currentRole.isOwner && me && me.isOwner && (me.username === username || me.id === adminId)) {
+                alert('Управляющий не может изменить собственную роль');
+                return;
+            }
+
             openModal(`
                 <div class="modal-header">
                     <h3>НАЗНАЧЕНИЕ РОЛИ: ${esc(username)}</h3>
@@ -6574,7 +7335,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                         <label>Выберите роль</label>
                         <select id="edit-admin-role-select">
                             ${rolesCache.filter(r => !r.isOwner).map(r => `
-                                <option value="${r.id}" ${r.id === currentRoleId ? 'selected' : ''}>${esc(r.name)}</option>
+                                <option value="${r.id}" ${r.id === currentRoleId ? 'selected' : ''}>${esc(r.name)} (${esc(r.category || 'Роль')})</option>
                             `).join('')}
                         </select>
                     </div>
@@ -6597,12 +7358,12 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 document.getElementById('btn-save-admin-role')?.addEventListener('click', async () => {
                     const roleId = parseInt(document.getElementById('edit-admin-role-select').value, 10);
                     const days = parseInt(document.getElementById('edit-admin-temp-select').value, 10) || 0;
-                    const expiresAt = days > 0 ? (Date.now() + days * 86400000) : 0;
+                    const expiresAt = days > 0 ? (Math.floor(Date.now() / 1000) + days * 86400) : 0;
                     try {
-                        await api('PUT', `/api/admins/${adminId}/role`, { roleId, expiresAt });
+                        await api('PUT', `/api/admins/${adminId}/role`, { roleId, expiresAt, clearPendingRoleReview: true });
                         showToast('Роль обновлена', `Роль сотрудника ${username} успешно изменена`, 'success');
                         closeModal();
-                        loadAdminsAndRoles();
+                        loadPersonnelData();
                     } catch (e) {
                         alert('Ошибка: ' + e.message);
                     }
@@ -6626,7 +7387,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 try {
                     await api('POST', `/api/admins/${adminId}/terminate-sessions`);
                     showToast('Сессии завершены', `Все сессии ${username} успешно аннулированы`, 'info');
-                    loadAdminsAndRoles();
+                    loadPersonnelData();
                 } catch (e) {
                     showToast('Ошибка', e.message, 'error');
                 }
@@ -6652,7 +7413,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
         };
 
         // Modal: Create Role
-        document.getElementById('btn-create-role')?.addEventListener('click', () => {
+        function openCreateRoleModal() {
             openModal(`
                 <div class="modal-header">
                     <h3>СОЗДАНИЕ НОВОЙ РОЛИ</h3>
@@ -6662,6 +7423,19 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                     <div class="form-group">
                         <label>Название роли *</label>
                         <input type="text" id="create-role-name" placeholder="Например: Старший Модератор" required autofocus>
+                    </div>
+                    <div class="form-group">
+                        <label>Описание роли (кратко о правах и назначении)</label>
+                        <input type="text" id="create-role-desc" placeholder="Например: Проверка жалоб и базовый надзор">
+                    </div>
+                    <div class="form-group">
+                        <label>Категория роли</label>
+                        <select id="create-role-category">
+                            <option value="CUSTOM">Пользовательская (CUSTOM)</option>
+                            <option value="ADMIN">Администраторы (ADMIN)</option>
+                            <option value="MOD">Модераторы (MOD)</option>
+                            <option value="PROBATION">Испытательный срок (PROBATION)</option>
+                        </select>
                     </div>
                     <div class="form-group">
                         <label>Цвет роли (для бейджей, списков и журналов)</label>
@@ -6697,22 +7471,24 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
 
                 document.getElementById('btn-submit-create-role')?.addEventListener('click', async () => {
                     const name = document.getElementById('create-role-name').value.trim();
+                    const description = document.getElementById('create-role-desc')?.value.trim() || '';
+                    const category = document.getElementById('create-role-category')?.value || 'CUSTOM';
                     const color = document.getElementById('create-role-color')?.value || '#8b5cf6';
                     const permissions = Array.from(document.querySelectorAll('.role-perm-cb:checked')).map(cb => cb.value);
 
                     if (!name) { alert('Укажите название роли'); return; }
 
                     try {
-                        await api('POST', '/api/roles', { name, lpGroup: '', color, permissions });
-                        showToast('Роль создана', `Роль ${name} успешно добавлена`, 'success');
+                        await api('POST', '/api/roles', { name, description, category, lpGroup: '', color, permissions });
+                        showToast('Роль создана', `Роль LoveWebAdmin успешно добавлена`, 'success');
                         closeModal();
-                        loadAdminsAndRoles();
+                        renderRolesTab();
                     } catch (e) {
                         alert('Ошибка: ' + e.message);
                     }
                 });
             }, 'modal-lg');
-        });
+        }
 
         // Modal: Edit Role
         window.openEditRoleModal = (roleId) => {
@@ -6728,6 +7504,19 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                     <div class="form-group">
                         <label>Название роли *</label>
                         <input type="text" id="edit-role-name" value="${esc(role.name)}" required autofocus>
+                    </div>
+                    <div class="form-group">
+                        <label>Описание роли</label>
+                        <input type="text" id="edit-role-desc" value="${esc(role.description || '')}" placeholder="Краткое описание обязанностей">
+                    </div>
+                    <div class="form-group">
+                        <label>Категория роли</label>
+                        <select id="edit-role-category">
+                            <option value="CUSTOM" ${role.category === 'CUSTOM' ? 'selected' : ''}>Пользовательская (CUSTOM)</option>
+                            <option value="ADMIN" ${role.category === 'ADMIN' ? 'selected' : ''}>Администраторы (ADMIN)</option>
+                            <option value="MOD" ${role.category === 'MOD' ? 'selected' : ''}>Модераторы (MOD)</option>
+                            <option value="PROBATION" ${role.category === 'PROBATION' ? 'selected' : ''}>Испытательный срок (PROBATION)</option>
+                        </select>
                     </div>
                     <div class="form-group">
                         <label>Цвет роли (для бейджей, списков и журналов)</label>
@@ -6763,16 +7552,18 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
 
                 document.getElementById('btn-submit-edit-role')?.addEventListener('click', async () => {
                     const name = document.getElementById('edit-role-name').value.trim();
+                    const description = document.getElementById('edit-role-desc')?.value.trim() || '';
+                    const category = document.getElementById('edit-role-category')?.value || 'CUSTOM';
                     const color = document.getElementById('edit-role-color')?.value || '#8b5cf6';
                     const permissions = Array.from(document.querySelectorAll('.role-perm-cb:checked')).map(cb => cb.value);
 
                     if (!name) { alert('Укажите название роли'); return; }
 
                     try {
-                        await api('PUT', `/api/roles/${roleId}`, { name, lpGroup: '', color, permissions });
-                        showToast('Роль обновлена', `Параметры и права для роли ${name} сохранены`, 'success');
+                        await api('PUT', `/api/roles/${roleId}`, { name, description, category, lpGroup: '', color, permissions });
+                        showToast('Роль обновлена', `Параметры и права для роли LoveWebAdmin сохранены`, 'success');
                         closeModal();
-                        loadAdminsAndRoles();
+                        renderRolesTab();
                     } catch (e) {
                         alert('Ошибка сохранения: ' + e.message);
                     }
@@ -6789,7 +7580,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                     try {
                         await api('DELETE', `/api/roles/${roleId}`);
                         showToast('Роль удалена', `Роль «${roleName}» успешно удалена`, 'info');
-                        loadAdminsAndRoles();
+                        renderRolesTab();
                     } catch (e) {
                         alert('Не удалось удалить роль: ' + e.message);
                     }
@@ -6799,60 +7590,12 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
             );
         };
 
-        // Create Admin Modal
-        document.getElementById('btn-create-admin')?.addEventListener('click', () => {
-            openModal(`
-                <div class="modal-header">
-                    <h3>ДОБАВЛЕНИЕ СОТРУДНИКА</h3>
-                    <button type="button" class="close-btn" data-modal-close="true">${renderSvgIcon('close', 'gray', 16)}</button>
-                </div>
-                <div class="modal-body">
-                    <div class="form-group">
-                        <label>Никнейм сотрудника (точно как в игре)</label>
-                        <input type="text" id="add-admin-user" placeholder="Например: Lovelace" required autofocus>
-                    </div>
-                    <div class="form-group">
-                        <label>Начальная роль</label>
-                        <select id="add-admin-role">
-                            ${rolesCache.filter(r => !r.isOwner).map(r => `
-                                <option value="${r.id}">${esc(r.name)}</option>
-                            `).join('')}
-                        </select>
-                    </div>
-                    <div style="font-size:12px; color:var(--text-muted);">
-                        Сотрудник сможет зайти под своим ником и одноразовым первичным паролем.
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="secondary" data-modal-close="true">ОТМЕНА</button>
-                    <button type="button" class="primary" id="btn-submit-add-admin">СОЗДАТЬ</button>
-                </div>
-            `, () => {
-                const userInput = document.getElementById('add-admin-user');
-                if (userInput) attachPlayerAutocomplete(userInput);
-
-                document.getElementById('btn-submit-add-admin')?.addEventListener('click', async () => {
-                    const username = document.getElementById('add-admin-user').value.trim();
-                    const roleId = parseInt(document.getElementById('add-admin-role').value, 10);
-                    if (!username) { alert('Укажите никнейм'); return; }
-
-                    try {
-                        await api('POST', '/api/admins', { username, roleId });
-                        showToast('Сотрудник добавлен', `Учетная запись для ${username} создана`, 'success');
-                        closeModal();
-                        loadAdminsAndRoles();
-                    } catch (e) {
-                        alert('Ошибка: ' + e.message);
-                    }
-                });
-            });
-        });
-
-        await loadAdminsAndRoles();
+        mount();
     }
+    window.renderStaffView = renderStaffView;
+    window.renderAdminsView = renderStaffView;
 
 
-    // ==========================================================================
     // 8. БАЗА ДАННЫХ (СВОДНАЯ СТАТИСТИКА, ГРАФИКИ, ТОП ИГРОКОВ)
     // ==========================================================================
 
@@ -7357,7 +8100,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
 
             window.markNotifRead = async (id) => {
                 try {
-                    await api('POST', `/api/notifications/${id}/read`);
+                    await api('POST', `/api/notifications/me.lovelace:LoveWebAdmin:jar:1.1.0/read`);
                     updateNotificationsBadge();
                     loadList();
                 } catch (_) {}
@@ -8159,12 +8902,12 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
 
                 try {
                     await api('POST', `/api/players/${encodeURIComponent(name)}/action`, { action: 'kick', reason });
-                    recordShiftAction(`Кикнул ${name}`);
-                    showToast('Кик', `Игрок ${name} кикнут с сервера`, 'warning');
+                    recordShiftAction(`Кикнул LoveWebAdmin`);
+                    showToast('Кик', `Игрок LoveWebAdmin кикнут с сервера`, 'warning');
                     closeModal();
                 } catch (e) {
                     if (e.message && e.message.includes('не в сети')) {
-                        showToast('Игрок оффлайн', `Игрок ${name} не в сети или не найден`, 'warning');
+                        showToast('Игрок оффлайн', `Игрок LoveWebAdmin не в сети или не найден`, 'warning');
                     } else {
                         showToast('Ошибка', e.message || 'Не удалось кикнуть игрока', 'danger');
                     }
@@ -8200,12 +8943,12 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
 
                 try {
                     await api('POST', `/api/players/${encodeURIComponent(name)}/action`, { action: 'teleport_spawn' });
-                    recordShiftAction(`Телепортировал на спавн ${name}`);
-                    showToast('Телепортация', `Игрок ${name} отправлен на спавн`, 'info');
+                    recordShiftAction(`Телепортировал на спавн LoveWebAdmin`);
+                    showToast('Телепортация', `Игрок LoveWebAdmin отправлен на спавн`, 'info');
                     closeModal();
                 } catch (e) {
                     if (e.message && e.message.includes('не в сети')) {
-                        showToast('Игрок оффлайн', `Игрок ${name} не в сети или не найден`, 'warning');
+                        showToast('Игрок оффлайн', `Игрок LoveWebAdmin не в сети или не найден`, 'warning');
                     } else {
                         showToast('Ошибка', e.message || 'Не удалось телепортировать игрока', 'danger');
                     }
@@ -8240,12 +8983,12 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 if (!name) return;
                 try {
                     await api('POST', `/api/players/${encodeURIComponent(name)}/action`, { action: 'vanish' });
-                    recordShiftAction(`Переключил Vanish для ${name}`);
-                    showToast('Vanish', `Режим скрытности переключен для ${name}`, 'info');
+                    recordShiftAction(`Переключил Vanish для LoveWebAdmin`);
+                    showToast('Vanish', `Режим скрытности переключен для LoveWebAdmin`, 'info');
                     closeModal();
                 } catch (e) {
                     if (e.message && e.message.includes('не в сети')) {
-                        showToast('Игрок оффлайн', `Игрок ${name} не в сети или не найден`, 'warning');
+                        showToast('Игрок оффлайн', `Игрок LoveWebAdmin не в сети или не найден`, 'warning');
                     } else {
                         showToast('Ошибка', e.message || 'Не удалось переключить Vanish', 'danger');
                     }
@@ -8294,12 +9037,12 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 if (!name) return;
                 try {
                     await api('POST', `/api/players/${encodeURIComponent(name)}/action`, { action: 'mute', duration, reason });
-                    recordShiftAction(`Заглушил ${name} на ${duration}`);
-                    showToast('Мут чата', `Игрок ${name} заглушен на ${duration}`, 'warning');
+                    recordShiftAction(`Заглушил LoveWebAdmin на ${duration}`);
+                    showToast('Мут чата', `Игрок LoveWebAdmin заглушен на ${duration}`, 'warning');
                     closeModal();
                 } catch (e) {
                     if (e.message && e.message.includes('не в сети')) {
-                        showToast('Игрок оффлайн', `Игрок ${name} не в сети или не найден`, 'warning');
+                        showToast('Игрок оффлайн', `Игрок LoveWebAdmin не в сети или не найден`, 'warning');
                     } else {
                         showToast('Ошибка', e.message || 'Не удалось выдать мут', 'danger');
                     }

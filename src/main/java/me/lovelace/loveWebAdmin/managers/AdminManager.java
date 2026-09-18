@@ -412,7 +412,7 @@ public class AdminManager {
 
         plugin.getDatabaseManager().updateAdminRole(targetId, newRoleId);
         plugin.getLogManager().logWebAction(actorUsername,
-            "Изменил роль " + targetOpt.get().username() + ": " + oldRoleName + " → " + newRoleOpt.get().name());
+            "Смена роли: " + targetOpt.get().username() + " | " + oldRoleName + " → " + newRoleOpt.get().name());
 
         if (plugin.getConfig().getBoolean("luckperms.sync-enabled", true) && newRoleOpt.get().lpGroup() != null) {
             plugin.getLuckPermsManager().assignGroup(targetOpt.get().username(), newRoleOpt.get().lpGroup());

@@ -3727,6 +3727,146 @@ body.theme-light .btn-remove-screenshot:hover {
     color: var(--text-heading) !important;
 }
 
+/* ==========================================================================
+   STAFF, INVITES & OBSERVATION MODE STYLES
+   ========================================================================== */
+
+.invite-code-box {
+    background: var(--card-inner-bg, rgba(255, 255, 255, 0.03));
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md, 6px);
+    padding: 20px;
+    text-align: center;
+    margin-top: 12px;
+}
+
+.invite-code-box .code-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--text-dim, #94a3b8);
+    letter-spacing: 0.05em;
+    margin-bottom: 8px;
+}
+
+.invite-code-box .code-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 26px;
+    font-weight: 800;
+    color: var(--accent, #a855f7);
+    letter-spacing: 4px;
+    margin-bottom: 14px;
+    user-select: all;
+}
+
+.totp-secret-mask {
+    font-family: 'JetBrains Mono', monospace;
+    letter-spacing: 2px;
+    cursor: pointer;
+    user-select: all;
+    transition: color 0.15s ease;
+}
+
+.totp-secret-mask:hover {
+    color: var(--accent, #a855f7);
+}
+
+.totp-input-masked {
+    text-align: center;
+    font-size: 22px !important;
+    font-weight: 700 !important;
+    letter-spacing: 6px !important;
+    font-family: 'JetBrains Mono', monospace !important;
+}
+
+/* Password strength bar */
+.password-strength-bar {
+    height: 4px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 2px;
+    margin-top: 6px;
+    margin-bottom: 8px;
+    overflow: hidden;
+}
+
+.password-strength-fill {
+    height: 100%;
+    width: 0%;
+    transition: width 0.25s ease, background 0.25s ease;
+}
+
+.password-strength-hints {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--text-dim, #94a3b8);
+    margin-bottom: 12px;
+}
+
+.password-strength-hints span.valid {
+    color: var(--green, #22c55e);
+}
+
+.password-strength-hints span.invalid {
+    color: var(--text-muted, #64748b);
+}
+
+/* Observation Mode Layout */
+.observation-view-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.observation-header-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md, 6px);
+    padding: 16px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.observation-grid {
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: 16px;
+}
+
+@media (max-width: 900px) {
+    .observation-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.observation-stream-panel {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md, 6px);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+}
+
+.observation-dossier-panel {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md, 6px);
+    padding: 16px;
+}
+
+.badge-review {
+    background: rgba(239, 68, 68, 0.15) !important;
+    color: #ef4444 !important;
+    border: 1px solid rgba(239, 68, 68, 0.3) !important;
+    font-weight: 700;
+}
+
+
 
 
 

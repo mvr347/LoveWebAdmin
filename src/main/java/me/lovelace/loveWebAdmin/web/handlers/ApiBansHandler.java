@@ -284,6 +284,7 @@ public class ApiBansHandler extends ApiHandlerSupport {
                     Map<String, Object> map = new LinkedHashMap<>();
                     map.put("id", String.valueOf(item.get("id")));
                     map.put("name", String.valueOf(item.get("name")));
+                    map.put("category", item.get("category") != null ? String.valueOf(item.get("category")) : "Прочее");
                     map.put("require_comment", Boolean.TRUE.equals(item.get("require_comment")));
                     list.add(map);
                 }
@@ -293,16 +294,16 @@ public class ApiBansHandler extends ApiHandlerSupport {
         }
 
         if (list.isEmpty()) {
-            list.add(Map.of("id", "cheats", "name", "Читы", "require_comment", false));
-            list.add(Map.of("id", "bug_abuse", "name", "Использование багов", "require_comment", false));
-            list.add(Map.of("id", "national_insult", "name", "Оскорбление на почве национальности", "require_comment", false));
-            list.add(Map.of("id", "advertising", "name", "Реклама", "require_comment", false));
-            list.add(Map.of("id", "griefing", "name", "Гриферство", "require_comment", false));
-            list.add(Map.of("id", "modded_client", "name", "Читерские модификации клиента", "require_comment", false));
-            list.add(Map.of("id", "anticheat_bypass", "name", "Обход античита", "require_comment", false));
-            list.add(Map.of("id", "toxic_behavior", "name", "Токсичное поведение", "require_comment", false));
-            list.add(Map.of("id", "multi_account", "name", "Мультиаккаунт", "require_comment", false));
-            list.add(Map.of("id", "other", "name", "Другое (с обязательным комментарием)", "require_comment", true));
+            list.add(Map.of("id", "cheats", "name", "Читы", "category", "Читы и модификации", "require_comment", false));
+            list.add(Map.of("id", "bug_abuse", "name", "Использование багов", "category", "Геймплейные нарушения", "require_comment", false));
+            list.add(Map.of("id", "national_insult", "name", "Оскорбление на почве национальности", "category", "Общение", "require_comment", false));
+            list.add(Map.of("id", "advertising", "name", "Реклама", "category", "Общение", "require_comment", false));
+            list.add(Map.of("id", "griefing", "name", "Гриферство", "category", "Геймплейные нарушения", "require_comment", false));
+            list.add(Map.of("id", "modded_client", "name", "Читерские модификации клиента", "category", "Читы и модификации", "require_comment", false));
+            list.add(Map.of("id", "anticheat_bypass", "name", "Обход античита", "category", "Читы и модификации", "require_comment", false));
+            list.add(Map.of("id", "toxic_behavior", "name", "Токсичное поведение", "category", "Общение", "require_comment", false));
+            list.add(Map.of("id", "multi_account", "name", "Мультиаккаунт", "category", "Безопасность", "require_comment", false));
+            list.add(Map.of("id", "other", "name", "Другое (с обязательным комментарием)", "category", "Прочее", "require_comment", true));
         }
         return list;
     }

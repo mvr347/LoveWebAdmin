@@ -1,6 +1,7 @@
 package me.lovelace.loveWebAdmin.database;
 
 import me.lovelace.loveWebAdmin.LoveWebAdmin;
+import me.lovelace.loveWebAdmin.models.AdminInviteRecord;
 import me.lovelace.loveWebAdmin.models.ApiKeyRecord;
 import me.lovelace.loveWebAdmin.models.EconomyAnomalyRecord;
 import me.lovelace.loveWebAdmin.models.EconomySnapshotRecord;
@@ -358,6 +359,24 @@ public class DatabaseManager {
                         read_by TEXT DEFAULT '[]'
                     )
                     """);
+
+                statement.execute("""
+                    CREATE TABLE IF NOT EXISTS web_admin_invites (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        code TEXT NOT NULL UNIQUE,
+                        username TEXT NOT NULL,
+                        role_id INTEGER NOT NULL,
+                        probation_days INTEGER DEFAULT 0,
+                        role_expires_at INTEGER DEFAULT 0,
+                        created_by TEXT,
+                        created_at INTEGER DEFAULT (strftime('%s', 'now')),
+                        expires_at INTEGER DEFAULT 0,
+                        status TEXT DEFAULT 'PENDING',
+                        FOREIGN KEY (role_id) REFERENCES web_roles(id)
+                    )
+                    """);
+                statement.execute("CREATE INDEX IF NOT EXISTS idx_admin_invites_code ON web_admin_invites(code)");
+                statement.execute("CREATE INDEX IF NOT EXISTS idx_admin_invites_status ON web_admin_invites(status)");
             }
 
             migrateWebRoles();
@@ -426,6 +445,15 @@ public class DatabaseManager {
             if (!columns.contains("color")) {
                 statement.execute("ALTER TABLE web_roles ADD COLUMN color TEXT DEFAULT '#8b5cf6'");
             }
+            if (!columns.contains("description")) {
+                statement.execute("ALTER TABLE web_roles ADD COLUMN description TEXT DEFAULT ''");
+            }
+            if (!columns.contains("category")) {
+                statement.execute("ALTER TABLE web_roles ADD COLUMN category TEXT DEFAULT 'CUSTOM'");
+            }
+            if (!columns.contains("sort_order")) {
+                statement.execute("ALTER TABLE web_roles ADD COLUMN sort_order INTEGER DEFAULT 50");
+            }
         } catch (SQLException e) {
             plugin.getLogger().warning("Ошибка проверки/миграции колонок web_roles: " + e.getMessage());
         }
@@ -491,101 +519,100 @@ public class DatabaseManager {
     }
 
     private void initializePresetRoles() {
-        // Управляющий
+        // 1. Управляющий (OWNER, 10)
+        String ownerDesc = "Полный доступ ко всей системе и управлению сервером";
         if (getRoleByName("Управляющий").isEmpty()) {
             String ownerLpGroup = plugin.getConfig().getString("luckperms.owner-lp-group", "owner");
-            saveRole(new WebRole(0, "Управляющий", ownerLpGroup, EnumSet.allOf(Permission.class), true));
+            saveRole(new WebRole(0, "Управляющий", ownerDesc, "OWNER", 10, ownerLpGroup, EnumSet.allOf(Permission.class), true, "#a855f7"));
         } else {
             getRoleByName("Управляющий").ifPresent(ownerRole -> {
                 Set<Permission> all = EnumSet.allOf(Permission.class);
-                if (!ownerRole.permissions().containsAll(all)) {
-                    saveRole(new WebRole(ownerRole.id(), ownerRole.name(), ownerRole.lpGroup(), all, true));
-                }
+                saveRole(new WebRole(ownerRole.id(), ownerRole.name(), ownerDesc, "OWNER", 10, ownerRole.lpGroup(), all, true, "#a855f7"));
             });
         }
 
-        // Администратор
+        // 2. Администратор (ADMIN, 20)
+        String adminDesc = "Расширенное администрирование сервера и персонала";
+        Set<Permission> adminPerms = Set.of(
+            Permission.VIEW_STATS,
+            Permission.VIEW_ANALYTICS,
+            Permission.VIEW_SERVER_LOGS,
+            Permission.VIEW_WEB_LOGS,
+            Permission.EXECUTE_COMMANDS,
+            Permission.VIEW_BANS,
+            Permission.MANAGE_BANS,
+            Permission.VIEW_PLAYERS,
+            Permission.MANAGE_PLAYERS,
+            Permission.MANAGE_LOVEAUTH,
+            Permission.VIEW_VESUVIO,
+            Permission.VIEW_VESUVIO_ADVANCED,
+            Permission.MANAGE_VESUVIO,
+            Permission.MANAGE_PASSWORDS,
+            Permission.MANAGE_LOCKDOWN,
+            Permission.VIEW_STAFF_AUDIT,
+            Permission.VIEW_ECONOMY,
+            Permission.MANAGE_ECONOMY,
+            Permission.VIEW_REPORTS,
+            Permission.MANAGE_REPORTS,
+            Permission.VIEW_APPEALS,
+            Permission.MANAGE_APPEALS,
+            Permission.MANAGE_ADMINS,
+            Permission.MANAGE_ROLES
+        );
         if (getRoleByName("Администратор").isEmpty()) {
-            Set<Permission> adminPerms = Set.of(
-                Permission.VIEW_STATS,
-                Permission.VIEW_ANALYTICS,
-                Permission.VIEW_SERVER_LOGS,
-                Permission.VIEW_WEB_LOGS,
-                Permission.EXECUTE_COMMANDS,
-                Permission.VIEW_BANS,
-                Permission.MANAGE_BANS,
-                Permission.VIEW_PLAYERS,
-                Permission.MANAGE_PLAYERS,
-                Permission.MANAGE_LOVEAUTH,
-                Permission.VIEW_VESUVIO,
-                Permission.VIEW_VESUVIO_ADVANCED,
-                Permission.MANAGE_VESUVIO,
-                Permission.MANAGE_PASSWORDS,
-                Permission.MANAGE_LOCKDOWN,
-                Permission.VIEW_STAFF_AUDIT,
-                Permission.VIEW_ECONOMY,
-                Permission.MANAGE_ECONOMY,
-                Permission.VIEW_REPORTS,
-                Permission.MANAGE_REPORTS,
-                Permission.VIEW_APPEALS,
-                Permission.MANAGE_APPEALS,
-                Permission.MANAGE_ADMINS,
-                Permission.MANAGE_ROLES
-            );
-            saveRole(new WebRole(0, "Администратор", "admin", adminPerms, false));
+            saveRole(new WebRole(0, "Администратор", adminDesc, "ADMIN", 20, "admin", adminPerms, false, "#38bdf8"));
         } else {
             getRoleByName("Администратор").ifPresent(adminRole -> {
-                Set<Permission> needed = Set.of(
-                    Permission.MANAGE_PLAYERS,
-                    Permission.MANAGE_LOCKDOWN,
-                    Permission.VIEW_STAFF_AUDIT,
-                    Permission.VIEW_ECONOMY,
-                    Permission.MANAGE_ECONOMY,
-                    Permission.VIEW_REPORTS,
-                    Permission.MANAGE_REPORTS,
-                    Permission.VIEW_APPEALS,
-                    Permission.MANAGE_APPEALS,
-                    Permission.MANAGE_ADMINS,
-                    Permission.MANAGE_ROLES
-                );
-                if (!adminRole.permissions().containsAll(needed)) {
-                    Set<Permission> updated = new HashSet<>(adminRole.permissions());
-                    updated.addAll(needed);
-                    saveRole(new WebRole(adminRole.id(), adminRole.name(), adminRole.lpGroup(), updated, false));
-                }
+                Set<Permission> perms = new HashSet<>(adminRole.permissions());
+                perms.addAll(adminPerms);
+                saveRole(new WebRole(adminRole.id(), adminRole.name(), adminDesc, "ADMIN", 20, adminRole.lpGroup(), perms, false, "#38bdf8"));
             });
         }
 
-        // Модератор
+        // 3. Модератор (MOD, 30)
+        String modDesc = "Модерация игрового процесса, рассмотрение жалоб и баны";
+        Set<Permission> modPerms = Set.of(
+            Permission.VIEW_STATS,
+            Permission.VIEW_SERVER_LOGS,
+            Permission.VIEW_BANS,
+            Permission.MANAGE_BANS,
+            Permission.VIEW_APPEALS,
+            Permission.MANAGE_APPEALS,
+            Permission.VIEW_PLAYERS,
+            Permission.VIEW_VESUVIO,
+            Permission.VIEW_ECONOMY,
+            Permission.VIEW_REPORTS,
+            Permission.MANAGE_REPORTS
+        );
         if (getRoleByName("Модератор").isEmpty()) {
-            Set<Permission> modPerms = Set.of(
-                Permission.VIEW_STATS,
-                Permission.VIEW_SERVER_LOGS,
-                Permission.VIEW_BANS,
-                Permission.MANAGE_BANS,
-                Permission.VIEW_APPEALS,
-                Permission.MANAGE_APPEALS,
-                Permission.VIEW_PLAYERS,
-                Permission.VIEW_VESUVIO,
-                Permission.VIEW_ECONOMY,
-                Permission.VIEW_REPORTS,
-                Permission.MANAGE_REPORTS
-            );
-            saveRole(new WebRole(0, "Модератор", "mod", modPerms, false));
+            saveRole(new WebRole(0, "Модератор", modDesc, "MOD", 30, "mod", modPerms, false, "#22c55e"));
         } else {
             getRoleByName("Модератор").ifPresent(modRole -> {
-                Set<Permission> needed = Set.of(
-                    Permission.VIEW_ECONOMY,
-                    Permission.VIEW_REPORTS,
-                    Permission.MANAGE_REPORTS,
-                    Permission.VIEW_APPEALS,
-                    Permission.MANAGE_APPEALS
-                );
-                if (!modRole.permissions().containsAll(needed)) {
-                    Set<Permission> updated = new HashSet<>(modRole.permissions());
-                    updated.addAll(needed);
-                    saveRole(new WebRole(modRole.id(), modRole.name(), modRole.lpGroup(), updated, false));
-                }
+                Set<Permission> perms = new HashSet<>(modRole.permissions());
+                perms.addAll(modPerms);
+                saveRole(new WebRole(modRole.id(), modRole.name(), modDesc, "MOD", 30, modRole.lpGroup(), perms, false, "#22c55e"));
+            });
+        }
+
+        // 4. Испытательный срок (PROBATION, 40)
+        String probationDesc = "Начальный доступ для стажеров с ограниченными правами";
+        Set<Permission> probationPerms = Set.of(
+            Permission.VIEW_STATS,
+            Permission.VIEW_ANALYTICS,
+            Permission.VIEW_PLAYERS,
+            Permission.VIEW_BANS,
+            Permission.VIEW_APPEALS,
+            Permission.VIEW_REPORTS,
+            Permission.VIEW_VESUVIO,
+            Permission.VIEW_SERVER_LOGS,
+            Permission.VIEW_WEB_LOGS,
+            Permission.VIEW_ECONOMY
+        );
+        if (getRoleByName("Испытательный срок").isEmpty()) {
+            saveRole(new WebRole(0, "Испытательный срок", probationDesc, "PROBATION", 40, "probation", probationPerms, false, "#f59e0b"));
+        } else {
+            getRoleByName("Испытательный срок").ifPresent(probRole -> {
+                saveRole(new WebRole(probRole.id(), probRole.name(), probationDesc, "PROBATION", 40, probRole.lpGroup(), probationPerms, false, "#f59e0b"));
             });
         }
     }
@@ -636,26 +663,35 @@ public class DatabaseManager {
     public synchronized void saveRole(WebRole role) {
         String permissionsJson = JsonUtils.toJson(role.permissions().stream().map(Enum::name).toList());
         String color = role.color() != null && !role.color().isBlank() ? role.color() : "#8b5cf6";
+        String description = role.description() != null ? role.description() : "";
+        String category = role.category() != null && !role.category().isBlank() ? role.category() : "CUSTOM";
+        int sortOrder = role.sortOrder() > 0 ? role.sortOrder() : 50;
         try {
             if (role.id() == 0) {
-                String sql = "INSERT INTO web_roles (name, lp_group, permissions, is_owner, color) VALUES (?, ?, ?, ?, ?)";
+                String sql = "INSERT INTO web_roles (name, description, category, sort_order, lp_group, permissions, is_owner, color) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
                 try (PreparedStatement ps = connection.prepareStatement(sql)) {
                     ps.setString(1, role.name());
-                    ps.setString(2, role.lpGroup());
-                    ps.setString(3, permissionsJson);
-                    ps.setInt(4, role.isOwner() ? 1 : 0);
-                    ps.setString(5, color);
+                    ps.setString(2, description);
+                    ps.setString(3, category);
+                    ps.setInt(4, sortOrder);
+                    ps.setString(5, role.lpGroup());
+                    ps.setString(6, permissionsJson);
+                    ps.setInt(7, role.isOwner() ? 1 : 0);
+                    ps.setString(8, color);
                     ps.executeUpdate();
                 }
             } else {
-                String sql = "UPDATE web_roles SET name = ?, lp_group = ?, permissions = ?, is_owner = ?, color = ? WHERE id = ?";
+                String sql = "UPDATE web_roles SET name = ?, description = ?, category = ?, sort_order = ?, lp_group = ?, permissions = ?, is_owner = ?, color = ? WHERE id = ?";
                 try (PreparedStatement ps = connection.prepareStatement(sql)) {
                     ps.setString(1, role.name());
-                    ps.setString(2, role.lpGroup());
-                    ps.setString(3, permissionsJson);
-                    ps.setInt(4, role.isOwner() ? 1 : 0);
-                    ps.setString(5, color);
-                    ps.setInt(6, role.id());
+                    ps.setString(2, description);
+                    ps.setString(3, category);
+                    ps.setInt(4, sortOrder);
+                    ps.setString(5, role.lpGroup());
+                    ps.setString(6, permissionsJson);
+                    ps.setInt(7, role.isOwner() ? 1 : 0);
+                    ps.setString(8, color);
+                    ps.setInt(9, role.id());
                     ps.executeUpdate();
                 }
             }
@@ -692,7 +728,7 @@ public class DatabaseManager {
 
     public synchronized List<WebRole> getAllRoles() {
         List<WebRole> roles = new ArrayList<>();
-        String sql = "SELECT * FROM web_roles ORDER BY id";
+        String sql = "SELECT * FROM web_roles ORDER BY sort_order ASC, id ASC";
         try (Statement statement = connection.createStatement();
              ResultSet rs = statement.executeQuery(sql)) {
             while (rs.next()) {
@@ -717,6 +753,21 @@ public class DatabaseManager {
     private WebRole mapRole(ResultSet rs) throws SQLException {
         int id = rs.getInt("id");
         String name = rs.getString("name");
+        String description = "";
+        try {
+            String d = rs.getString("description");
+            if (d != null) description = d;
+        } catch (SQLException ignored) {}
+        String category = "CUSTOM";
+        try {
+            String c = rs.getString("category");
+            if (c != null && !c.isBlank()) category = c;
+        } catch (SQLException ignored) {}
+        int sortOrder = 50;
+        try {
+            int so = rs.getInt("sort_order");
+            if (so > 0) sortOrder = so;
+        } catch (SQLException ignored) {}
         String lpGroup = rs.getString("lp_group");
         String permissionsJson = rs.getString("permissions");
         boolean isOwner = rs.getInt("is_owner") != 0;
@@ -735,7 +786,7 @@ public class DatabaseManager {
                 } catch (IllegalArgumentException ignored) {}
             }
         }
-        return new WebRole(id, name, lpGroup, permissions, isOwner, color);
+        return new WebRole(id, name, description, category, sortOrder, lpGroup, permissions, isOwner, color);
     }
 
     // ---------- Управляющий и статус ----------
@@ -953,14 +1004,109 @@ public class DatabaseManager {
     }
 
     public synchronized void updateAdminRole(int id, int roleId) {
-        String sql = "UPDATE web_admins SET role_id = ? WHERE id = ?";
+        updateAdminRole(id, roleId, 0L);
+    }
+
+    public synchronized void updateAdminRole(int id, int roleId, long roleExpiresAt) {
+        String sql = "UPDATE web_admins SET role_id = ?, role_expires_at = ? WHERE id = ?";
         try (PreparedStatement ps = connection.prepareStatement(sql)) {
             ps.setInt(1, roleId);
-            ps.setInt(2, id);
+            ps.setLong(2, roleExpiresAt);
+            ps.setInt(3, id);
             ps.executeUpdate();
         } catch (SQLException e) {
             plugin.getLogger().warning("Ошибка обновления роли администратора: " + e.getMessage());
         }
+    }
+
+    // ---------- Приглашения персонала (Invites) ----------
+
+    public synchronized AdminInviteRecord createAdminInvite(String code, String username, int roleId, int probationDays, long roleExpiresAt, String createdBy, long expiresAt) {
+        String sql = "INSERT INTO web_admin_invites (code, username, role_id, probation_days, role_expires_at, created_by, expires_at, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING')";
+        try (PreparedStatement ps = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+            ps.setString(1, code);
+            ps.setString(2, username);
+            ps.setInt(3, roleId);
+            ps.setInt(4, probationDays);
+            ps.setLong(5, roleExpiresAt);
+            ps.setString(6, createdBy);
+            ps.setLong(7, expiresAt);
+            ps.executeUpdate();
+            try (ResultSet keys = ps.getGeneratedKeys()) {
+                if (keys.next()) {
+                    int id = keys.getInt(1);
+                    long now = System.currentTimeMillis() / 1000L;
+                    return new AdminInviteRecord(id, code, username, roleId, probationDays, roleExpiresAt, createdBy, now, expiresAt, "PENDING");
+                }
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().warning("Ошибка создания приглашения: " + e.getMessage());
+        }
+        return null;
+    }
+
+    public synchronized List<AdminInviteRecord> getPendingInvites() {
+        List<AdminInviteRecord> list = new ArrayList<>();
+        String sql = "SELECT * FROM web_admin_invites WHERE status = 'PENDING' ORDER BY id DESC";
+        try (PreparedStatement ps = connection.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                list.add(mapInvite(rs));
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().warning("Ошибка получения приглашений: " + e.getMessage());
+        }
+        return list;
+    }
+
+    public synchronized Optional<AdminInviteRecord> getInviteByCode(String code) {
+        String sql = "SELECT * FROM web_admin_invites WHERE UPPER(code) = UPPER(?)";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setString(1, code != null ? code.trim() : "");
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) return Optional.of(mapInvite(rs));
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().warning("Ошибка поиска приглашения: " + e.getMessage());
+        }
+        return Optional.empty();
+    }
+
+    public synchronized boolean cancelInvite(int id) {
+        String sql = "UPDATE web_admin_invites SET status = 'CANCELLED' WHERE id = ? AND status = 'PENDING'";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setInt(1, id);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            plugin.getLogger().warning("Ошибка отмены приглашения: " + e.getMessage());
+            return false;
+        }
+    }
+
+    public synchronized boolean markInviteUsed(int id) {
+        String sql = "UPDATE web_admin_invites SET status = 'USED' WHERE id = ?";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setInt(1, id);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            plugin.getLogger().warning("Ошибка закрытия приглашения: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private AdminInviteRecord mapInvite(ResultSet rs) throws SQLException {
+        return new AdminInviteRecord(
+            rs.getInt("id"),
+            rs.getString("code"),
+            rs.getString("username"),
+            rs.getInt("role_id"),
+            rs.getInt("probation_days"),
+            rs.getLong("role_expires_at"),
+            rs.getString("created_by"),
+            rs.getLong("created_at"),
+            rs.getLong("expires_at"),
+            rs.getString("status")
+        );
     }
 
     public synchronized void updateAdminBackupCodes(int id, String backupCodesJson) {
@@ -1887,8 +2033,21 @@ public class DatabaseManager {
             params.add(staff.trim());
         }
         if (actionQuery != null && !actionQuery.isBlank()) {
-            sql.append("AND LOWER(action) LIKE ? ");
-            params.add("%" + actionQuery.trim().toLowerCase() + "%");
+            String q = actionQuery.trim().toLowerCase();
+            if ("roles".equals(q)) {
+                sql.append("AND (LOWER(action) LIKE '%рол%' OR LOWER(action) LIKE '%персонал%' OR LOWER(action) LIKE '%сотрудник%' OR LOWER(action) LIKE '%приглаш%' OR LOWER(action) LIKE '%инвайт%') ");
+            } else if ("auth".equals(q)) {
+                sql.append("AND (LOWER(action) LIKE '%вошёл%' OR LOWER(action) LIKE '%вошел%' OR LOWER(action) LIKE '%вышел%' OR LOWER(action) LIKE '%вход%' OR LOWER(action) LIKE '%сесси%' OR LOWER(action) LIKE '%2fa%' OR LOWER(action) LIKE '%парол%') ");
+            } else if ("punishments".equals(q)) {
+                sql.append("AND (LOWER(action) LIKE '%бан%' OR LOWER(action) LIKE '%разбан%' OR LOWER(action) LIKE '%кик%' OR LOWER(action) LIKE '%наказан%') ");
+            } else if ("reports".equals(q)) {
+                sql.append("AND (LOWER(action) LIKE '%жалоб%' OR LOWER(action) LIKE '%репорт%') ");
+            } else if ("maintenance".equals(q)) {
+                sql.append("AND (LOWER(action) LIKE '%тех%' OR LOWER(action) LIKE '%maintenance%') ");
+            } else {
+                sql.append("AND LOWER(action) LIKE ? ");
+                params.add("%" + q + "%");
+            }
         }
         if (fromTime != null && fromTime > 0) {
             sql.append("AND timestamp >= ? ");

@@ -129,6 +129,7 @@ public class ApiAuthHandler extends ApiHandlerSupport {
             case "/verify-2fa" -> handleVerify2fa(req, resp);
             case "/logout" -> handleLogout(req, resp);
             case "/setup-owner" -> handleSetupOwner(req, resp);
+            case "/validate-invite" -> handleValidateInvite(req, resp);
             case "/register" -> handleRegister(req, resp);
             default -> sendError(resp, 404, "Не найдено");
         }
@@ -278,37 +279,132 @@ public class ApiAuthHandler extends ApiHandlerSupport {
         sendSuccess(resp, data);
     }
 
+    private void handleValidateInvite(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+        Map<String, Object> body = readJsonBody(req);
+        String code = stringOrNull(body.get("code"));
+        if (code == null || code.isBlank()) {
+            sendError(resp, 400, "Укажите код приглашения");
+            return;
+        }
+
+        var inviteOpt = plugin.getDatabaseManager().getInviteByCode(code.trim());
+        if (inviteOpt.isEmpty()) {
+            sendError(resp, 404, "Код приглашения не найден");
+            return;
+        }
+
+        var invite = inviteOpt.get();
+        if (!"PENDING".equalsIgnoreCase(invite.status())) {
+            sendError(resp, 400, "Этот код приглашения уже был использован или отменён");
+            return;
+        }
+
+        long now = System.currentTimeMillis() / 1000L;
+        if (invite.expiresAt() > 0 && now > invite.expiresAt()) {
+            sendError(resp, 400, "Срок действия кода приглашения истёк");
+            return;
+        }
+
+        String roleName = plugin.getDatabaseManager().getRoleById(invite.roleId())
+            .map(WebRole::name).orElse("Сотрудник");
+
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("username", invite.username());
+        data.put("roleId", invite.roleId());
+        data.put("roleName", roleName);
+        data.put("roleExpiresAt", invite.roleExpiresAt());
+        sendSuccess(resp, data);
+    }
+
     private void handleRegister(HttpServletRequest req, HttpServletResponse resp) throws IOException {
         Map<String, Object> body = readJsonBody(req);
-        String username = stringOrNull(body.get("username"));
+        String inviteCode = stringOrNull(body.get("inviteCode"));
         String password = stringOrNull(body.get("password"));
         String totpSecret = stringOrNull(body.get("totpSecret"));
         String totpCode = stringOrNull(body.get("totpCode"));
 
-        if (username == null || password == null) {
-            sendError(resp, 400, "Заполните логин и пароль");
+        if (inviteCode == null || inviteCode.isBlank()) {
+            sendError(resp, 400, "Регистрация возможна только по коду приглашения");
             return;
         }
 
-        if (!plugin.isDebugMode() && (totpSecret == null || totpCode == null)) {
-            sendError(resp, 400, "Заполните все поля, включая привязку Google Authenticator");
+        var inviteOpt = plugin.getDatabaseManager().getInviteByCode(inviteCode.trim());
+        if (inviteOpt.isEmpty() || !"PENDING".equalsIgnoreCase(inviteOpt.get().status())) {
+            sendError(resp, 400, "Неверный или недействительный код приглашения");
             return;
         }
 
-        AdminManager.RegisterResult result = plugin.getAdminManager().registerCandidate(
-            username, password, totpSecret, totpCode
+        var invite = inviteOpt.get();
+        long now = System.currentTimeMillis() / 1000L;
+        if (invite.expiresAt() > 0 && now > invite.expiresAt()) {
+            sendError(resp, 400, "Срок действия кода приглашения истёк");
+            return;
+        }
+
+        String username = invite.username();
+        if (plugin.getDatabaseManager().getAdminByUsername(username).isPresent()) {
+            sendError(resp, 400, "Сотрудник с таким никнеймом уже зарегистрирован");
+            return;
+        }
+
+        if (password == null || password.isBlank()) {
+            sendError(resp, 400, "Заполните пароль");
+            return;
+        }
+
+        String strengthErr = PasswordUtils.validateStrength(password);
+        if (strengthErr != null) {
+            sendError(resp, 400, strengthErr);
+            return;
+        }
+
+        if (!plugin.isDebugMode()) {
+            if (totpSecret == null || totpCode == null) {
+                sendError(resp, 400, "Необходимо привязать Google Authenticator и ввести 6-значный код");
+                return;
+            }
+            if (!TotpUtils.verifyCode(totpSecret, totpCode)) {
+                sendError(resp, 400, "Неверный код Google Authenticator");
+                return;
+            }
+        }
+
+        List<String> plainBackupCodes = TotpUtils.generateBackupCodes(8);
+        List<String> hashedCodes = plainBackupCodes.stream().map(TotpUtils::hashBackupCode).toList();
+        String backupCodesJson = JsonUtils.toJson(hashedCodes);
+
+        WebAdmin admin = new WebAdmin(
+            0,
+            username,
+            PasswordUtils.hash(password),
+            invite.roleId(),
+            now,
+            now,
+            totpSecret,
+            true,
+            now,
+            req.getRemoteAddr(),
+            "ACTIVE",
+            "{}",
+            backupCodesJson
         );
 
-        switch (result.status()) {
-            case OK, PENDING -> sendSuccess(resp, Map.of(
-                "status", "PENDING_APPROVAL",
-                "message", result.message(),
-                "backupCodes", result.backupCodes()
-            ));
-            case ALREADY_EXISTS -> sendError(resp, 400, result.message());
-            case INVALID_TOTP -> sendError(resp, 400, result.message());
-            case INVALID_INPUT -> sendError(resp, 400, result.message());
+        plugin.getDatabaseManager().saveAdmin(admin);
+        plugin.getDatabaseManager().markInviteUsed(invite.id());
+        if (invite.roleExpiresAt() > 0) {
+            plugin.getDatabaseManager().getAdminByUsername(username)
+                .ifPresent(saved -> plugin.getDatabaseManager().setAdminRoleExpiry(saved.id(), invite.roleExpiresAt()));
         }
+
+        String roleName = plugin.getDatabaseManager().getRoleById(invite.roleId())
+            .map(WebRole::name).orElse("Сотрудник");
+        plugin.getLogManager().logWebAction(username, "Завершил регистрацию по приглашению (роль: " + roleName + ")");
+
+        sendSuccess(resp, Map.of(
+            "status", "ACTIVE",
+            "message", "Регистрация успешно завершена",
+            "backupCodes", plainBackupCodes
+        ));
     }
 
     private void handleLogin(HttpServletRequest req, HttpServletResponse resp) throws IOException {

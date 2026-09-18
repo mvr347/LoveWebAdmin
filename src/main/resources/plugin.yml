@@ -11,7 +11,7 @@ softdepend: [ LuckPerms, Vesuvio, LoveCore ]
 commands:
   lovewebadmin:
     description: LoveWebAdmin управление
-    usage: /lovewebadmin <info|reload|resetowner>
+    usage: /lovewebadmin <reload>
     aliases: [ lwa ]
     permission: lovewebadmin.admin
   бан:

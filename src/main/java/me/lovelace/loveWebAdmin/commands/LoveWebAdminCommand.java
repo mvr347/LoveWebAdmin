@@ -25,8 +25,7 @@ import java.util.Locale;
  */
 public class LoveWebAdminCommand implements CommandExecutor, TabCompleter {
 
-    private static final List<String> SUBCOMMANDS = List.of("info", "reload", "resetowner", "generatetoken", "help");
-    private static final List<String> RESETOWNER_CONFIRM = List.of("confirm");
+    private static final List<String> SUBCOMMANDS = List.of("reload");
 
     private final LoveWebAdmin plugin;
 
@@ -41,77 +40,24 @@ public class LoveWebAdminCommand implements CommandExecutor, TabCompleter {
             return true;
         }
 
-        if (args.length == 0) {
-            sendHelp(sender);
+        if (args.length == 0 || "reload".equalsIgnoreCase(args[0])) {
+            plugin.reloadConfig();
+            sender.sendMessage("§8[§bLoveWebAdmin§8] §aКонфигурация успешно перезагружена.");
             return true;
         }
 
-        switch (args[0].toLowerCase(Locale.ROOT)) {
-            case "info" -> handleInfo(sender);
-            case "reload" -> handleReload(sender);
-            case "resetowner" -> handleResetOwner(sender, args);
-            case "generatetoken", "token" -> handleGenerateToken(sender);
-            default -> sendHelp(sender);
-        }
-        return true;
-    }
-
-    private void handleGenerateToken(CommandSender sender) {
-        String token = plugin.getAdminManager().generateSetupToken();
-        sender.sendMessage("§8[§bLoveWebAdmin§8] §aСгенерирован новый одноразовый токен первичной настройки:");
-        sender.sendMessage("§e§l>> " + token + " <<");
-        sender.sendMessage("§7Введите этот токен в веб-панели для создания аккаунта Управляющего.");
-        plugin.getLogger().info("[SECURITY] Командой /lovewebadmin generatetoken сгенерирован токен: " + token);
-    }
-
-    private void handleInfo(CommandSender sender) {
-        int port = plugin.getConfig().getInt("web.port", 8080);
-        boolean lpAvailable = plugin.getLuckPermsManager().isAvailable();
-
-        plugin.getServer().getAsyncScheduler().runNow(plugin, task -> {
-            int adminCount = plugin.getDatabaseManager().getAllAdmins().size();
-            sender.sendMessage("§7Порт веб-панели: §f" + port);
-            sender.sendMessage("§7Количество администраторов: §f" + adminCount);
-            sender.sendMessage("§7Интеграция с LuckPerms: §f" + (lpAvailable ? "включена" : "отключена"));
-        });
-    }
-
-    private void handleReload(CommandSender sender) {
-        plugin.reloadConfig();
-        sender.sendMessage("§aКонфигурация перезагружена.");
-    }
-
-    private void handleResetOwner(CommandSender sender, String[] args) {
-        if (args.length < 2 || !"confirm".equalsIgnoreCase(args[1])) {
-            sender.sendMessage("§cОПАСНО: эта команда удалит всех Управляющих. Для подтверждения введите: /lovewebadmin resetowner confirm");
-            return;
-        }
-
-        plugin.getServer().getAsyncScheduler().runNow(plugin, task -> {
-            plugin.getAdminManager().resetOwners();
-            sender.sendMessage("§aВсе Управляющие удалены. При следующем открытии панели можно назначить нового.");
-        });
-    }
-
-    private void sendHelp(CommandSender sender) {
         sender.sendMessage("§8========== §bLoveWebAdmin §8==========");
-        sender.sendMessage("§b/lovewebadmin info §7- Порт панели, число админов, статус LuckPerms");
-        sender.sendMessage("§b/lovewebadmin reload §7- Перезагрузить конфигурацию");
-        sender.sendMessage("§b/lovewebadmin generatetoken §7- Сгенерировать токен первого входа");
-        sender.sendMessage("§b/lovewebadmin resetowner confirm §7- Удалить всех Управляющих (для назначения нового)");
+        sender.sendMessage("§b/lovewebadmin reload §7- Перезагрузить конфигурацию плагина");
         sender.sendMessage("§8=========================================");
+        return true;
     }
 
     @Nullable
     @Override
     public List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command, @NotNull String alias, @NotNull String[] args) {
         if (!sender.hasPermission("lovewebadmin.admin")) return Collections.emptyList();
-
         if (args.length == 1) {
             return StringUtil.copyPartialMatches(args[0], SUBCOMMANDS, new ArrayList<>());
-        }
-        if (args.length == 2 && args[0].equalsIgnoreCase("resetowner")) {
-            return StringUtil.copyPartialMatches(args[1], RESETOWNER_CONFIRM, new ArrayList<>());
         }
         return Collections.emptyList();
     }

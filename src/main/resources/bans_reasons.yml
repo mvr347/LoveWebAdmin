@@ -5,33 +5,43 @@
 reasons:
   - id: "cheats"
     name: "Читы"
+    category: "Читы и модификации"
     require_comment: false
   - id: "bug_abuse"
     name: "Использование багов"
+    category: "Геймплейные нарушения"
     require_comment: false
   - id: "national_insult"
     name: "Оскорбление на почве национальности"
+    category: "Общение"
     require_comment: false
   - id: "advertising"
     name: "Реклама"
+    category: "Общение"
     require_comment: false
   - id: "griefing"
     name: "Гриферство"
+    category: "Геймплейные нарушения"
     require_comment: false
   - id: "modded_client"
     name: "Читерские модификации клиента"
+    category: "Читы и модификации"
     require_comment: false
   - id: "anticheat_bypass"
     name: "Обход античита"
+    category: "Читы и модификации"
     require_comment: false
   - id: "toxic_behavior"
     name: "Токсичное поведение"
+    category: "Общение"
     require_comment: false
   - id: "multi_account"
     name: "Мультиаккаунт"
+    category: "Безопасность"
     require_comment: false
   - id: "other"
     name: "Другое (с обязательным комментарием)"
+    category: "Прочее"
     require_comment: true
 
 # ==============================================================================

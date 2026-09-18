@@ -48,6 +48,14 @@ public class ApiRolesHandler extends ApiHandlerSupport {
 
         Map<String, Object> body = readJsonBody(req);
         String name = stringOrNull(body.get("name"));
+        String description = stringOrNull(body.get("description"));
+        String category = stringOrNull(body.get("category"));
+        int sortOrder = 50;
+        if (body.get("sortOrder") != null) {
+            try {
+                sortOrder = (int) Double.parseDouble(String.valueOf(body.get("sortOrder")));
+            } catch (Exception ignored) {}
+        }
         String lpGroup = stringOrNull(body.get("lpGroup"));
         String color = stringOrNull(body.get("color"));
         Set<Permission> permissions = parsePermissions(body.get("permissions"));
@@ -61,7 +69,7 @@ public class ApiRolesHandler extends ApiHandlerSupport {
             return;
         }
 
-        WebRole role = plugin.getRoleManager().createRole(name, lpGroup, permissions, color);
+        WebRole role = plugin.getRoleManager().createRole(name, description, category, sortOrder, lpGroup, permissions, color);
         plugin.getLogManager().logWebAction(sessionOpt.get().adminUsername(), "Создал роль " + name);
         sendSuccess(resp, toRoleMap(role));
     }
@@ -89,11 +97,19 @@ public class ApiRolesHandler extends ApiHandlerSupport {
 
         Map<String, Object> body = readJsonBody(req);
         String name = stringOrNull(body.get("name"));
+        String description = stringOrNull(body.get("description"));
+        String category = stringOrNull(body.get("category"));
+        int sortOrder = 0;
+        if (body.get("sortOrder") != null) {
+            try {
+                sortOrder = (int) Double.parseDouble(String.valueOf(body.get("sortOrder")));
+            } catch (Exception ignored) {}
+        }
         String lpGroup = stringOrNull(body.get("lpGroup"));
         String color = stringOrNull(body.get("color"));
         Set<Permission> permissions = parsePermissions(body.get("permissions"));
 
-        boolean ok = plugin.getRoleManager().updateRole(roleId, name, lpGroup, permissions, color);
+        boolean ok = plugin.getRoleManager().updateRole(roleId, name, description, category, sortOrder, lpGroup, permissions, color);
         if (!ok) {
             sendError(resp, 400, "Не удалось обновить роль (возможно, такое имя уже занято)");
             return;
@@ -131,6 +147,9 @@ public class ApiRolesHandler extends ApiHandlerSupport {
         Map<String, Object> map = new LinkedHashMap<>();
         map.put("id", role.id());
         map.put("name", role.name());
+        map.put("description", role.description() != null ? role.description() : "");
+        map.put("category", role.category() != null ? role.category() : "CUSTOM");
+        map.put("sortOrder", role.sortOrder());
         map.put("lpGroup", role.lpGroup());
         map.put("permissions", role.permissions().stream().map(Enum::name).toList());
         map.put("isOwner", role.isOwner());
