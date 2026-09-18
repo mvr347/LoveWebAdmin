@@ -486,10 +486,30 @@ public class ApiAuthHandler extends ApiHandlerSupport {
 
         String ip = req.getRemoteAddr();
         String userAgent = req.getHeader("User-Agent");
+
+        // Отдельные ключи от пароля (handleLogin) - неверный TOTP/резервный код не должен
+        // блокировать логин по паролю и наоборот, но перебор 6-значного кода/резервного ключа
+        // здесь раньше вообще не имел лимита попыток, в отличие от пароля выше.
+        String ipKey = "2fa-ip:" + ip;
+        String userKey = "2fa-user:" + username.toLowerCase();
+        LoginAttemptTracker attemptTracker = plugin.getLoginAttemptTracker();
+
+        long lockedSeconds = attemptTracker.getLockedRemainingSeconds(ipKey, userKey);
+        if (lockedSeconds > 0) {
+            long minutes = Math.max(1, (lockedSeconds + 59) / 60);
+            if (plugin.getSecurityWebhookService() != null) {
+                plugin.getSecurityWebhookService().sendBruteForceAlert(ip, username, 5);
+            }
+            sendError(resp, 429, "Слишком много неудачных попыток 2FA. Повторите через " + minutes + " мин.");
+            return;
+        }
+
         AdminManager.LoginResult result = plugin.getAdminManager().verify2fa(username, code, ip, userAgent);
         if (result.status() == AdminManager.LoginStatus.SUCCESS) {
+            attemptTracker.recordSuccess(ipKey, userKey);
             sendLoginSuccess(resp, result);
         } else {
+            attemptTracker.recordFailure(ipKey, userKey);
             plugin.getLogManager().logWebAction(username, "Неверный код 2FA или резервный код");
             sendError(resp, 401, "Неверный код Google Authenticator или резервный ключ восстановления.");
         }
