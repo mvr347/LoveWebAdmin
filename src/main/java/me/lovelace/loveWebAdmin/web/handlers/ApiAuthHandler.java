@@ -20,7 +20,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-/** RESTORED - full file continues from previous good revision. Temporary stub - WILL BE REPLACED */
 public class ApiAuthHandler extends ApiHandlerSupport {
 
     public ApiAuthHandler(LoveWebAdmin plugin) {
@@ -61,6 +60,7 @@ public class ApiAuthHandler extends ApiHandlerSupport {
             case "/verify-2fa" -> handleVerify2fa(req, resp);
             case "/logout" -> handleLogout(req, resp);
             case "/setup-owner" -> handleSetupOwner(req, resp);
+            case "/prepare-setup-owner" -> handlePrepareSetupOwner(req, resp);
             case "/validate-invite" -> handleValidateInvite(req, resp);
             case "/register" -> handleRegister(req, resp);
             default -> sendError(resp, 404, "Не найдено");
@@ -76,6 +76,32 @@ public class ApiAuthHandler extends ApiHandlerSupport {
             "maintenanceMessage", plugin.getMaintenanceMessage() != null ? plugin.getMaintenanceMessage() : "",
             "strictIp", plugin.getConfig().getBoolean("security.strict-ip", false)
         ));
+    }
+
+    private void handlePrepareSetupOwner(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+        if (plugin.getAdminManager().hasOwner()) {
+            sendError(resp, 400, "Управляющий уже настроен");
+            return;
+        }
+        Map<String, Object> body = readJsonBody(req);
+        String setupToken = stringOrNull(body.get("setupToken"));
+        String username = stringOrNull(body.get("username"));
+        if (setupToken == null || setupToken.isBlank()) {
+            sendError(resp, 400, "Укажите токен из консоли сервера");
+            return;
+        }
+        if (!plugin.getAdminManager().peekSetupToken(setupToken)) {
+            sendError(resp, 403, "Неверный токен");
+            return;
+        }
+        if (username == null || username.isBlank()) username = "owner";
+        String secret = plugin.getAdminManager().prepareOwnerTotp(setupToken, username);
+        if (secret == null) {
+            sendError(resp, 403, "Не удалось подготовить 2FA");
+            return;
+        }
+        String otpUrl = TotpUtils.getOtpAuthUrl("WebAdmin", username, secret);
+        sendSuccess(resp, Map.of("secret", secret, "otpUrl", otpUrl, "username", username));
     }
 
     private void handleSetupOwner(HttpServletRequest req, HttpServletResponse resp) throws IOException {
