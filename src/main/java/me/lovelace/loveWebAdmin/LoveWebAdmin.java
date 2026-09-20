@@ -13,6 +13,8 @@ import me.lovelace.loveWebAdmin.listeners.PlayerFreezeListener;
 import me.lovelace.loveWebAdmin.listeners.ReportMenuListener;
 import me.lovelace.loveWebAdmin.managers.AdminManager;
 import me.lovelace.loveWebAdmin.managers.BanManager;
+import me.lovelace.loveWebAdmin.managers.BanArchiveManager;
+import me.lovelace.loveWebAdmin.utils.ProofStorage;
 import me.lovelace.loveWebAdmin.managers.FreezeManager;
 import me.lovelace.loveWebAdmin.managers.LogManager;
 import me.lovelace.loveWebAdmin.managers.LoginAttemptTracker;
@@ -35,6 +37,8 @@ public final class LoveWebAdmin extends JavaPlugin {
     private RoleManager roleManager;
     private AdminManager adminManager;
     private BanManager banManager;
+    private BanArchiveManager banArchiveManager;
+    private ProofStorage proofStorage;
     private PlayerProfileManager playerProfileManager;
     private ReportManager reportManager;
     private LoginAttemptTracker loginAttemptTracker;
@@ -88,7 +92,10 @@ public final class LoveWebAdmin extends JavaPlugin {
         this.banManager = new BanManager(this);
         this.banManager.startCleanupTask();
 
-        // Reflection-only bridges to external plugins (Vesuvio & LoveEconomy & LoveCore)
+        this.proofStorage = new ProofStorage(this);
+        this.banArchiveManager = new BanArchiveManager(this);
+        this.banArchiveManager.start();
+
         this.vesuvioBridge = new VesuvioBridge();
         this.loveEconomyBridge = new me.lovelace.loveWebAdmin.integration.LoveEconomyBridge();
         this.discordBridge = new me.lovelace.loveWebAdmin.integration.LoveCoreDiscordBridge(this);
@@ -138,11 +145,9 @@ public final class LoveWebAdmin extends JavaPlugin {
             org.bukkit.plugin.ServicePriority.Normal
         );
 
-        // LoveCore LoveEconomy 5-minute Anomaly Tracker
         this.loveEconomyTracker = new me.lovelace.loveWebAdmin.managers.LoveEconomyTracker(this, loveEconomyBridge);
         this.loveEconomyTracker.start();
 
-        // /lovewebadmin (алиас /lwa)
         LoveWebAdminCommand loveWebAdminCommand = new LoveWebAdminCommand(this);
         var loveWebAdminPluginCommand = getCommand("lovewebadmin");
         if (loveWebAdminPluginCommand != null) {
@@ -150,7 +155,6 @@ public final class LoveWebAdmin extends JavaPlugin {
             loveWebAdminPluginCommand.setTabCompleter(loveWebAdminCommand);
         }
 
-        // /бан (алиасы /ban, /webban, /lban)
         BanCommand banCommand = new BanCommand(this);
         var banPluginCommand = getCommand("бан");
         if (banPluginCommand != null) {
@@ -158,7 +162,6 @@ public final class LoveWebAdmin extends JavaPlugin {
             banPluginCommand.setTabCompleter(banCommand);
         }
 
-        // /репорт (алиасы /жалоба, /report)
         ReportCommand reportCommand = new ReportCommand(this);
         var reportPluginCommand = getCommand("report");
         if (reportPluginCommand != null) {
@@ -166,7 +169,6 @@ public final class LoveWebAdmin extends JavaPlugin {
             reportPluginCommand.setTabCompleter(reportCommand);
         }
 
-        // /разбан (алиасы /unban, /webunban, /lunban, /pardon)
         UnbanCommand unbanCommand = new UnbanCommand(this);
         var unbanPluginCommand = getCommand("разбан");
         if (unbanPluginCommand != null) {
@@ -208,6 +210,7 @@ public final class LoveWebAdmin extends JavaPlugin {
         if (loveEconomyTracker != null) loveEconomyTracker.stop();
         if (freezeManager != null) freezeManager.clearAll();
         if (webServer != null) webServer.stop();
+        if (banArchiveManager != null) banArchiveManager.stop();
         if (banManager != null) banManager.stopCleanupTask();
         if (sessionManager != null) sessionManager.stopCleanupTask();
         if (loginAttemptTracker != null) loginAttemptTracker.stopCleanupTask();
@@ -242,6 +245,14 @@ public final class LoveWebAdmin extends JavaPlugin {
 
     public BanManager getBanManager() {
         return banManager;
+    }
+
+    public BanArchiveManager getBanArchiveManager() {
+        return banArchiveManager;
+    }
+
+    public ProofStorage getProofStorage() {
+        return proofStorage;
     }
 
     public PlayerProfileManager getPlayerProfileManager() {
