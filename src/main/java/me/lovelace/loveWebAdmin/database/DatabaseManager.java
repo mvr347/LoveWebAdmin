@@ -379,6 +379,20 @@ public class DatabaseManager {
                 statement.execute("CREATE INDEX IF NOT EXISTS idx_admin_invites_status ON web_admin_invites(status)");
             }
 
+            try {
+                var cols = new java.util.HashSet<String>();
+                try (var rs = connection.getMetaData().getColumns(null, null, "web_admin_invites", null)) {
+                    while (rs.next()) cols.add(rs.getString("COLUMN_NAME").toLowerCase());
+                }
+                if (!cols.contains("totp_secret")) {
+                    try (var st = connection.createStatement()) {
+                        st.execute("ALTER TABLE web_admin_invites ADD COLUMN totp_secret TEXT");
+                    }
+                }
+            } catch (SQLException e) {
+                plugin.getLogger().warning("migrate invites totp_secret: " + e.getMessage());
+            }
+
             migrateWebRoles();
             migrateWebAdmins();
             migrateWebSessions();
@@ -1036,7 +1050,7 @@ public class DatabaseManager {
                 if (keys.next()) {
                     int id = keys.getInt(1);
                     long now = System.currentTimeMillis() / 1000L;
-                    return new AdminInviteRecord(id, code, username, roleId, probationDays, roleExpiresAt, createdBy, now, expiresAt, "PENDING");
+                    return new AdminInviteRecord(id, code, username, roleId, probationDays, roleExpiresAt, createdBy, now, expiresAt, "PENDING", null);
                 }
             }
         } catch (SQLException e) {
@@ -1095,6 +1109,8 @@ public class DatabaseManager {
     }
 
     private AdminInviteRecord mapInvite(ResultSet rs) throws SQLException {
+        String totp = null;
+        try { totp = rs.getString("totp_secret"); } catch (SQLException ignored) {}
         return new AdminInviteRecord(
             rs.getInt("id"),
             rs.getString("code"),
@@ -1105,8 +1121,21 @@ public class DatabaseManager {
             rs.getString("created_by"),
             rs.getLong("created_at"),
             rs.getLong("expires_at"),
-            rs.getString("status")
+            rs.getString("status"),
+            totp
         );
+    }
+
+    public synchronized boolean bindInviteTotpSecret(int inviteId, String secret) {
+        String sql = "UPDATE web_admin_invites SET totp_secret = ? WHERE id = ? AND status = 'PENDING'";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setString(1, secret);
+            ps.setInt(2, inviteId);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            plugin.getLogger().warning("bindInviteTotpSecret: " + e.getMessage());
+            return false;
+        }
     }
 
     public synchronized void updateAdminBackupCodes(int id, String backupCodesJson) {

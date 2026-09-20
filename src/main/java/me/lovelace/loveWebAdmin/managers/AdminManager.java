@@ -12,12 +12,17 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * Управление веб-администраторами: онбординг, регистрация, 2FA Google Authenticator,
+ * вход, утверждение заявок, роли и сброс паролей.
+ */
 public class AdminManager {
 
     private final java.util.concurrent.ConcurrentHashMap<String, String> pendingOwnerTotp = new java.util.concurrent.ConcurrentHashMap<>();
+
     private static final long SEVEN_DAYS_SECONDS = 7L * 24L * 3600L;
+
     private final LoveWebAdmin plugin;
-    private volatile String setupToken = null;
 
     public AdminManager(LoveWebAdmin plugin) {
         this.plugin = plugin;
@@ -26,6 +31,8 @@ public class AdminManager {
     public boolean hasOwner() {
         return plugin.getDatabaseManager().hasActiveOwner();
     }
+
+    private volatile String setupToken = null;
 
     public synchronized String generateSetupToken() {
         byte[] bytes = new byte[8];
@@ -48,7 +55,7 @@ public class AdminManager {
 
     public synchronized String prepareOwnerTotp(String setupToken, String username) {
         if (!peekSetupToken(setupToken)) return null;
-        String secret = TotpUtils.generateSecret();
+        String secret = me.lovelace.loveWebAdmin.utils.TotpUtils.generateSecret();
         pendingOwnerTotp.put(this.setupToken, secret);
         return secret;
     }
@@ -63,7 +70,7 @@ public class AdminManager {
         if (setupToken != null) pendingOwnerTotp.remove(setupToken);
     }
 
-    public boolean validateAndConsumeSetupToken(String token) {
+    public synchronized boolean validateAndConsumeSetupToken(String token) {
         if (this.setupToken == null || token == null) return false;
         if (this.setupToken.equalsIgnoreCase(token.trim())) {
             this.setupToken = null;
@@ -76,8 +83,14 @@ public class AdminManager {
         return plugin.getDatabaseManager().isInitialSetupNeeded();
     }
 
+    /**
+     * Первичный онбординг главного администратора.
+     * Сменяет дефолтный логин 'admin' на новый ник, устанавливает новый пароль
+     * и подтверждает привязку Google Authenticator 6-значным кодом.
+     */
     public synchronized OnboardingResult completeMasterOnboarding(
             String newUsername, String newPassword, String totpSecret, String totpCode, String ip) {
+
         if (newUsername == null || newUsername.trim().equalsIgnoreCase("admin") || newUsername.trim().length() < 2) {
             return new OnboardingResult(false, "Выберите персональный никнейм (не 'admin')", null, null);
         }
@@ -85,43 +98,70 @@ public class AdminManager {
         if (pwdErr != null) {
             return new OnboardingResult(false, pwdErr, null, null);
         }
+
         boolean isDebug = plugin.isDebugMode();
         boolean codeValid = totpSecret != null && totpCode != null && TotpUtils.verifyCode(totpSecret, totpCode);
+
         if (!codeValid && !isDebug) {
             return new OnboardingResult(false, "Неверный код из Google Authenticator. Проверьте время на телефоне.", null, null);
         }
+
         if (totpSecret == null || totpSecret.isBlank()) {
             totpSecret = TotpUtils.generateSecret();
         }
+
+        // Ищем мастер-аккаунт
         Optional<WebAdmin> masterOpt = plugin.getDatabaseManager().getAdminByUsername("admin");
         if (masterOpt.isEmpty()) {
             masterOpt = plugin.getDatabaseManager().getAllAdmins().stream().findFirst();
         }
+
         int adminId = masterOpt.map(WebAdmin::id).orElse(0);
         Optional<WebRole> ownerRole = plugin.getDatabaseManager().getRoleByName("Управляющий");
         if (ownerRole.isEmpty()) {
             return new OnboardingResult(false, "Роль Управляющего не найдена", null, null, List.of());
         }
+
         List<String> plainBackupCodes = TotpUtils.generateBackupCodes(8);
         List<String> hashedCodes = plainBackupCodes.stream().map(TotpUtils::hashBackupCode).toList();
         String backupCodesJson = JsonUtils.toJson(hashedCodes);
+
         long now = System.currentTimeMillis() / 1000L;
         WebAdmin updated = new WebAdmin(
-            adminId, newUsername.trim(), PasswordUtils.hash(newPassword), ownerRole.get().id(),
-            now, now, totpSecret, true, now, ip, "ACTIVE", "{}", backupCodesJson
+            adminId,
+            newUsername.trim(),
+            PasswordUtils.hash(newPassword),
+            ownerRole.get().id(),
+            now,
+            now,
+            totpSecret,
+            true,
+            now,
+            ip,
+            "ACTIVE",
+            "{}",
+            backupCodesJson
         );
         plugin.getDatabaseManager().saveAdmin(updated);
+
+        // Получаем сохранённую запись
         WebAdmin savedAdmin = plugin.getDatabaseManager().getAdminByUsername(newUsername.trim()).orElse(updated);
+
         if (plugin.getConfig().getBoolean("luckperms.sync-enabled", true)) {
             String ownerLpGroup = plugin.getConfig().getString("luckperms.owner-lp-group", "owner");
             plugin.getLuckPermsManager().assignGroup(newUsername.trim(), ownerLpGroup);
         }
         plugin.getCommandLogListener().refreshCache();
         plugin.getLogManager().logWebAction(newUsername.trim(), "Завершил первичную настройку панели" + (isDebug ? " (DEBUG MODE)" : " и активировал 2FA"));
+
         WebSession session = plugin.getSessionManager().createSession(savedAdmin, ownerRole.get(), ip, null);
         return new OnboardingResult(true, "Успешно", session, ownerRole.get(), plainBackupCodes);
     }
 
+    /**
+     * Подача заявки на регистрацию нового администратора/модератора.
+     * В стандартном режиме требует обязательной привязки 2FA, в debug-mode позволяет зарегистрироваться без QR.
+     */
     public synchronized RegisterResult registerCandidate(String username, String password, String totpSecret, String totpCode) {
         if (username == null || username.trim().length() < 2) {
             return new RegisterResult(RegisterStatus.INVALID_INPUT, "Слишком короткий никнейм", List.of());
@@ -133,32 +173,54 @@ public class AdminManager {
         if (plugin.getDatabaseManager().getAdminByUsername(username.trim()).isPresent()) {
             return new RegisterResult(RegisterStatus.ALREADY_EXISTS, "Пользователь с таким ником уже зарегистрирован", List.of());
         }
+
         boolean isDebug = plugin.isDebugMode();
         boolean codeValid = totpSecret != null && totpCode != null && TotpUtils.verifyCode(totpSecret, totpCode);
+
         if (!codeValid && !isDebug) {
             return new RegisterResult(RegisterStatus.INVALID_TOTP, "Неверный код Google Authenticator", List.of());
         }
+
         if (totpSecret == null || totpSecret.isBlank()) {
             totpSecret = TotpUtils.generateSecret();
         }
+
         Optional<WebRole> modRole = plugin.getDatabaseManager().getRoleByName("Модератор");
         int roleId = modRole.map(WebRole::id).orElse(1);
+
         List<String> plainBackupCodes = TotpUtils.generateBackupCodes(8);
         List<String> hashedCodes = plainBackupCodes.stream().map(TotpUtils::hashBackupCode).toList();
         String backupCodesJson = JsonUtils.toJson(hashedCodes);
+
         long now = System.currentTimeMillis() / 1000L;
         WebAdmin candidate = new WebAdmin(
-            0, username.trim(), PasswordUtils.hash(password), roleId,
-            now, 0, totpSecret, true, 0, null, "PENDING_APPROVAL", "{}", backupCodesJson
+            0,
+            username.trim(),
+            PasswordUtils.hash(password),
+            roleId,
+            now,
+            0,
+            totpSecret,
+            true,
+            0,
+            null,
+            "PENDING_APPROVAL",
+            "{}",
+            backupCodesJson
         );
         plugin.getDatabaseManager().saveAdmin(candidate);
         plugin.getLogManager().logWebAction(username.trim(), "Подал заявку на регистрацию в WebAdmin" + (isDebug ? " (DEBUG MODE)" : ""));
+
         if (plugin.getSecurityWebhookService() != null) {
             plugin.getSecurityWebhookService().sendRegistrationAlert(username.trim(), modRole.map(WebRole::name).orElse("Модератор"));
         }
+
         return new RegisterResult(RegisterStatus.PENDING, "Заявка успешно отправлена и ожидает утверждения главным администратором", plainBackupCodes);
     }
 
+    /**
+     * Вход в систему с проверкой пароля, статуса и необходимости 2FA.
+     */
     public LoginResult login(String username, String password, String ip) {
         return login(username, password, ip, null);
     }
@@ -166,33 +228,45 @@ public class AdminManager {
     public LoginResult login(String username, String password, String ip, String userAgent) {
         Optional<WebAdmin> adminOpt = plugin.getDatabaseManager().getAdminByUsername(username);
         if (adminOpt.isEmpty()) return new LoginResult(LoginStatus.NOT_FOUND, null, null, null);
+
         WebAdmin admin = adminOpt.get();
+
         if ("NEED_ONBOARDING".equalsIgnoreCase(admin.status())) {
             if (!PasswordUtils.verify(password, admin.passwordHash())) {
                 return new LoginResult(LoginStatus.INVALID_CREDENTIALS, null, null, null);
             }
             return new LoginResult(LoginStatus.NEED_ONBOARDING, null, null, admin);
         }
+
         if ("PENDING_APPROVAL".equalsIgnoreCase(admin.status())) {
             return new LoginResult(LoginStatus.PENDING_APPROVAL, null, null, admin);
         }
+
         if (admin.passwordHash() == null) {
             return new LoginResult(LoginStatus.NEED_SET_PASSWORD, null, null, admin);
         }
+
         if (!PasswordUtils.verify(password, admin.passwordHash())) {
             return new LoginResult(LoginStatus.INVALID_CREDENTIALS, null, null, null);
         }
+
+        // Проверка 2FA (раз в неделю или при смене IP), если не в режиме отладки
         if (admin.totpEnabled() && !plugin.isDebugMode()) {
             long now = System.currentTimeMillis() / 1000L;
             boolean ipChanged = admin.last2faIp() == null || !admin.last2faIp().equals(ip);
             boolean weekPassed = (now - admin.last2faAt()) >= SEVEN_DAYS_SECONDS;
+
             if (ipChanged || weekPassed) {
                 return new LoginResult(LoginStatus.NEED_2FA, null, null, admin);
             }
         }
+
         return completeLogin(admin, ip, userAgent);
     }
 
+    /**
+     * Подтверждение входа 6-значным кодом TOTP или 8-значным резервным кодом.
+     */
     public LoginResult verify2fa(String username, String code, String ip) {
         return verify2fa(username, code, ip, null);
     }
@@ -200,11 +274,14 @@ public class AdminManager {
     public LoginResult verify2fa(String username, String code, String ip, String userAgent) {
         Optional<WebAdmin> adminOpt = plugin.getDatabaseManager().getAdminByUsername(username);
         if (adminOpt.isEmpty()) return new LoginResult(LoginStatus.NOT_FOUND, null, null, null);
+
         WebAdmin admin = adminOpt.get();
         if (!admin.totpEnabled() || admin.totpSecret() == null || plugin.isDebugMode()) {
             return completeLogin(admin, ip, userAgent);
         }
+
         boolean codeValid = TotpUtils.verifyCode(admin.totpSecret(), code);
+
         if (!codeValid && code != null) {
             String norm = TotpUtils.normalizeBackupCode(code);
             if (norm.length() == 8) {
@@ -217,9 +294,11 @@ public class AdminManager {
                 }
             }
         }
+
         if (!codeValid) {
             return new LoginResult(LoginStatus.INVALID_CREDENTIALS, null, null, null);
         }
+
         long now = System.currentTimeMillis() / 1000L;
         plugin.getDatabaseManager().updateAdmin2faSuccess(admin.id(), now, ip);
         return completeLogin(admin, ip, userAgent);
@@ -232,19 +311,23 @@ public class AdminManager {
     public LoginResult completeLogin(WebAdmin admin, String ip, String userAgent) {
         WebRole role = plugin.getDatabaseManager().getRoleById(admin.roleId()).orElseThrow();
         WebSession session = plugin.getSessionManager().createSession(admin, role, ip, userAgent);
+
         long now = System.currentTimeMillis() / 1000L;
         plugin.getDatabaseManager().updateAdminLastLogin(admin.id(), now);
         plugin.getLogManager().logWebAction(admin.username(), "Вошёл в систему");
+
         if (plugin.getSecurityWebhookService() != null) {
             boolean isNewIp = admin.last2faIp() == null || !admin.last2faIp().equals(ip);
             plugin.getSecurityWebhookService().sendLoginAlert(admin.username(), ip, userAgent, isNewIp);
         }
+
         return new LoginResult(LoginStatus.SUCCESS, session, role, admin);
     }
 
     public List<String> regenerateBackupCodes(int adminId) {
         Optional<WebAdmin> adminOpt = plugin.getDatabaseManager().getAdminById(adminId);
         if (adminOpt.isEmpty()) return List.of();
+
         List<String> plainCodes = TotpUtils.generateBackupCodes(8);
         List<String> hashedCodes = plainCodes.stream().map(TotpUtils::hashBackupCode).toList();
         plugin.getDatabaseManager().updateAdminBackupCodes(adminId, JsonUtils.toJson(hashedCodes));
@@ -257,6 +340,7 @@ public class AdminManager {
         if (targetOpt.isEmpty()) return false;
         Optional<WebRole> roleOpt = plugin.getDatabaseManager().getRoleById(roleId);
         if (roleOpt.isEmpty()) return false;
+
         boolean ok = plugin.getDatabaseManager().approveAdmin(targetId, roleId);
         if (ok) {
             plugin.getLogManager().logWebAction(actorUsername,
@@ -272,6 +356,7 @@ public class AdminManager {
     public boolean rejectPendingAdmin(String actorUsername, int targetId) {
         Optional<WebAdmin> targetOpt = plugin.getDatabaseManager().getAdminById(targetId);
         if (targetOpt.isEmpty()) return false;
+
         boolean ok = plugin.getDatabaseManager().rejectAdmin(targetId);
         if (ok) {
             plugin.getLogManager().logWebAction(actorUsername, "Отклонил заявку администратора " + targetOpt.get().username());
@@ -285,6 +370,7 @@ public class AdminManager {
         }
         Optional<WebRole> roleOpt = plugin.getDatabaseManager().getRoleById(roleId);
         if (roleOpt.isEmpty()) return AddResult.ROLE_NOT_FOUND;
+
         long now = System.currentTimeMillis() / 1000L;
         WebAdmin admin = new WebAdmin(
             0, username, null, roleId, now, 0,
@@ -293,6 +379,7 @@ public class AdminManager {
         plugin.getDatabaseManager().saveAdmin(admin);
         plugin.getLogManager().logWebAction(actorUsername,
             "Добавил администратора " + username + " с ролью " + roleOpt.get().name());
+
         if (plugin.getConfig().getBoolean("luckperms.sync-enabled", true) && roleOpt.get().lpGroup() != null) {
             plugin.getLuckPermsManager().assignGroup(username, roleOpt.get().lpGroup());
         }
@@ -302,13 +389,16 @@ public class AdminManager {
 
     public DeleteAdminResult deleteAdmin(String actorUsername, int actorId, int targetId) {
         if (actorId == targetId) return DeleteAdminResult.CANNOT_DELETE_SELF;
+
         Optional<WebAdmin> targetOpt = plugin.getDatabaseManager().getAdminById(targetId);
         if (targetOpt.isEmpty()) return DeleteAdminResult.NOT_FOUND;
+
         WebAdmin target = targetOpt.get();
         Optional<WebRole> roleOpt = plugin.getDatabaseManager().getRoleById(target.roleId());
         if (roleOpt.isPresent() && roleOpt.get().isOwner() && isLastOwner(targetId)) {
             return DeleteAdminResult.CANNOT_DELETE_LAST_OWNER;
         }
+
         plugin.getDatabaseManager().deleteAdmin(targetId);
         plugin.getDatabaseManager().deleteSessionsForAdmin(targetId);
         plugin.getSessionManager().invalidateSessionsForAdmin(targetId);
@@ -327,6 +417,7 @@ public class AdminManager {
     public boolean resetPassword(String actorUsername, int targetId) {
         Optional<WebAdmin> targetOpt = plugin.getDatabaseManager().getAdminById(targetId);
         if (targetOpt.isEmpty()) return false;
+
         plugin.getDatabaseManager().setAdminPassword(targetId, null);
         plugin.getDatabaseManager().deleteSessionsForAdmin(targetId);
         plugin.getSessionManager().invalidateSessionsForAdmin(targetId);
@@ -340,11 +431,14 @@ public class AdminManager {
         if (targetOpt.isEmpty()) return false;
         Optional<WebRole> newRoleOpt = plugin.getDatabaseManager().getRoleById(newRoleId);
         if (newRoleOpt.isEmpty()) return false;
+
         String oldRoleName = plugin.getDatabaseManager().getRoleById(targetOpt.get().roleId())
             .map(WebRole::name).orElse("?");
+
         plugin.getDatabaseManager().updateAdminRole(targetId, newRoleId);
         plugin.getLogManager().logWebAction(actorUsername,
             "Смена роли: " + targetOpt.get().username() + " | " + oldRoleName + " → " + newRoleOpt.get().name());
+
         if (plugin.getConfig().getBoolean("luckperms.sync-enabled", true) && newRoleOpt.get().lpGroup() != null) {
             plugin.getLuckPermsManager().assignGroup(targetOpt.get().username(), newRoleOpt.get().lpGroup());
         }

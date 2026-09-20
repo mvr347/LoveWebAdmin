@@ -1810,26 +1810,16 @@ tr:hover td {
     margin-bottom: 12px;
 }
 
-.totp-qr-box canvas {
-    display: block !important;
+.totp-qr-box { overflow: hidden; }
+.totp-qr-box > img,
+.totp-qr-box > canvas {
+    display: block;
     width: 180px !important;
     height: 180px !important;
     margin: 0 auto;
 }
-
-.totp-qr-box img {
-    display: block !important;
-    width: 180px !important;
-    height: 180px !important;
-    margin: 0 auto;
-}
-
-.totp-qr-box svg {
-    display: block !important;
-    width: 180px !important;
-    height: 180px !important;
-    margin: 0 auto;
-}
+.totp-qr-box > img ~ canvas { display: none !important; }
+.totp-qr-box svg { display: none !important; }
 
 /* 2FA Method Selector Switch */
 .totp-method-toggle {

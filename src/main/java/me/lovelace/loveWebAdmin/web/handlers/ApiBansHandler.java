@@ -61,6 +61,14 @@ public class ApiBansHandler extends ApiHandlerSupport {
             return;
         }
 
+        if ("/archive".equals(pathInfo)) {
+            var files = plugin.getBanArchiveManager() != null
+                ? plugin.getBanArchiveManager().listArchiveFiles()
+                : List.<String>of();
+            sendSuccess(resp, Map.of("files", files, "retentionDays", 90));
+            return;
+        }
+
         if (pathInfo.startsWith("/")) {
             try {
                 int id = Integer.parseInt(pathInfo.substring(1));
@@ -137,6 +145,15 @@ public class ApiBansHandler extends ApiHandlerSupport {
         if (body.get("screenshotUrl") != null && !String.valueOf(body.get("screenshotUrl")).isBlank()) {
             proofUrls.add(String.valueOf(body.get("screenshotUrl")));
         }
+        try {
+            if (plugin.getProofStorage() != null) {
+                proofUrls = new java.util.ArrayList<>(plugin.getProofStorage().normalizeProofs(proofUrls));
+            }
+        } catch (IllegalArgumentException ex) {
+            sendError(resp, 400, ex.getMessage());
+            return;
+        }
+
 
         if (targetName == null || targetName.isBlank() || ruleReason == null || ruleReason.isBlank()) {
             sendError(resp, 400, "Укажите имя игрока и причину (пункт правил)");

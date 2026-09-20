@@ -928,7 +928,7 @@
     }
 
     function validatePasswordClient(p) {
-        if (!p || p.length < 10) return 'Минимум 10 символов';
+        if (!p || p.length < 10) return 'Минимум 12 символов';
         if (!/[A-Za-zА-Яа-я]/.test(p)) return 'Нужна хотя бы одна буква';
         if (!/\d/.test(p)) return 'Нужна хотя бы одна цифра';
         if (!/[^A-Za-zА-Яа-я0-9]/.test(p)) return 'Нужен спецсимвол';
@@ -938,7 +938,7 @@
     function updatePasswordMeter(password, fillEl, hintsEl) {
         if (!fillEl) return;
         const p = password || '';
-        const hasLen = p.length >= 10;
+        const hasLen = p.length >= 12;
         const hasLetter = /[A-Za-zА-Яа-я]/.test(p);
         const hasDigit = /\d/.test(p);
         const hasSpecial = /[^A-Za-zА-Яа-я0-9]/.test(p);
@@ -1245,13 +1245,13 @@
                     <label>Придумайте пароль *</label>
                     <input type="password" id="reg-password"
                            autocomplete="new-password"
-                           placeholder="Минимум 10 символов"
+                           placeholder="Минимум 12 символов"
                            passwordrules="minlength: 10; required: lower; required: upper; required: digit; required: special;" required>
                     <div class="password-strength-bar">
                         <div class="password-strength-fill" id="reg-pass-strength-fill"></div>
                     </div>
                     <div class="password-strength-hints" id="reg-pass-strength-hints">
-                        <span class="invalid">• 10+ симв.</span>
+                        <span class="invalid">• 12+ симв.</span>
                         <span class="invalid">• буква</span>
                         <span class="invalid">• цифра</span>
                         <span class="invalid">• спецсимвол</span>
@@ -1267,7 +1267,7 @@
                 <div style="margin-top:16px; margin-bottom:12px;">
                     <div style="font-weight:700; font-size:13px; color:var(--text-heading); margin-bottom:4px;">Двухфакторная защита (2FA)</div>
                     <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">
-                        Отсканируйте QR в Google Authenticator или Aegis. Кликните по QR для обновления ключа.
+                        Отсканируйте QR в Google Authenticator. Кликните по QR для обновления ключа.
                     </div>
                 </div>
 
@@ -1306,20 +1306,22 @@
 
         bindTotpInput(totpInput);
 
-        let currentSecret = '';
+        let currentSecret = inviteData.totpSecret || '';
+        if (currentSecret && qrBox) {
+            renderTotpQrCode(qrBox, inviteData.otpUrl || ('otpauth://totp/WebAdmin:' + encodeURIComponent(username) + '?secret=' + currentSecret + '&issuer=WebAdmin'));
+        }
+        if (currentSecret && secretContainer) renderSecretMasked(secretContainer, currentSecret);
 
         const fetchAndRenderTotp = async () => {
             try {
-                const res = await api('GET', `/api/auth/totp-setup?username=${encodeURIComponent(username)}`);
-                currentSecret = res.secret;
+                const res = await api('POST', '/api/auth/validate-invite', { code: inviteCode });
+                currentSecret = res.totpSecret || res.secret || currentSecret;
                 if (qrBox) renderTotpQrCode(qrBox, res.otpUrl);
-                if (secretContainer) renderSecretMasked(secretContainer, res.secret);
+                if (secretContainer) renderSecretMasked(secretContainer, currentSecret);
             } catch (e) {
                 console.error('TOTP setup error:', e);
             }
         };
-
-        await fetchAndRenderTotp();
 
         qrBox?.addEventListener('click', async () => {
             await fetchAndRenderTotp();
@@ -1334,7 +1336,7 @@
             e.preventDefault();
             const password = passInput.value;
             const pass2 = pass2Input.value;
-            const digitsOnly = (totpInput.value || '').replace(/\D/g, '');
+            const digitsOnly = normalizeAuthCode(totpInput.value || '');
             const errEl = document.getElementById('reg-final-err');
             const submitBtn = document.getElementById('btn-reg-finish');
 
@@ -1387,12 +1389,12 @@
             <div class="auth-screen">
                 <div class="auth-card">
                     <div class="logo"><span style="color:var(--accent);">◈</span> 2FA Подтверждение</div>
-                    <div class="sub">Вход для аккаунта <b>${esc(username)}</b>. Введите 6 цифр из приложения Google Authenticator или 8-значный резервной код:</div>
+                    <div class="sub">Вход для аккаунта <b>${esc(username)}</b>. Код из Google Authenticator (000-000) или резервный код (XXXX-XXXX) — в это же поле.</div>
                     ${isDebug ? `<div class="auth-debug-badge" style="display:inline-flex; align-items:center; gap:6px;">${renderSvgIcon('zap', 'violet', 13)} Режим отладки: можно войти без ввода кода из приложения</div>` : ''}
                     <form id="form-2fa">
                         <div class="form-group">
                             <label>Код подтверждения</label>
-                            <input type="text" id="code-2fa" class="totp-input-masked" inputmode="numeric" autocomplete="one-time-code" placeholder="000-000" maxlength="8" autofocus
+                            <input type="text" id="code-2fa" class="totp-input-masked" inputmode="numeric" autocomplete="one-time-code" placeholder="000-000" maxlength="9" autofocus
                                    style="text-align:center; font-size:20px; font-weight:700; letter-spacing:4px;">
                         </div>
                         <div id="err-2fa" class="error" style="display:none;"></div>
@@ -1419,14 +1421,11 @@
             });
         }
 
-        const codeInput = document.getElementById('code-2fa');
-        bindTotpInput(codeInput);
+        bindLogin2faInput(document.getElementById('code-2fa'));
 
         document.getElementById('form-2fa')?.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const rawVal = document.getElementById('code-2fa').value.trim();
-            const digits = rawVal.replace(/\D/g, '');
-            const code = (digits.length === 6 ? digits : rawVal) || (isDebug ? 'debug' : '');
+            const code = normalizeAuthCode(document.getElementById('code-2fa').value) || (isDebug ? 'debug' : '');
             const err = document.getElementById('err-2fa');
             err.style.display = 'none';
 
@@ -1446,116 +1445,116 @@
         const isDebug = serverStatus && serverStatus.debugMode;
         app.innerHTML = `
             <div class="auth-screen">
-                <div class="auth-card" style="max-width:500px;">
-                    <div class="logo"><span style="color:var(--accent);">◈</span> Первичная настройка</div>
-                    <div class="sub">Добро пожаловать в WebAdmin! Создайте учетную запись главного администратора.</div>
-                    ${isDebug ? `<div class="auth-debug-badge" style="display:inline-flex; align-items:center; gap:6px;">${renderSvgIcon('zap', 'violet', 13)} Режим отладки: можно войти без сканирования QR-кода</div>` : ''}
-
+                <div class="auth-card" style="max-width:480px;">
+                    <div class="logo">Первичная настройка</div>
+                    <div class="sub">Создание учётной записи Управляющего</div>
+                    ${isDebug ? `<div class="auth-debug-badge">Режим отладки</div>` : ''}
                     <div class="stepper">
-                        <div class="step-item active">
-                            <span class="step-badge">1</span>
-                            <span>Аккаунт</span>
-                        </div>
+                        <div class="step-item active"><span class="step-badge">1</span> Токен</div>
                         <div class="step-connector"></div>
-                        <div class="step-item">
-                            <span class="step-badge">2</span>
-                            <span>2FA Защита</span>
-                        </div>
+                        <div class="step-item"><span class="step-badge">2</span> Пароль</div>
+                        <div class="step-connector"></div>
+                        <div class="step-item"><span class="step-badge">3</span> 2FA</div>
                     </div>
-
-                    <form id="onboard-form">
+                    <form id="ob-step1-form">
                         <div class="form-group">
-                            <label>Одноразовый токен настройки из консоли сервера *</label>
-                            <input type="text" id="ob-token" placeholder="Например: 6f8b... или lwa-setup-..." required style="font-family:'JetBrains Mono',monospace; letter-spacing:0.04em;">
-                            <div style="font-size:11px; color:var(--text-muted); margin-top:4px; line-height:1.4;">
-                                Сгенерируйте токен в консоли сервера командой: <code style="color:var(--accent); font-weight:700;">/lovewebadmin generatetoken</code>
+                            <label>Токен из консоли сервера *</label>
+                            <input type="text" id="ob-token" placeholder="LWA-..." required autofocus style="font-family:'JetBrains Mono',monospace;">
+                            <div style="font-size:11px;color:var(--text-muted);margin-top:6px;line-height:1.4;">
+                                Токен печатается в <b>консоль при запуске</b> сервера, если Управляющий ещё не создан.
                             </div>
                         </div>
-                        <div class="form-group">
-                            <label>Логин управляющего *</label>
-                            <input type="text" id="ob-user" placeholder="Например: Lovelace" required autofocus>
-                        </div>
-                        <div class="form-group">
-                            <label>Пароль *</label>
-                            <input type="password" id="ob-pass" placeholder="Минимум 10 символов" required>
-                        </div>
-                        <div id="ob-err" class="error" style="display:none;"></div>
-                        <button type="submit" class="primary" style="width:100%; margin-top:10px;">ПРОДОЛЖИТЬ (2FA)</button>
-                        ${isDebug ? `<button type="button" class="btn-debug-bypass" id="btn-ob-debug-direct" style="width:100%; margin-top:8px; display:inline-flex; align-items:center; justify-content:center; gap:6px;">${renderSvgIcon('zap', 'violet', 13)} СОЗДАТЬ И ВОЙТИ БЕЗ QR (ДЕБАГ)</button>` : ''}
+                        <div id="ob-step1-err" class="error" style="display:none;"></div>
+                        <button type="submit" class="primary" style="width:100%;">ДАЛЕЕ</button>
                     </form>
                 </div>
             </div>`;
-
-        if (isDebug) {
-            document.getElementById('btn-ob-debug-direct')?.addEventListener('click', async () => {
-                const setupToken = document.getElementById('ob-token').value.trim();
-                const username = document.getElementById('ob-user').value.trim();
-                const password = document.getElementById('ob-pass').value;
-                const err = document.getElementById('ob-err');
-                err.style.display = 'none';
-
-                if (!setupToken) {
-                    err.textContent = 'Укажите одноразовый токен из консоли сервера (/lovewebadmin generatetoken)';
-                    err.style.display = 'block';
-                    return;
-                }
-                if (username.length < 2) {
-                    err.textContent = 'Логин должен быть не менее 2 символов';
-                    err.style.display = 'block';
-                    return;
-                }
-                if (password.length < 10) {
-                    err.textContent = 'Пароль должен содержать минимум 10 символов';
-                    err.style.display = 'block';
-                    return;
-                }
-
-                try {
-                    const res = await api('POST', '/api/auth/setup-owner', {
-                        setupToken, username, password, totpSecret: 'debug', totpCode: 'debug'
-                    });
-                    setToken(res.token);
-                    me = await api('GET', '/api/me');
-                    renderBackupCodesScreen(username, res.backupCodes || [], () => {
-                        renderAppLayout();
-                    });
-                } catch (ex) {
-                    err.textContent = ex.message;
-                    err.style.display = 'block';
-                }
-            });
-        }
-
-        document.getElementById('onboard-form')?.addEventListener('submit', async (e) => {
+        document.getElementById('ob-step1-form')?.addEventListener('submit', (e) => {
             e.preventDefault();
             const setupToken = document.getElementById('ob-token').value.trim();
+            const err = document.getElementById('ob-step1-err');
+            if (!setupToken) { err.textContent = 'Укажите токен из консоли'; err.style.display = 'block'; return; }
+            renderMasterOnboardingPassword(setupToken);
+        });
+    }
+
+    function renderMasterOnboardingPassword(setupToken) {
+        const isDebug = serverStatus && serverStatus.debugMode;
+        app.innerHTML = `
+            <div class="auth-screen">
+                <div class="auth-card" style="max-width:480px;">
+                    <div class="logo">Аккаунт</div>
+                    <div class="sub">Логин и пароль Управляющего</div>
+                    <div class="stepper">
+                        <div class="step-item completed"><span class="step-badge">✓</span> Токен</div>
+                        <div class="step-connector"></div>
+                        <div class="step-item active"><span class="step-badge">2</span> Пароль</div>
+                        <div class="step-connector"></div>
+                        <div class="step-item"><span class="step-badge">3</span> 2FA</div>
+                    </div>
+                    <form id="ob-step2-form">
+                        <div class="form-group">
+                            <label>Логин *</label>
+                            <input type="text" id="ob-user" required autofocus autocomplete="username">
+                        </div>
+                        <div class="form-group">
+                            <label>Пароль *</label>
+                            <input type="password" id="ob-pass" placeholder="Минимум 12 символов" required autocomplete="new-password">
+                            <div class="password-strength-bar"><div class="password-strength-fill" id="ob-pass-fill"></div></div>
+                            <div class="password-strength-hints" id="ob-pass-hints">
+                                <span class="invalid">• 12+</span><span class="invalid">• а/А</span>
+                                <span class="invalid">• цифра</span><span class="invalid">• спец</span>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Повтор пароля *</label>
+                            <input type="password" id="ob-pass2" required autocomplete="new-password">
+                        </div>
+                        <div id="ob-step2-err" class="error" style="display:none;"></div>
+                        <button type="submit" class="primary" style="width:100%;">ДАЛЕЕ — 2FA</button>
+                        ${isDebug ? `<button type="button" class="btn-debug-bypass" id="btn-ob-debug" style="width:100%;margin-top:8px;">БЕЗ 2FA (ОТЛАДКА)</button>` : ''}
+                        <button type="button" class="secondary" id="btn-ob-back1" style="width:100%;margin-top:8px;">НАЗАД</button>
+                    </form>
+                </div>
+            </div>`;
+        const passInput = document.getElementById('ob-pass');
+        passInput?.addEventListener('input', () => updatePasswordMeter(passInput.value, document.getElementById('ob-pass-fill'), document.getElementById('ob-pass-hints')));
+        document.getElementById('btn-ob-back1')?.addEventListener('click', () => renderMasterOnboarding());
+        if (isDebug) {
+            document.getElementById('btn-ob-debug')?.addEventListener('click', async () => {
+                const username = document.getElementById('ob-user').value.trim();
+                const password = document.getElementById('ob-pass').value;
+                const err = document.getElementById('ob-step2-err');
+                const pe = validatePasswordClient(password);
+                if (pe) { err.textContent = pe; err.style.display = 'block'; return; }
+                try {
+                    const res = await api('POST', '/api/auth/setup-owner', { setupToken, username, password, totpSecret: 'debug', totpCode: 'debug' });
+                    setToken(res.token);
+                    me = await api('GET', '/api/me');
+                    renderBackupCodesScreen(username, res.backupCodes || [], () => renderAppLayout());
+                } catch (ex) { err.textContent = ex.message; err.style.display = 'block'; }
+            });
+        }
+        document.getElementById('ob-step2-form')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
             const username = document.getElementById('ob-user').value.trim();
             const password = document.getElementById('ob-pass').value;
-            const err = document.getElementById('ob-err');
+            const pass2 = document.getElementById('ob-pass2').value;
+            const err = document.getElementById('ob-step2-err');
+            const btn = e.target.querySelector('button[type="submit"]');
             err.style.display = 'none';
-
-            if (!setupToken) {
-                err.textContent = 'Укажите одноразовый токен из консоли сервера (/lovewebadmin generatetoken)';
-                err.style.display = 'block';
-                return;
-            }
-            if (username.length < 2) {
-                err.textContent = 'Логин должен быть не менее 2 символов';
-                err.style.display = 'block';
-                return;
-            }
-            if (password.length < 10) {
-                err.textContent = 'Пароль должен содержать минимум 10 символов';
-                err.style.display = 'block';
-                return;
-            }
-
+            if (!username || username.toLowerCase() === 'admin') { err.textContent = 'Укажите персональный логин'; err.style.display = 'block'; return; }
+            const pe = validatePasswordClient(password);
+            if (pe) { err.textContent = pe; err.style.display = 'block'; return; }
+            if (password !== pass2) { err.textContent = 'Пароли не совпадают'; err.style.display = 'block'; return; }
+            btn.disabled = true; btn.textContent = 'ПОДГОТОВКА 2FA...';
             try {
-                const totp = await api('GET', `/api/auth/totp-setup?username=${encodeURIComponent(username)}`);
+                const totp = await api('POST', '/api/auth/prepare-setup-owner', { setupToken, username });
                 renderMasterOnboarding2fa(username, password, setupToken, totp.secret, totp.otpUrl);
             } catch (ex) {
-                err.textContent = ex.message;
+                err.textContent = ex.message || 'Проверьте токен';
                 err.style.display = 'block';
+                btn.disabled = false; btn.textContent = 'ДАЛЕЕ — 2FA';
             }
         });
     }
@@ -1565,124 +1564,75 @@
         app.innerHTML = `
             <div class="auth-screen">
                 <div class="auth-card" style="max-width:500px;">
-                    <div class="logo"><span style="color:var(--accent);">◈</span> Привязка 2FA</div>
-                    ${isDebug ? `<div class="auth-debug-badge" style="display:inline-flex; align-items:center; gap:6px;">${renderSvgIcon('zap', 'violet', 13)} Режим отладки: QR код необязателен</div>` : ''}
+                    <div class="logo">Привязка 2FA</div>
+                    <div class="sub">Аккаунт <b>${esc(username)}</b>. QR в <b>Google Authenticator</b>.</div>
                     <div class="stepper">
-                        <div class="step-item completed">
-                            <span class="step-badge">${renderSvgIcon('check', 'green', 11)}</span>
-                            <span>Аккаунт</span>
-                        </div>
+                        <div class="step-item completed"><span class="step-badge">✓</span> Токен</div>
                         <div class="step-connector"></div>
-                        <div class="step-item active">
-                            <span class="step-badge">2</span>
-                            <span>2FA Защита</span>
-                        </div>
+                        <div class="step-item completed"><span class="step-badge">✓</span> Пароль</div>
+                        <div class="step-connector"></div>
+                        <div class="step-item active"><span class="step-badge">3</span> 2FA</div>
                     </div>
-
                     <div class="totp-method-toggle">
-                        <button type="button" class="totp-toggle-btn active" id="ob-toggle-qr" style="display:inline-flex; align-items:center; justify-content:center; gap:6px;">${renderSvgIcon('phone', 'violet', 13)} QR-код</button>
-                        <button type="button" class="totp-toggle-btn" id="ob-toggle-code" style="display:inline-flex; align-items:center; justify-content:center; gap:6px;">${renderSvgIcon('key', 'violet', 13)} Секретный код</button>
+                        <button type="button" class="totp-toggle-btn active" id="ob-tab-qr">QR-код</button>
+                        <button type="button" class="totp-toggle-btn" id="ob-tab-code">Секретный код</button>
                     </div>
-
-                    <div id="ob-pane-qr" class="totp-method-pane">
-                        <div class="sub" style="margin-bottom:12px;">Отсканируйте QR-код в <b>Google Authenticator</b> или <b>Aegis</b>:</div>
-                        <div class="totp-qr-wrapper">
-                            <div class="totp-qr-box" id="ob-qrcode-box"></div>
-                            <a href="${esc(otpUrl)}" class="totp-copy-btn" style="text-decoration:none; margin-top:2px; display:inline-flex; align-items:center; gap:6px;">
-                                ${renderSvgIcon('zap', 'violet', 13)} Открыть в приложении Authenticator
-                            </a>
-                        </div>
+                    <div id="ob-pane-qr">
+                        <div class="totp-qr-wrapper"><div class="totp-qr-box" id="ob-qrcode-box" title="Клик — обновить"></div></div>
                     </div>
-
-                    <div id="ob-pane-code" class="totp-method-pane" style="display:none;">
-                        <div class="sub" style="margin-bottom:12px;">Введите ключ вручную в приложении Authenticator:</div>
-                        <div class="totp-secret-box" style="margin-bottom:16px;">
-                            <span class="totp-secret-code" title="${esc(totpSecret)}">${esc(totpSecret)}</span>
-                            <button type="button" class="totp-copy-btn" id="btn-copy-ob-secret" style="display:inline-flex; align-items:center; gap:6px;">${renderSvgIcon('copy', 'gray', 13)} Скопировать</button>
-                        </div>
-                    </div>
-
+                    <div id="ob-pane-code" style="display:none;"><div id="ob-secret-box"></div></div>
                     <form id="ob-2fa-form">
                         <div class="form-group">
-                            <label>6-значный код подтверждения из приложения</label>
-                            <input type="text" id="ob-code" placeholder="123456" maxlength="6" inputmode="numeric" pattern="[0-9]*" ${isDebug ? '' : 'required'} autofocus
-                                   style="text-align:center; font-size:22px; font-weight:700; letter-spacing:6px; font-family:'JetBrains Mono';">
+                            <label>Код из приложения</label>
+                            <input type="text" id="ob-code" placeholder="000-000" maxlength="7" required autofocus
+                                   style="text-align:center;font-size:20px;font-weight:700;letter-spacing:4px;font-family:'JetBrains Mono',monospace;">
                         </div>
                         <div id="ob-2fa-err" class="error" style="display:none;"></div>
-                        <button type="submit" class="primary" id="btn-ob-finish" style="width:100%; margin-top:10px;">ЗАВЕРШИТЬ НАСТРОЙКУ</button>
-                        ${isDebug ? `<button type="button" class="btn-debug-bypass" id="btn-ob-debug-finish" style="width:100%; margin-top:8px; display:inline-flex; align-items:center; justify-content:center; gap:6px;">${renderSvgIcon('zap', 'violet', 13)} ЗАВЕРШИТЬ БЕЗ ВВОДА QR (РЕЖИМ ОТЛАДКИ)</button>` : ''}
-                        <button type="button" class="secondary" id="btn-ob-back" style="width:100%; margin-top:8px;">← НАЗАД К ШАГУ 1</button>
+                        <button type="submit" class="primary" id="btn-ob-finish" style="width:100%;">ЗАВЕРШИТЬ НАСТРОЙКУ</button>
+                        <button type="button" class="secondary" id="btn-ob-back2" style="width:100%;margin-top:8px;">НАЗАД</button>
                     </form>
                 </div>
             </div>`;
-
         renderTotpQrCode(document.getElementById('ob-qrcode-box'), otpUrl);
-        setupSecretCopy('btn-copy-ob-secret', totpSecret);
-
-        const obTabQr = document.getElementById('ob-toggle-qr');
-        const obTabCode = document.getElementById('ob-toggle-code');
-        const obPaneQr = document.getElementById('ob-pane-qr');
-        const obPaneCode = document.getElementById('ob-pane-code');
-        obTabQr?.addEventListener('click', () => {
-            obTabQr.classList.add('active');
-            obTabCode?.classList.remove('active');
-            if (obPaneQr) obPaneQr.style.display = 'block';
-            if (obPaneCode) obPaneCode.style.display = 'none';
+        if (typeof renderSecretMasked === 'function') renderSecretMasked(document.getElementById('ob-secret-box'), totpSecret);
+        bindTotpInput(document.getElementById('ob-code'));
+        document.getElementById('ob-tab-qr')?.addEventListener('click', () => {
+            document.getElementById('ob-tab-qr').classList.add('active');
+            document.getElementById('ob-tab-code').classList.remove('active');
+            document.getElementById('ob-pane-qr').style.display = 'block';
+            document.getElementById('ob-pane-code').style.display = 'none';
         });
-        obTabCode?.addEventListener('click', () => {
-            obTabCode.classList.add('active');
-            obTabQr?.classList.remove('active');
-            if (obPaneCode) obPaneCode.style.display = 'block';
-            if (obPaneQr) obPaneQr.style.display = 'none';
+        document.getElementById('ob-tab-code')?.addEventListener('click', () => {
+            document.getElementById('ob-tab-code').classList.add('active');
+            document.getElementById('ob-tab-qr').classList.remove('active');
+            document.getElementById('ob-pane-code').style.display = 'block';
+            document.getElementById('ob-pane-qr').style.display = 'none';
         });
-
-        document.getElementById('btn-ob-back')?.addEventListener('click', () => {
-            renderMasterOnboarding();
+        document.getElementById('btn-ob-back2')?.addEventListener('click', () => renderMasterOnboardingPassword(setupToken));
+        document.getElementById('ob-qrcode-box')?.addEventListener('click', async () => {
+            try {
+                const totp = await api('POST', '/api/auth/prepare-setup-owner', { setupToken, username });
+                totpSecret = totp.secret; otpUrl = totp.otpUrl;
+                renderTotpQrCode(document.getElementById('ob-qrcode-box'), otpUrl);
+                if (typeof renderSecretMasked === 'function') renderSecretMasked(document.getElementById('ob-secret-box'), totpSecret);
+            } catch (e) { showToast('2FA', e.message || 'Ошибка', 'error'); }
         });
-
-        if (isDebug) {
-            document.getElementById('btn-ob-debug-finish')?.addEventListener('click', async () => {
-                const err = document.getElementById('ob-2fa-err');
-                err.style.display = 'none';
-                try {
-                    const res = await api('POST', '/api/auth/setup-owner', {
-                        setupToken, username, password, totpSecret, totpCode: 'debug'
-                    });
-                    setToken(res.token);
-                    me = await api('GET', '/api/me');
-                    renderBackupCodesScreen(username, res.backupCodes || [], () => {
-                        renderAppLayout();
-                    });
-                } catch (ex) {
-                    err.textContent = ex.message;
-                    err.style.display = 'block';
-                }
-            });
-        }
-
         document.getElementById('ob-2fa-form')?.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const code = document.getElementById('ob-code').value.trim() || (isDebug ? 'debug' : '');
+            const code = normalizeAuthCode(document.getElementById('ob-code').value) || (isDebug ? 'debug' : '');
             const err = document.getElementById('ob-2fa-err');
             const btn = document.getElementById('btn-ob-finish');
             err.style.display = 'none';
-            btn.disabled = true;
-            btn.textContent = 'ПРОВЕРКА...';
-
+            if (code.length !== 6 && !isDebug) { err.textContent = 'Введите 6 цифр'; err.style.display = 'block'; return; }
+            btn.disabled = true; btn.textContent = 'ПРОВЕРКА...';
             try {
-                const res = await api('POST', '/api/auth/setup-owner', {
-                    setupToken, username, password, totpSecret, totpCode: code
-                });
+                const res = await api('POST', '/api/auth/setup-owner', { setupToken, username, password, totpSecret, totpCode: code });
                 setToken(res.token);
                 me = await api('GET', '/api/me');
-                renderBackupCodesScreen(username, res.backupCodes || [], () => {
-                    renderAppLayout();
-                });
+                renderBackupCodesScreen(username, res.backupCodes || [], () => renderAppLayout());
             } catch (ex) {
-                err.textContent = ex.message;
-                err.style.display = 'block';
-                btn.disabled = false;
-                btn.textContent = 'ЗАВЕРШИТЬ НАСТРОЙКУ';
+                err.textContent = ex.message; err.style.display = 'block';
+                btn.disabled = false; btn.textContent = 'ЗАВЕРШИТЬ НАСТРОЙКУ';
             }
         });
     }
@@ -3132,7 +3082,7 @@
                     <p>Единый центр обработки жалоб игроков, управления банами и работы с апелляциями</p>
                 </div>
                 <div class="view-actions" id="punishments-top-actions">
-                    <button type="button" class="primary" id="btn-create-ban-top">+ ВЫДАТЬ БАН</button>
+                    <button type="button" class="primary" id="btn-ban-archive" class="secondary">Архив</button><button type="button" class="primary" id="btn-create-ban-top">+ ВЫДАТЬ БАН</button>
                 </div>
             </div>
 
@@ -3158,6 +3108,16 @@
         `;
 
         document.getElementById('btn-create-ban-top')?.addEventListener('click', () => openQuickBanModal(''));
+        document.getElementById('btn-ban-archive')?.addEventListener('click', async () => {
+            try {
+                const data = await api('GET', '/api/bans/archive');
+                const files = data.files || [];
+                openModal(`<div class="modal-header"><h3>Архив банов</h3><button type="button" class="close-btn" data-modal-close="true">×</button></div>
+                <div class="modal-body"><p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">Zip: plugins/LoveWebAdmin/archive/ (${data.retentionDays||90} дн.)</p>
+                ${files.length ? '<ul style="font-size:13px;">'+files.map(f=>'<li>'+esc(f)+'</li>').join('')+'</ul>' : '<div style="text-align:center;color:var(--text-dim);padding:16px;">Пусто</div>'}</div>
+                <div class="modal-footer"><button type="button" class="secondary" data-modal-close="true">ЗАКРЫТЬ</button></div>`);
+            } catch (e) { showToast('Архив', e.message||'Ошибка','error'); }
+        });
 
         // Auto-refresh pollers for punishments
         pollers['punishments_sync'] = setInterval(() => {
