@@ -1005,10 +1005,19 @@
     function bindTotpInput(input) {
         if (!input) return;
         input.classList.add('totp-input-masked');
+        input.setAttribute('placeholder', '000-000');
+        input.setAttribute('maxlength', '7');
+        input.setAttribute('inputmode', 'numeric');
+        input.setAttribute('autocomplete', 'one-time-code');
         input.addEventListener('input', () => {
-            let d = input.value.replace(/\D/g, '').slice(0, 6);
+            let d = (input.value || '').replace(/\D/g, '').slice(0, 6);
             input.value = d.length > 3 ? d.slice(0, 3) + '-' + d.slice(3) : d;
         });
+    }
+
+    /** Убирает пробелы и дефисы из кода 2FA (000-000 → 000000) */
+    function normalizeAuthCode(value) {
+        return (value || '').trim().replace(/[\s-]/g, '');
     }
 
     function setupSecretCopy(buttonId, textToCopy) {
@@ -1240,7 +1249,7 @@
                 <div style="font-size:12px; color:var(--text-muted); margin-top:3px;">Назначенная роль: <b style="color:var(--accent);">${esc(roleName)}</b></div>
             </div>
 
-            <form id="invite-reg-final-form">
+            <form id="invite-reg-final-form" novalidate>
                 <div class="form-group">
                     <label>Придумайте пароль *</label>
                     <input type="password" id="reg-password"
@@ -1275,15 +1284,18 @@
                     <div class="totp-qr-box" id="reg-qrcode-box" title="Нажмите, чтобы перегенерировать QR-код" style="cursor:pointer;"></div>
                 </div>
 
-                <div class="form-group">
-                    <label>Секретный ключ (для ручного ввода)</label>
+                <div class="form-group" style="margin-bottom:8px;">
+                    <label>Секретный ключ (для ручного ввода в приложение)</label>
                     <div id="reg-secret-container"></div>
                 </div>
 
-                <div class="form-group">
-                    <label>Одноразовый 6-значный код из Authenticator *</label>
+                <div class="form-group" style="margin-top:20px;">
+                    <label>Код из приложения Authenticator *</label>
+                    <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;line-height:1.4;">После добавления ключа введите 6 цифр из приложения (формат 000-000)</div>
                     <input id="reg-totp" inputmode="numeric" autocomplete="one-time-code"
-                           placeholder="000-000" maxlength="7" required>
+                           placeholder="000-000" maxlength="7" required
+                           class="totp-input-masked"
+                           style="text-align:center;font-size:20px;font-weight:700;letter-spacing:4px;font-family:'JetBrains Mono',monospace;">
                 </div>
 
                 <div id="reg-final-err" class="error" style="display:none; margin-bottom:12px;"></div>
@@ -1336,7 +1348,7 @@
             e.preventDefault();
             const password = passInput.value;
             const pass2 = pass2Input.value;
-            const digitsOnly = normalizeAuthCode(totpInput.value || '');
+            const digitsOnly = (typeof normalizeAuthCode === 'function' ? normalizeAuthCode(totpInput.value || '') : (totpInput.value || '').replace(/\D/g, ''));
             const errEl = document.getElementById('reg-final-err');
             const submitBtn = document.getElementById('btn-reg-finish');
 
@@ -1425,7 +1437,8 @@
 
         document.getElementById('form-2fa')?.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const code = normalizeAuthCode(document.getElementById('code-2fa').value) || (isDebug ? 'debug' : '');
+            const raw2fa = document.getElementById('code-2fa')?.value || '';
+            const code = (typeof normalizeAuthCode === 'function' ? normalizeAuthCode(raw2fa) : raw2fa.replace(/\D/g, '')) || (isDebug ? 'debug' : '');
             const err = document.getElementById('err-2fa');
             err.style.display = 'none';
 
@@ -1580,10 +1593,14 @@
                     <div id="ob-pane-qr">
                         <div class="totp-qr-wrapper"><div class="totp-qr-box" id="ob-qrcode-box" title="Клик — обновить"></div></div>
                     </div>
-                    <div id="ob-pane-code" style="display:none;"><div id="ob-secret-box"></div></div>
-                    <form id="ob-2fa-form">
-                        <div class="form-group">
-                            <label>Код из приложения</label>
+                    <div id="ob-pane-code" style="display:none;">
+                        <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">Введите этот ключ вручную в Google Authenticator:</div>
+                        <div id="ob-secret-box"></div>
+                    </div>
+                    <form id="ob-2fa-form" novalidate>
+                        <div class="form-group" style="margin-top:20px;">
+                            <label>Код из приложения Authenticator *</label>
+                            <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;line-height:1.4;">Введите 6 цифр из приложения (формат 000-000)</div>
                             <input type="text" id="ob-code" placeholder="000-000" maxlength="7" required autofocus
                                    style="text-align:center;font-size:20px;font-weight:700;letter-spacing:4px;font-family:'JetBrains Mono',monospace;">
                         </div>
@@ -1619,20 +1636,28 @@
         });
         document.getElementById('ob-2fa-form')?.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const code = normalizeAuthCode(document.getElementById('ob-code').value) || (isDebug ? 'debug' : '');
+            const rawCode = document.getElementById('ob-code')?.value || '';
+            const code = (typeof normalizeAuthCode === 'function' ? normalizeAuthCode(rawCode) : rawCode.replace(/\D/g, '')) || (isDebug ? 'debug' : '');
             const err = document.getElementById('ob-2fa-err');
             const btn = document.getElementById('btn-ob-finish');
             err.style.display = 'none';
-            if (code.length !== 6 && !isDebug) { err.textContent = 'Введите 6 цифр'; err.style.display = 'block'; return; }
-            btn.disabled = true; btn.textContent = 'ПРОВЕРКА...';
+            if (code.length !== 6 && !isDebug) {
+                if (err) { err.textContent = 'Введите 6 цифр из приложения (формат 000-000)'; err.style.display = 'block'; }
+                return;
+            }
+            if (!totpSecret && !isDebug) {
+                if (err) { err.textContent = 'Секрет 2FA не готов. Обновите QR или откройте вкладку «Секретный код».'; err.style.display = 'block'; }
+                return;
+            }
+            if (btn) { btn.disabled = true; btn.textContent = 'ПРОВЕРКА...'; }
             try {
                 const res = await api('POST', '/api/auth/setup-owner', { setupToken, username, password, totpSecret, totpCode: code });
                 setToken(res.token);
                 me = await api('GET', '/api/me');
                 renderBackupCodesScreen(username, res.backupCodes || [], () => renderAppLayout());
             } catch (ex) {
-                err.textContent = ex.message; err.style.display = 'block';
-                btn.disabled = false; btn.textContent = 'ЗАВЕРШИТЬ НАСТРОЙКУ';
+                if (err) { err.textContent = ex.message || 'Ошибка настройки'; err.style.display = 'block'; }
+                if (btn) { btn.disabled = false; btn.textContent = 'ЗАВЕРШИТЬ НАСТРОЙКУ'; }
             }
         });
     }
