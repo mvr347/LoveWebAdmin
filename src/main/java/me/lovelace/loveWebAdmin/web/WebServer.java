@@ -135,7 +135,32 @@ public class WebServer {
             server.start();
             plugin.getLogger().info("Веб-сервер запущен на " + host + ":" + port);
         } catch (Exception e) {
+            if (!"0.0.0.0".equals(host)) {
+                plugin.getLogger().warning("[LoveWebAdmin] Не удалось забиндить веб-сервер на " + host + ":" + port + " (" + e.getMessage() + ").");
+                plugin.getLogger().warning("[LoveWebAdmin] Если сервер на хостинге/VPS (Docker, Pterodactyl, NAT), ОС не позволяет биндить сокет на внешний IP напрямую.");
+                plugin.getLogger().warning("[LoveWebAdmin] Автоматическая попытка запуска на 0.0.0.0:" + port + "...");
+                try {
+                    if (server != null) {
+                        try { server.stop(); } catch (Exception ignored) {}
+                    }
+                    server = new Server();
+                    server.setStopTimeout(5000);
+                    ServerConnector fallbackConnector = new ServerConnector(server);
+                    fallbackConnector.setPort(port);
+                    fallbackConnector.setHost("0.0.0.0");
+                    server.addConnector(fallbackConnector);
+                    server.setHandler(context);
+                    server.start();
+                    plugin.getLogger().info("[LoveWebAdmin] Веб-сервер успешно запущен на 0.0.0.0:" + port + " (снаружи доступен по " + host + ":" + port + ")!");
+                    return;
+                } catch (Exception fallbackEx) {
+                    plugin.getLogger().severe("[LoveWebAdmin] Ошибка запуска и на 0.0.0.0: " + fallbackEx.getMessage());
+                }
+            }
             plugin.getLogger().severe("Не удалось запустить веб-сервер: " + e.getMessage());
+            if (e.getMessage() != null && e.getMessage().contains("Failed to bind")) {
+                plugin.getLogger().severe("[LoveWebAdmin] РЕШЕНИЕ: Укажите web.host: \"0.0.0.0\" в plugins/LoveWebAdmin/config.yml и проверьте, не занят ли порт " + port + ".");
+            }
         }
     }
 
