@@ -4,6 +4,8 @@ import at.favre.lib.crypto.bcrypt.BCrypt;
 
 public final class PasswordUtils {
 
+    public static final int MIN_LENGTH = 12;
+
     private PasswordUtils() {}
 
     public static String hash(String plainPassword) {
@@ -11,26 +13,18 @@ public final class PasswordUtils {
     }
 
     public static boolean verify(String plainPassword, String hash) {
+        if (plainPassword == null || hash == null) return false;
         return BCrypt.verifyer().verify(plainPassword.toCharArray(), hash).verified;
     }
 
-    /**
-     * Валидация сложности пароля: минимум 10 символов, буква, цифра, спецсимвол.
-     * Возвращает null при успехе, либо текст ошибки на русском языке.
-     */
+    /** 12+, строчная, заглавная, цифра, спецсимвол. null = ок */
     public static String validateStrength(String password) {
-        if (password == null || password.length() < 10) {
-            return "Пароль должен содержать минимум 10 символов";
-        }
-        if (!password.matches(".*[A-Za-zА-Яа-я].*")) {
-            return "Пароль должен содержать хотя бы одну букву";
-        }
-        if (!password.matches(".*\\d.*")) {
-            return "Пароль должен содержать хотя бы одну цифру";
-        }
-        if (!password.matches(".*[^A-Za-zА-Яа-я0-9].*")) {
-            return "Пароль должен содержать хотя бы один специальный символ";
-        }
+        if (password == null || password.isEmpty()) return "Пароль не может быть пустым";
+        if (password.length() < MIN_LENGTH) return "Минимум " + MIN_LENGTH + " символов";
+        if (!password.matches(".*[a-zа-я].*")) return "Нужна хотя бы одна строчная буква";
+        if (!password.matches(".*[A-ZА-Я].*")) return "Нужна хотя бы одна заглавная буква";
+        if (!password.matches(".*\\d.*")) return "Нужна хотя бы одна цифра";
+        if (!password.matches(".*[^A-Za-zА-Яа-я0-9].*")) return "Нужен хотя бы один спецсимвол (!@#$%^&* и т.д.)";
         return null;
     }
 }

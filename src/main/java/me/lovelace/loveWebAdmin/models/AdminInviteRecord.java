@@ -10,6 +10,6 @@ public record AdminInviteRecord(
     String createdBy,
     long createdAt,
     long expiresAt,
-    String status
-) {
-}
+    String status,
+    String totpSecret
+) {}
