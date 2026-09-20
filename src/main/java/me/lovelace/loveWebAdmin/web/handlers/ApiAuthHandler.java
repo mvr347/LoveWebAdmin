@@ -276,7 +276,7 @@ public class ApiAuthHandler extends ApiHandlerSupport {
         data.put("username", session.adminUsername());
         data.put("role", roleOpt.map(WebRole::name).orElse(""));
         data.put("permissions", roleOpt.map(r -> r.permissions().stream().map(Enum::name).toList()).orElse(List.of()));
-        data.put("uiPreferences", adminOpt.map(WebAdmin::uiPreferences).orElse("{}'));
+        data.put("uiPreferences", adminOpt.map(WebAdmin::uiPreferences).orElse("{}"));
         sendSuccess(resp, data);
     }
 
