@@ -35,7 +35,7 @@ security:
     enabled: false
     message: "Ведутся плановые технические работы. Панель временно доступна только руководству."
   password:
-    min-length: 10
+    min-length: 12
   login:
     # Сколько неудачных попыток входа (по IP или по нику) допускается в течение окна ниже
     max-attempts: 5
@@ -70,4 +70,3 @@ security:
       enabled: false
       bot-token: ""
       chat-id: ""
-
