@@ -35,6 +35,7 @@ public class WebServer {
     }
 
     public void start() {
+        ServletContextHandler context = null;
         try {
             server = new Server();
             // Без этого Server.stop() рвёт селекторы, пока у них ещё есть in-flight select(),
@@ -45,7 +46,7 @@ public class WebServer {
             connector.setHost(host);
             server.addConnector(connector);
 
-            ServletContextHandler context = new ServletContextHandler(ServletContextHandler.NO_SESSIONS);
+            context = new ServletContextHandler(ServletContextHandler.NO_SESSIONS);
             context.setContextPath("/");
             context.addFilter(new FilterHolder(new CorsFilter(plugin)), "/*", EnumSet.of(DispatcherType.REQUEST));
 

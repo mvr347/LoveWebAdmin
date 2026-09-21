@@ -61,6 +61,7 @@ public final class LoveWebAdmin extends JavaPlugin {
     private me.lovelace.loveWebAdmin.managers.WebhookManager webhookManager;
     private me.lovelace.loveWebAdmin.managers.NotificationManager notificationManager;
     private me.lovelace.loveWebAdmin.api.LoveWebAdminAPIImpl loveWebAdminApi;
+    private me.lovelace.loveWebAdmin.listeners.CommandTabFilterListener commandTabFilterListener;
     private volatile boolean maintenanceMode = false;
     private volatile String maintenanceMessage = "Ведутся плановые технические работы. Панель временно доступна только руководству.";
     private long startTimeMillis;
@@ -118,6 +119,9 @@ public final class LoveWebAdmin extends JavaPlugin {
 
         this.commandLogListener = new CommandLogListener(this);
         getServer().getPluginManager().registerEvents(commandLogListener, this);
+
+        this.commandTabFilterListener = new me.lovelace.loveWebAdmin.listeners.CommandTabFilterListener(this);
+        getServer().getPluginManager().registerEvents(commandTabFilterListener, this);
 
         this.chatLogListener = new ChatLogListener(this);
         getServer().getPluginManager().registerEvents(chatLogListener, this);
@@ -365,6 +369,10 @@ public final class LoveWebAdmin extends JavaPlugin {
 
     public String getMaintenanceMessage() {
         return maintenanceMessage;
+    }
+
+    public me.lovelace.loveWebAdmin.listeners.CommandTabFilterListener getCommandTabFilterListener() {
+        return commandTabFilterListener;
     }
 
     public static me.lovelace.loveWebAdmin.api.LoveWebAdminAPI getPluginApi() {
