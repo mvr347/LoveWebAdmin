@@ -1,0 +1,63 @@
+diff --git a/src/main/resources/web/app.js b/src/main/resources/web/app.js
+index 0d521bf..9bd2b63 100644
+--- a/src/main/resources/web/app.js
++++ b/src/main/resources/web/app.js
+@@ -1009,12 +1009,36 @@
+         input.setAttribute('maxlength', '7');
+         input.setAttribute('inputmode', 'numeric');
+         input.setAttribute('autocomplete', 'one-time-code');
++        if (input.dataset.totpBound === '1') return;
++        input.dataset.totpBound = '1';
+         input.addEventListener('input', () => {
+             let d = (input.value || '').replace(/\D/g, '').slice(0, 6);
+             input.value = d.length > 3 ? d.slice(0, 3) + '-' + d.slice(3) : d;
+         });
+     }
+ 
++    /** Alias used by login 2FA screen (was missing → ReferenceError, form submit never attached) */
++    function bindLogin2faInput(input) {
++        if (!input) return;
++        input.setAttribute('maxlength', '9');
++        input.setAttribute('placeholder', '000-000');
++        input.classList.add('totp-input-masked');
++        input.setAttribute('inputmode', 'numeric');
++        input.setAttribute('autocomplete', 'one-time-code');
++        if (input.dataset.totpBound === '1') return;
++        input.dataset.totpBound = '1';
++        input.addEventListener('input', () => {
++            const raw = (input.value || '').replace(/[^0-9A-Za-z]/g, '');
++            if (/^\d*$/.test(raw)) {
++                const d = raw.slice(0, 6);
++                input.value = d.length > 3 ? d.slice(0, 3) + '-' + d.slice(3) : d;
++            } else {
++                const d = raw.slice(0, 8).toUpperCase();
++                input.value = d.length > 4 ? d.slice(0, 4) + '-' + d.slice(4) : d;
++            }
++        });
++    }
++
+     /** Убирает пробелы и дефисы из кода 2FA (000-000 → 000000) */
+     function normalizeAuthCode(value) {
+         return (value || '').trim().replace(/[\s-]/g, '');
+@@ -5126,7 +5150,21 @@
+                         </div>`;
+                 }).join('');
+             } catch (e) {
+-                container.innerHTML = `<div style="color:var(--red); padding:24px; text-align:center;">Модуль античита временно недоступен</div>`;
++                console.warn('[Anticheat] live stream error:', e);
++                const msg = (e && e.message) ? String(e.message) : '';
++                const isMissing = /404|503|not found|unavailable|vesuvio/i.test(msg) || !msg;
++                container.innerHTML = `
++                    <div style="color:var(--text-muted); padding:28px; text-align:center; background:var(--card-bg); border-radius:var(--radius-md); border:1px solid var(--border);">
++                        <div style="font-size:15px; font-weight:600; color:var(--text-heading); margin-bottom:8px;">
++                            ${isMissing ? 'Интеграция с Vesuvio не активна' : 'Модуль античита временно недоступен'}
++                        </div>
++                        <div style="font-size:12.5px; line-height:1.5; max-width:420px; margin:0 auto;">
++                            ${isMissing
++                                ? 'Убедитесь, что плагин <b>Vesuvio</b> установлен и запущен. LoveWebAdmin использует soft-depend — API появится автоматически после загрузки античита.'
++                                : 'Ошибка запроса к API. Проверьте логи сервера и права <code>VIEW_VESUVIO</code>.'}
++                        </div>
++                        ${msg ? `<div style="margin-top:10px; font-size:11px; color:var(--text-dim); font-family:monospace;">${esc(msg).slice(0, 180)}</div>` : ''}
++                    </div>`;
+             }
+         };
