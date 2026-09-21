@@ -39,7 +39,7 @@ index 0d521bf..9bd2b63 100644
      /** Убирает пробелы и дефисы из кода 2FA (000-000 → 000000) */
      function normalizeAuthCode(value) {
          return (value || '').trim().replace(/[\s-]/g, '');
-@@ -5126,7 +5150,21 @@
+@@ -5126,6 +5150,20 @@
                          </div>`;
                  }).join('');
              } catch (e) {
