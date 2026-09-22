@@ -36,6 +36,7 @@
     --text-muted: #8B91AA;
     --text-dim: #5E6582;
     --text-heading: #F4F5FC;
+    --text-main: #F4F5FC;
 
     /* Semantic States */
     --green: #22C55E;
@@ -101,6 +102,7 @@ body.theme-light, html.theme-light {
     --text-muted: #64748B;
     --text-dim: #94A3B8;
     --text-heading: #0F172A;
+    --text-main: #0F172A;
 
     --green: #16A34A;
     --green-bg: rgba(22, 163, 74, 0.10);
@@ -3237,12 +3239,77 @@ tr:hover td {
     background: var(--card-bg);
 }
 
-.settings-tab-pane {
-    display: none;
+.settings-tab-pane,
+.settings-content-area {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 360px;
+    max-height: 70vh;
+    padding: 20px 24px;
+    overflow-y: auto !important;
+    overflow-x: hidden;
+    background: var(--card-bg);
+    color: var(--text-heading);
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
 }
 
 .settings-tab-pane.active {
+    display: block !important;
+}
+
+.settings-modal-layout {
+    display: flex !important;
+    width: 100%;
+    min-height: 480px;
+    max-height: 78vh;
+    border: 1px solid var(--border);
+    background: var(--card-bg);
+}
+
+.settings-content-area h4,
+.settings-tab-pane h4 {
+    color: var(--text-heading) !important;
+    font-size: 15px;
+    font-weight: 800;
+    margin: 0 0 14px 0;
+}
+
+.settings-content-area .form-group label,
+.settings-tab-pane .form-group label {
+    color: var(--text-secondary) !important;
     display: block;
+    margin-bottom: 6px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.settings-content-area input[type="text"],
+.settings-content-area input[type="number"],
+.settings-content-area input[type="password"],
+.settings-content-area select,
+.settings-content-area textarea,
+.settings-tab-pane input[type="text"],
+.settings-tab-pane input[type="number"],
+.settings-tab-pane input[type="password"],
+.settings-tab-pane select,
+.settings-tab-pane textarea {
+    width: 100%;
+    display: block;
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    color: var(--text-heading);
+    padding: 10px 12px;
+    font-size: 13px;
+}
+
+.modal.modal-xl .modal-body {
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    max-height: 82vh;
+    padding: 0 !important;
 }
 
 /* ---------- Maintenance Mode View ---------- */

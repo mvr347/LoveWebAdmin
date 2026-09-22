@@ -2660,6 +2660,8 @@
         let searchQuery = '';
         let cachedWebLogs = [];
         let cachedServerLogs = [];
+        let sortKey = 'time';
+        let sortDir = 'desc'; // 'asc' | 'desc'
 
         area.innerHTML = `
             <div class="view-header">
@@ -2752,31 +2754,76 @@
             }
         };
 
+        const sortIndicator = (key) => {
+            if (sortKey !== key) return ' <span style="opacity:.35">↕</span>';
+            return sortDir === 'asc' ? ' <span style="color:var(--accent)">↑</span>' : ' <span style="color:var(--accent)">↓</span>';
+        };
+
+        const normalizeLogTime = (t) => {
+            if (t == null || t === '') return 0;
+            if (typeof t === 'number') return t > 1e12 ? Math.floor(t / 1000) : t;
+            const n = Number(t);
+            if (!Number.isNaN(n) && String(t).trim() !== '') return n > 1e12 ? Math.floor(n / 1000) : n;
+            const d = Date.parse(String(t));
+            return Number.isNaN(d) ? 0 : Math.floor(d / 1000);
+        };
+
+        const applySort = (list) => {
+            const dir = sortDir === 'asc' ? 1 : -1;
+            return [...list].sort((a, b) => {
+                if (sortKey === 'time') {
+                    return (normalizeLogTime(a.time) - normalizeLogTime(b.time)) * dir;
+                }
+                const va = String(a[sortKey] || '').toLowerCase();
+                const vb = String(b[sortKey] || '').toLowerCase();
+                if (va < vb) return -1 * dir;
+                if (va > vb) return 1 * dir;
+                return normalizeLogTime(b.time) - normalizeLogTime(a.time);
+            });
+        };
+
         const renderTableHead = () => {
             const thead = document.getElementById('journal-table-head');
             if (!thead) return;
 
+            const th = (key, label, style) =>
+                `<th data-sort="${key}" style="cursor:pointer;user-select:none;${style || ''}" title="Сортировать по колонке">${label}${sortIndicator(key)}</th>`;
+
             if (primaryMode === 'web') {
                 thead.innerHTML = `
                     <tr>
-                        <th style="width:170px;">ВРЕМЯ</th>
-                        <th style="width:170px;">АДМИНИСТРАТОР</th>
-                        <th style="width:140px;">КАТЕГОРИЯ</th>
-                        <th>ДЕЙСТВИЕ</th>
+                        ${th('time', 'ВРЕМЯ', 'width:170px;')}
+                        ${th('actor', 'АДМИНИСТРАТОР', 'width:170px;')}
+                        ${th('type', 'КАТЕГОРИЯ', 'width:140px;')}
+                        ${th('action', 'ДЕЙСТВИЕ', '')}
                         <th style="width:90px; text-align:right;">ДЕТАЛИ</th>
                     </tr>
                 `;
             } else {
                 thead.innerHTML = `
                     <tr>
-                        <th style="width:170px;">ВРЕМЯ</th>
-                        <th style="width:160px;">ИСТОЧНИК</th>
-                        <th style="width:130px;">ТИП</th>
-                        <th>СООБЩЕНИЕ / КОМАНДА</th>
+                        ${th('time', 'ВРЕМЯ', 'width:170px;')}
+                        ${th('actor', 'ИСТОЧНИК', 'width:160px;')}
+                        ${th('type', 'ТИП', 'width:130px;')}
+                        ${th('action', 'СООБЩЕНИЕ / КОМАНДА', '')}
                         <th style="width:90px; text-align:right;">ДЕТАЛИ</th>
                     </tr>
                 `;
             }
+
+            thead.querySelectorAll('th[data-sort]').forEach(el => {
+                el.addEventListener('click', () => {
+                    const key = el.getAttribute('data-sort');
+                    if (sortKey === key) {
+                        sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+                    } else {
+                        sortKey = key;
+                        sortDir = key === 'time' ? 'desc' : 'asc';
+                    }
+                    renderTableHead();
+                    renderTableRows();
+                });
+            });
         };
 
         const sanitizeWebAction = (actionStr) => {
@@ -2837,7 +2884,7 @@
                             const cat = categorizeWebAction(cleanAction);
                             return {
                                 id: l.id,
-                                time: l.timestamp,
+                                time: normalizeLogTime(l.timestamp),
                                 actor: l.actor || 'Система',
                                 action: cleanAction,
                                 type: cat.type,
@@ -2845,6 +2892,7 @@
                                 raw: l
                             };
                         });
+                    cachedWebLogs = applySort(cachedWebLogs);
                 } else {
                     const [sLogs, cmdLogs] = await Promise.all([
                         api('GET', '/api/logs/server?limit=200').catch(() => []),
@@ -2852,18 +2900,28 @@
                     ]);
 
                     let list = [];
-                    (sLogs || []).forEach(s => {
-                        const msg = s.message || s.action || '';
+                    (Array.isArray(sLogs) ? sLogs : []).forEach(s => {
+                        // API отдаёт { id, actor, action, timestamp }
+                        const msg = String(s.message || s.action || '');
+                        const msgLow = msg.toLowerCase();
                         let type = 'ИНФО';
                         let typeClass = 'gray';
-                        if (s.level === 'WARN' || s.level === 'WARNING') { type = 'WARN'; typeClass = 'yellow'; }
-                        else if (s.level === 'ERROR' || s.level === 'SEVERE') { type = 'ОШИБКА'; typeClass = 'red'; }
-                        else if (msg.includes('joined the game') || msg.includes('left the game')) { type = 'СЕРВЕР'; typeClass = 'green'; }
+                        const lvl = String(s.level || '').toUpperCase();
+                        if (lvl === 'WARN' || lvl === 'WARNING' || /\bwarn(ing)?\b/i.test(msg)) {
+                            type = 'WARN'; typeClass = 'yellow';
+                        } else if (lvl === 'ERROR' || lvl === 'SEVERE' || /\b(error|severe|exception)\b/i.test(msg)) {
+                            type = 'ОШИБКА'; typeClass = 'red';
+                        } else if (msgLow.includes('joined the game') || msgLow.includes('left the game')
+                                || msgLow.includes('joined') || msgLow.includes('left the')) {
+                            type = 'СЕРВЕР'; typeClass = 'green';
+                        } else if (msg.trim().startsWith('/') || msgLow.includes('issued server command')) {
+                            type = 'КОМАНДА'; typeClass = 'cyan';
+                        }
 
                         list.push({
-                            id: 'srv_' + (s.id || Math.random()),
-                            time: s.timestamp || (Date.now() / 1000),
-                            actor: s.logger || 'Сервер',
+                            id: 'srv_' + (s.id != null ? s.id : Math.random()),
+                            time: normalizeLogTime(s.timestamp),
+                            actor: s.logger || s.actor || 'Сервер',
                             action: msg,
                             type,
                             typeClass,
@@ -2871,20 +2929,21 @@
                         });
                     });
 
-                    (cmdLogs.logs || []).forEach(c => {
+                    const cmdArr = Array.isArray(cmdLogs) ? cmdLogs : ((cmdLogs && cmdLogs.logs) || []);
+                    cmdArr.forEach(c => {
+                        const cmd = c.command != null ? String(c.command) : (c.action || '');
                         list.push({
-                            id: 'cmd_' + c.id,
-                            time: c.timestamp,
-                            actor: c.adminUsername || 'Персонал',
-                            action: '/' + c.command,
+                            id: 'cmd_' + (c.id != null ? c.id : Math.random()),
+                            time: normalizeLogTime(c.timestamp),
+                            actor: c.adminUsername || c.actor || 'Персонал',
+                            action: cmd ? (cmd.startsWith('/') ? cmd : ('/' + cmd)) : '',
                             type: 'КОМАНДА',
                             typeClass: c.isSuspicious ? 'yellow' : 'cyan',
                             raw: c
                         });
                     });
 
-                    list.sort((a, b) => b.time - a.time);
-                    cachedServerLogs = list;
+                    cachedServerLogs = applySort(list);
                 }
 
                 renderTableRows();
@@ -2935,6 +2994,8 @@
                     (e.type && e.type.toLowerCase().includes(q))
                 );
             }
+
+            source = applySort(source);
 
             if (!source.length) {
                 body.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--text-dim); padding:28px;">Записи журнала не найдены</td></tr>`;
@@ -8271,8 +8332,8 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 <h3>НАСТРОЙКИ ПАНЕЛИ И СЕРВЕРА</h3>
                 <button type="button" class="close-btn" data-modal-close="true">${renderSvgIcon('close', 'gray', 16)}</button>
             </div>
-            <div class="modal-body" style="padding:0; max-height:82vh; overflow:hidden;">
-                <div class="settings-modal-layout">
+            <div class="modal-body" style="padding:0; max-height:82vh; overflow:hidden; display:flex; flex-direction:column;">
+                <div class="settings-modal-layout" style="flex:1; min-height:480px; display:flex; width:100%;">
                     <!-- Left Navigation Sidebar -->
                     <aside class="settings-nav-sidebar">
                         ${tabs.map(t => `
@@ -8284,8 +8345,8 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                     </aside>
 
                     <!-- Right Tab Pane -->
-                    <section class="settings-tab-pane" id="settings-tab-content">
-                        <!-- Rendered by switchSettingsTab -->
+                    <section class="settings-content-area settings-tab-pane active" id="settings-tab-content">
+                        <div style="color:var(--text-muted);font-size:13px;">Загрузка настроек…</div>
                     </section>
                 </div>
             </div>
@@ -8302,19 +8363,22 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 });
 
                 if (!contentPane) return;
+                contentPane.classList.add('active');
+                contentPane.style.cssText = 'display:block!important;visibility:visible!important;opacity:1!important;flex:1;min-width:0;min-height:360px;padding:20px 24px;overflow-y:auto;color:var(--text-heading);background:var(--card-bg);';
 
+                try {
                 if (tabId === 'general') {
                     // TAB 1: ОБЩИЕ
                     const isLight = document.body.classList.contains('theme-light');
                     contentPane.innerHTML = `
-                        <h4 style="color:var(--text-main); margin-bottom:14px;">ОБЩИЙ ПРОФИЛЬ СОТРУДНИКА</h4>
+                        <h4 style="color:var(--text-heading); margin-bottom:14px;">ОБЩИЙ ПРОФИЛЬ СОТРУДНИКА</h4>
                         <div style="background:var(--card-inner-bg); padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-bottom:16px;">
                             <div style="display:flex; align-items:center; gap:12px;">
                                 <div class="sidebar-user-avatar" style="width:46px; height:46px; font-size:18px;">
                                     ${esc((me.username || 'A').substring(0, 2).toUpperCase())}
                                 </div>
                                 <div>
-                                    <div style="font-size:17px; font-weight:800; color:var(--text-main);">
+                                    <div style="font-size:17px; font-weight:800; color:var(--text-heading);">
                                         ${esc(me.username)} <span class="badge purple">${esc(roleName)}</span>
                                     </div>
                                     <div style="font-size:12px; color:var(--text-muted); margin-top:2px;">
@@ -8331,7 +8395,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                         </div>
 
                         <div style="background:var(--card-inner-bg); padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-bottom:16px;">
-                            <b style="color:var(--text-main); font-size:13.5px;">Тема оформления интерфейса</b>
+                            <b style="color:var(--text-heading); font-size:13.5px;">Тема оформления интерфейса</b>
                             <div style="font-size:12px; color:var(--text-muted); margin-bottom:12px;">Выберите цветовую схему для комфортной работы:</div>
 
                             <div style="display:flex; gap:12px;">
@@ -8345,7 +8409,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                         </div>
 
                         <div style="background:var(--card-inner-bg); padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-bottom:16px;">
-                            <b style="color:var(--text-main); font-size:13.5px;">Раскладка дашборда</b>
+                            <b style="color:var(--text-heading); font-size:13.5px;">Раскладка дашборда</b>
                             <div style="font-size:12px; color:var(--text-muted); margin-bottom:10px;">
                                 Плитки дашборда можно свободно перетаскивать и настраивать прямо на главной странице.
                             </div>
@@ -8386,7 +8450,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 } else if (tabId === 'server') {
                     // TAB 2: СЕРВЕР И СЕТЬ (РЕАЛЬНЫЙ CONFIG.YML)
                     contentPane.innerHTML = `
-                        <h4 style="color:var(--text-main); margin-bottom:14px;">ПАРАМЕТРЫ СЕРВЕРА И ВЕБ-ПАНЕЛИ</h4>
+                        <h4 style="color:var(--text-heading); margin-bottom:14px;">ПАРАМЕТРЫ СЕРВЕРА И ВЕБ-ПАНЕЛИ</h4>
 
                         <div style="background:var(--card-inner-bg); padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-bottom:16px;">
                             <div class="form-group">
@@ -8414,7 +8478,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                             </div>
 
                             <div class="form-group" style="margin-bottom:0;">
-                                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:var(--text-main);">
+                                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:var(--text-heading);">
                                     <input type="checkbox" id="cfg-debug-mode" ${serverConfig.debugMode ? 'checked' : ''}>
                                     <span>Включить подробный режим отладки в консоли сервера (debug-mode)</span>
                                 </label>
@@ -8450,15 +8514,15 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 } else if (tabId === 'security') {
                     // TAB 3: БЕЗОПАСНОСТЬ (СИСТЕМА + СМЕНА ПАРОЛЯ + 2FA)
                     contentPane.innerHTML = `
-                        <h4 style="color:var(--text-main); margin-bottom:14px;">БЕЗОПАСНОСТЬ И АВТОРИЗАЦИЯ</h4>
+                        <h4 style="color:var(--text-heading); margin-bottom:14px;">БЕЗОПАСНОСТЬ И АВТОРИЗАЦИЯ</h4>
 
                         <!-- System Security Rules -->
                         <div style="background:var(--card-inner-bg); padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-bottom:16px;">
-                            <b style="color:var(--text-main); font-size:13.5px;">Параметры безопасности панели</b>
+                            <b style="color:var(--text-heading); font-size:13.5px;">Параметры безопасности панели</b>
                             <div style="font-size:12px; color:var(--text-muted); margin-bottom:12px;">Защита от подбора паролей и фиксация IP-адресов:</div>
 
                             <div class="form-group">
-                                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:var(--text-main);">
+                                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:var(--text-heading);">
                                     <input type="checkbox" id="cfg-strict-ip" ${serverConfig.strictIp ? 'checked' : ''}>
                                     <span>Строгая привязка сессий к IP (аннулировать сессию при смене адреса)</span>
                                 </label>
@@ -8488,7 +8552,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                         <div style="background:var(--card-inner-bg); padding:14px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-bottom:16px;">
                             <div style="display:flex; justify-content:space-between; align-items:center;">
                                 <div>
-                                    <b style="color:var(--text-main); font-size:13px;">Управление сессиями вашей учетной записи</b>
+                                    <b style="color:var(--text-heading); font-size:13px;">Управление сессиями вашей учетной записи</b>
                                     <div style="font-size:11.5px; color:var(--text-muted);">Завершите активные сессии на всех остальных смартфонах и ПК</div>
                                 </div>
                                 <button type="button" class="danger btn-sm" id="btn-sec-terminate-other" style="display:flex; align-items:center; gap:6px;">
@@ -8504,7 +8568,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
 
                         <!-- Password Change -->
                         <div style="background:var(--card-inner-bg); padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border);">
-                            <div style="font-weight:700; color:var(--text-main); margin-bottom:4px; font-size:13.5px;">СМЕНА ПАРОЛЯ УЧЁТНОЙ ЗАПИСИ</div>
+                            <div style="font-weight:700; color:var(--text-heading); margin-bottom:4px; font-size:13.5px;">СМЕНА ПАРОЛЯ УЧЁТНОЙ ЗАПИСИ</div>
                             <div style="font-size:11.5px; color:var(--yellow); margin-bottom:12px;">
                                 Внимание: ввод неверного старого пароля приведёт к аннулированию сессии!
                             </div>
@@ -8618,7 +8682,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
 
                     const renderBlacklistUI = () => {
                         contentPane.innerHTML = `
-                            <h4 style="color:var(--text-main); margin-bottom:14px;">ЧЕРНЫЙ СПИСОК КОМАНД ВЕБ-КОНСОЛИ</h4>
+                            <h4 style="color:var(--text-heading); margin-bottom:14px;">ЧЕРНЫЙ СПИСОК КОМАНД ВЕБ-КОНСОЛИ</h4>
                             <div style="background:var(--card-inner-bg); padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-bottom:16px;">
                                 <div style="font-size:12.5px; color:var(--text-muted); margin-bottom:14px;">
                                     Команды, перечисленные ниже, полностью блокируются при попытке выполнить их через веб-терминал LoveWebAdmin для защиты целостности сервера.
@@ -8689,18 +8753,18 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                     const notifyTickets = userPrefs.discordNotifyTickets !== false;
 
                     contentPane.innerHTML = `
-                        <h4 style="color:var(--text-main); margin-bottom:14px;">ОПОВЕЩЕНИЯ, DISCORD И TELEGRAM ВЕБХУКИ</h4>
+                        <h4 style="color:var(--text-heading); margin-bottom:14px;">ОПОВЕЩЕНИЯ, DISCORD И TELEGRAM ВЕБХУКИ</h4>
 
                         <!-- Server Global Webhooks Card -->
                         <div style="background:var(--card-inner-bg); padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-bottom:16px;">
                             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
                                 <div>
-                                    <b style="color:var(--text-main); font-size:13.5px;">Глобальные вебхуки сервера</b>
+                                    <b style="color:var(--text-heading); font-size:13.5px;">Глобальные вебхуки сервера</b>
                                     <div style="font-size:11.5px; color:var(--text-muted); margin-top:2px;">Отправка событий наказаний, входов и алертов в каналы</div>
                                 </div>
                                 <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
                                     <input type="checkbox" id="cfg-webhooks-enabled" ${serverConfig.webhooksEnabled ? 'checked' : ''}>
-                                    <span style="font-size:12.5px; color:var(--text-main); font-weight:700;">ВКЛЮЧЕНЫ</span>
+                                    <span style="font-size:12.5px; color:var(--text-heading); font-weight:700;">ВКЛЮЧЕНЫ</span>
                                 </label>
                             </div>
 
@@ -8726,7 +8790,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                         <div style="background:var(--card-inner-bg); padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-bottom:16px;">
                             <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
                                 <span style="font-size:16px;">${renderSvgIcon('bell', 'violet', 16)}</span>
-                                <h5 style="font-size:13.5px; color:var(--text-main); margin:0;">ЛИЧНЫЕ ОПОВЕЩЕНИЯ В ЛС DISCORD</h5>
+                                <h5 style="font-size:13.5px; color:var(--text-heading); margin:0;">ЛИЧНЫЕ ОПОВЕЩЕНИЯ В ЛС DISCORD</h5>
                             </div>
                             <div style="font-size:12px; color:var(--text-muted); margin-bottom:12px;">
                                 Моментальные личные оповещения от бота при поступлении новых жалоб игроков или тикетов.
@@ -8738,11 +8802,11 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                             </div>
 
                             <div style="display:flex; flex-direction:column; gap:8px;">
-                                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:12.5px; color:var(--text-main);">
+                                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:12.5px; color:var(--text-heading);">
                                     <input type="checkbox" id="pref-notify-reports" ${notifyReports ? 'checked' : ''}>
                                     <span>Оповещать в ЛС о новых жалобах игроков (Reports)</span>
                                 </label>
-                                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:12.5px; color:var(--text-main);">
+                                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:12.5px; color:var(--text-heading);">
                                     <input type="checkbox" id="pref-notify-tickets" ${notifyTickets ? 'checked' : ''}>
                                     <span>Оповещать в ЛС о новых апелляциях банов (Tickets)</span>
                                 </label>
@@ -8789,11 +8853,11 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                     } catch (_) {}
 
                     contentPane.innerHTML = `
-                        <h4 style="color:var(--text-main); margin-bottom:14px;">РЕЖИМ ТЕХНИЧЕСКИХ РАБОТ ПАНЕЛИ</h4>
+                        <h4 style="color:var(--text-heading); margin-bottom:14px;">РЕЖИМ ТЕХНИЧЕСКИХ РАБОТ ПАНЕЛИ</h4>
                         <div style="background:var(--card-inner-bg); padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-bottom:16px;">
                             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
                                 <div>
-                                    <b style="color:var(--text-main); font-size:14px;">Глобальный режим обслуживания веб-панели</b>
+                                    <b style="color:var(--text-heading); font-size:14px;">Глобальный режим обслуживания веб-панели</b>
                                     <div style="font-size:12px; color:var(--text-muted); margin-top:2px;">
                                         Когда включён — вход разрешён только Управляющему и сотрудникам с правом «Обход тех. работ».
                                     </div>
@@ -8833,7 +8897,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                         <h4 style="color:var(--red); margin-bottom:14px;">ОПАСНЫЕ ЗОНЫ И СБРОС</h4>
                         <div style="display:flex; flex-direction:column; gap:14px;">
                             <div style="background:rgba(239, 68, 68, 0.08); border:1px solid rgba(239, 68, 68, 0.3); border-radius:var(--radius-sm); padding:16px;">
-                                <b style="color:var(--text-main);">Принудительный выход всех сотрудников</b>
+                                <b style="color:var(--text-heading);">Принудительный выход всех сотрудников</b>
                                 <div style="font-size:12px; color:var(--text-muted); margin-top:2px; margin-bottom:12px;">
                                     Немедленно аннулирует все выданные сессии и токены всех пользователей, кроме вашей текущей сессии.
                                 </div>
@@ -8843,7 +8907,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                             </div>
 
                             <div style="background:var(--card-inner-bg); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px;">
-                                <b style="color:var(--text-main);">Перезагрузка конфигурации плагина</b>
+                                <b style="color:var(--text-heading);">Перезагрузка конфигурации плагина</b>
                                 <div style="font-size:12px; color:var(--text-muted); margin-top:2px; margin-bottom:12px;">
                                     Выполняет команду /lovewebadmin reload на сервере без перезапуска ядра Minecraft.
                                 </div>
@@ -8874,6 +8938,10 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                         }
                     });
                 }
+                } catch (e) {
+                    console.error('settings tab error', e);
+                    contentPane.innerHTML = `<div class="error" style="display:block;padding:16px;">Не удалось загрузить вкладку: ${esc(e.message || String(e))}</div>`;
+                }
             };
 
             // Sidebar tab click handler
@@ -8885,7 +8953,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
             });
 
             switchSettingsTab(currentTab);
-        }, 'modal-lg');
+        }, 'modal-xl');
     }
 
     // Backwards-compatible alias for user profile trigger

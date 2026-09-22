@@ -14,7 +14,8 @@ import java.util.Set;
 
 /**
  * Фильтрует автодополнение команд для обычных игроков:
- * Скрывает англоязычные команды, оставляя видимыми только русскоязычные (содержащие кириллицу)
+ * Скрывает англоязычные команды, оставляя видимыми только русскоязычные
+ * (содержащие кириллицу)
  * и явно разрешённые в конфигурации.
  */
 public class CommandTabFilterListener implements Listener {
@@ -42,7 +43,8 @@ public class CommandTabFilterListener implements Listener {
     }
 
     private boolean isCyrillic(String str) {
-        if (str == null) return false;
+        if (str == null)
+            return false;
         for (int i = 0; i < str.length(); i++) {
             char c = str.charAt(i);
             if ((c >= 'а' && c <= 'я') || (c >= 'А' && c <= 'Я') || c == 'ё' || c == 'Ё') {
@@ -53,7 +55,8 @@ public class CommandTabFilterListener implements Listener {
     }
 
     private boolean isCommandAllowed(String cmd) {
-        if (cmd == null) return false;
+        if (cmd == null)
+            return false;
         String lower = cmd.toLowerCase().trim();
         if (lower.contains(":")) {
             lower = lower.substring(lower.indexOf(':') + 1);
@@ -69,9 +72,11 @@ public class CommandTabFilterListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onPlayerCommandSend(PlayerCommandSendEvent event) {
-        if (!enabled) return;
+        if (!enabled)
+            return;
         Player player = event.getPlayer();
-        if (player.isOp() || player.hasPermission("lovewebadmin.admin") || player.hasPermission("lovewebadmin.tabcomplete.bypass")) {
+        if (player.isOp() || player.hasPermission("lovewebadmin.admin")
+                || player.hasPermission("lovewebadmin.tabcomplete.bypass")) {
             return;
         }
 
@@ -80,9 +85,12 @@ public class CommandTabFilterListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onAsyncTabComplete(AsyncTabCompleteEvent event) {
-        if (!enabled || !hideEnglish) return;
-        if (!(event.getSender() instanceof Player player)) return;
-        if (player.isOp() || player.hasPermission("lovewebadmin.admin") || player.hasPermission("lovewebadmin.tabcomplete.bypass")) {
+        if (!enabled || !hideEnglish)
+            return;
+        if (!(event.getSender() instanceof Player player))
+            return;
+        if (player.isOp() || player.hasPermission("lovewebadmin.admin")
+                || player.hasPermission("lovewebadmin.tabcomplete.bypass")) {
             return;
         }
 
