@@ -276,8 +276,18 @@ public class AdminManager {
         if (adminOpt.isEmpty()) return new LoginResult(LoginStatus.NOT_FOUND, null, null, null);
 
         WebAdmin admin = adminOpt.get();
+        // SECURITY: этот эндпоинт (POST /api/verify-2fa) публичный и подтверждает только
+        // ВТОРОЙ фактор - пароль он не принимает и не проверяет. Раньше при totpEnabled()==false
+        // / totpSecret()==null / debug-mode этот метод сразу вызывал completeLogin(...) и выдавал
+        // валидный токен сессии без ЕДИНОЙ проверки пароля. Это был полный обход аутентификации:
+        // зная (или угадав) ник любого администратора без включённой 2FA - например, только что
+        // добавленного через addAdmin() и ещё не выставившего себе пароль (totpEnabled=false,
+        // passwordHash=null, статус ACTIVE) - атакующий получал сессию одним прямым запросом
+        // POST /api/verify-2fa {"username": "...", "code": "любой"}, минуя /login целиком.
+        // Единственный легитимный путь входа для аккаунта без активной 2FA (или в debug-mode) -
+        // это /login, где пароль действительно проверяется; сюда попадать без пароля нельзя.
         if (!admin.totpEnabled() || admin.totpSecret() == null || plugin.isDebugMode()) {
-            return completeLogin(admin, ip, userAgent);
+            return new LoginResult(LoginStatus.INVALID_CREDENTIALS, null, null, null);
         }
 
         boolean codeValid = TotpUtils.verifyCode(admin.totpSecret(), code);
