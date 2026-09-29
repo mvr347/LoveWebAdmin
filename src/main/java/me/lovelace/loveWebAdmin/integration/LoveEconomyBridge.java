@@ -77,6 +77,14 @@ public class LoveEconomyBridge {
         }, null);
     }
 
+    /** Lookup of an online player by UUID; {@code null} if not online. */
+    public Player findOnline(java.util.UUID id) {
+        return onMainThread(() -> {
+            Player p = Bukkit.getPlayer(id);
+            return p != null && p.isOnline() ? p : null;
+        }, null);
+    }
+
     public long balance(Player player) {
         if (player == null) return 0;
         return onMainThread(() -> economy().map(eco -> eco.balance(player)).orElse(0L), 0L);
