@@ -2126,6 +2126,40 @@ public class DatabaseManager {
         }
     }
 
+    /** Inserts many server log lines in one transaction (one commit instead of one per line). */
+    public synchronized void saveServerLogs(List<String> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return;
+        }
+        String sql = "INSERT INTO server_logs (message) VALUES (?)";
+        boolean previousAutoCommit = true;
+        try {
+            previousAutoCommit = connection.getAutoCommit();
+            connection.setAutoCommit(false);
+            try (PreparedStatement ps = connection.prepareStatement(sql)) {
+                for (String message : messages) {
+                    ps.setString(1, message);
+                    ps.addBatch();
+                }
+                ps.executeBatch();
+            }
+            connection.commit();
+        } catch (SQLException e) {
+            try {
+                connection.rollback();
+            } catch (SQLException ignored) {
+                // nothing more to do; the original error is the useful one
+            }
+            plugin.getLogger().warning("Ошибка записи серверных логов: " + e.getMessage());
+        } finally {
+            try {
+                connection.setAutoCommit(previousAutoCommit);
+            } catch (SQLException ignored) {
+                // connection is unusable anyway
+            }
+        }
+    }
+
     public synchronized List<LogEntry> getServerLogs(int limit, int offset) {
         List<LogEntry> logs = new ArrayList<>();
         String sql = "SELECT * FROM server_logs ORDER BY id DESC LIMIT ? OFFSET ?";
