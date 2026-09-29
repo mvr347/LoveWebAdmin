@@ -97,7 +97,7 @@ public final class LoveWebAdmin extends JavaPlugin {
 
         // Reflection-only bridges to external plugins (Vesuvio & LoveEconomy & LoveCore)
         this.vesuvioBridge = new VesuvioBridge();
-        this.loveEconomyBridge = new me.lovelace.loveWebAdmin.integration.LoveEconomyBridge();
+        this.loveEconomyBridge = new me.lovelace.loveWebAdmin.integration.LoveEconomyBridge(this);
         this.discordBridge = new me.lovelace.loveWebAdmin.integration.LoveCoreDiscordBridge(this);
         this.discordBridge.initialize();
 
@@ -309,7 +309,7 @@ public final class LoveWebAdmin extends JavaPlugin {
 
     public me.lovelace.loveWebAdmin.integration.LoveEconomyBridge getLoveEconomyBridge() {
         if (loveEconomyBridge == null) {
-            loveEconomyBridge = new me.lovelace.loveWebAdmin.integration.LoveEconomyBridge();
+            loveEconomyBridge = new me.lovelace.loveWebAdmin.integration.LoveEconomyBridge(this);
         }
         return loveEconomyBridge;
     }

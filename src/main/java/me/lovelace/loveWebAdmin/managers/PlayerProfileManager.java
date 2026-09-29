@@ -46,7 +46,9 @@ public class PlayerProfileManager {
             uuid = UUID.fromString(name);
         } catch (IllegalArgumentException ignored) {}
 
-        Player onlinePlayer = (uuid != null) ? Bukkit.getPlayer(uuid) : Bukkit.getPlayerExact(name);
+        // Runs on a Jetty worker: Bukkit's player lookup must happen on the main thread.
+        var lookupBridge = plugin.getLoveEconomyBridge();
+        Player onlinePlayer = (uuid != null) ? lookupBridge.findOnline(uuid) : lookupBridge.findOnline(name);
         OfflinePlayer offlinePlayer = null;
 
         if (onlinePlayer != null) {

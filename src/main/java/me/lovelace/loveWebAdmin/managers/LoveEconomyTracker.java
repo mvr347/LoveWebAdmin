@@ -29,7 +29,11 @@ public class LoveEconomyTracker {
     private ScheduledTask scheduledTask;
 
     // Кэш предыдущих балансов для детектора аномалий
-    private final Map<String, Long> lastKnownBalances = new ConcurrentHashMap<>();
+    private record LastSeen(long balance, long at) {}
+
+    private static final long LAST_SEEN_TTL_MILLIS = TimeUnit.HOURS.toMillis(24);
+
+    private final Map<String, LastSeen> lastKnownBalances = new ConcurrentHashMap<>();
 
     // Порог прироста за 5 минут, считающийся подозрительным аномальным скачком (дюп)
     private static final long DEFAULT_ANOMALY_THRESHOLD = 50_000L;
@@ -63,10 +67,13 @@ public class LoveEconomyTracker {
         List<Map<String, Object>> playerBalances = new ArrayList<>();
         long totalCirculation = 0L;
 
-        for (Player player : Bukkit.getOnlinePlayers()) {
-            long currentBalance = bridge.balance(player);
+        // This runs on the async scheduler; balances are read from live inventories, so the bridge
+        // collects them all in one pass on the main thread.
+        long now = System.currentTimeMillis();
+        for (Map.Entry<String, Long> online : bridge.onlineBalances().entrySet()) {
+            long currentBalance = online.getValue();
             totalCirculation += currentBalance;
-            String name = player.getName();
+            String name = online.getKey();
 
             Map<String, Object> entry = new HashMap<>();
             entry.put("name", name);
@@ -74,7 +81,8 @@ public class LoveEconomyTracker {
             playerBalances.add(entry);
 
             // Детекция резких скачков
-            Long previousBalance = lastKnownBalances.get(name.toLowerCase());
+            LastSeen previous = lastKnownBalances.get(name.toLowerCase());
+            Long previousBalance = previous != null ? previous.balance() : null;
             if (previousBalance != null) {
                 long delta = currentBalance - previousBalance;
                 if (delta >= DEFAULT_ANOMALY_THRESHOLD) {
@@ -86,8 +94,12 @@ public class LoveEconomyTracker {
                     );
                 }
             }
-            lastKnownBalances.put(name.toLowerCase(), currentBalance);
+            lastKnownBalances.put(name.toLowerCase(), new LastSeen(currentBalance, now));
         }
+
+        // Drop players not seen for a day; the map would otherwise grow with every name that was ever online.
+        long cutoff = now - LAST_SEEN_TTL_MILLIS;
+        lastKnownBalances.values().removeIf(seen -> seen.at() < cutoff);
 
         // Сортировка топа богатейших игроков
         playerBalances.sort((a, b) -> Long.compare((Long) b.get("balance"), (Long) a.get("balance")));

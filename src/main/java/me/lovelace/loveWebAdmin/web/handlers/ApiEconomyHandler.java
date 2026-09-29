@@ -59,9 +59,9 @@ public class ApiEconomyHandler extends ApiHandlerSupport {
                 return;
             }
 
-            Player p = Bukkit.getPlayerExact(target);
             var bridge = plugin.getLoveEconomyBridge();
-            if (p != null && p.isOnline()) {
+            Player p = bridge.findOnline(target);
+            if (p != null) {
                 long balance = bridge.balance(p);
                 sendSuccess(resp, Map.of(
                     "available", bridge.isAvailable(),
@@ -103,8 +103,8 @@ public class ApiEconomyHandler extends ApiHandlerSupport {
                 return;
             }
 
-            Player targetPlayer = Bukkit.getPlayerExact(target);
-            if (targetPlayer == null || !targetPlayer.isOnline()) {
+            Player targetPlayer = plugin.getLoveEconomyBridge().findOnline(target);
+            if (targetPlayer == null) {
                 sendError(resp, 400, "Игрок " + target + " должен быть онлайн для передачи/списания монет");
                 return;
             }
