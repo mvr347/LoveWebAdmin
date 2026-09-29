@@ -37,6 +37,10 @@ public abstract class ApiHandlerSupport extends HttpServlet {
     protected void service(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
         try {
             super.service(req, resp);
+        } catch (PayloadTooLargeException e) {
+            if (!resp.isCommitted()) {
+                sendError(resp, 413, "Тело запроса слишком большое");
+            }
         } catch (IllegalArgumentException e) {
             if (!resp.isCommitted()) {
                 sendError(resp, 400, "Некорректный запрос");
@@ -138,8 +142,36 @@ public abstract class ApiHandlerSupport extends HttpServlet {
         return sessionOpt;
     }
 
+    /** Upper bound for a request body; every legitimate JSON payload of this API is far below it. */
+    private static final int MAX_BODY_BYTES = 1_048_576;
+
+    /** Thrown by {@link #readBody} when the client sends more than {@link #MAX_BODY_BYTES}. */
+    public static final class PayloadTooLargeException extends RuntimeException {
+        public PayloadTooLargeException() {
+            super("Request body too large");
+        }
+    }
+
+    /**
+     * Reads the request body with a hard size cap. {@code readAllBytes()} buffered whatever the client
+     * sent - including on endpoints reachable before any session check - so a single huge POST could
+     * exhaust the heap.
+     */
+    protected String readBody(HttpServletRequest req) throws IOException {
+        if (req.getContentLengthLong() > MAX_BODY_BYTES) {
+            throw new PayloadTooLargeException();
+        }
+        try (var in = req.getInputStream()) {
+            byte[] buf = in.readNBytes(MAX_BODY_BYTES + 1);
+            if (buf.length > MAX_BODY_BYTES) {
+                throw new PayloadTooLargeException();
+            }
+            return new String(buf, StandardCharsets.UTF_8);
+        }
+    }
+
     protected Map<String, Object> readJsonBody(HttpServletRequest req) throws IOException {
-        String body = new String(req.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        String body = readBody(req);
         if (body.isBlank()) return Map.of();
         return JsonUtils.parseObject(body);
     }

@@ -55,7 +55,7 @@ public class ApiLockdownHandler extends ApiHandlerSupport {
         String adminName = session.get().adminUsername();
 
         if ("/activate".equals(pathInfo)) {
-            String body = new String(req.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            String body = readBody(req);
             Map<String, Object> map = JsonUtils.parseObject(body);
             String reason = map != null && map.containsKey("reason") ? String.valueOf(map.get("reason")) : "Экстренная изоляция";
             boolean kickNewbies = map == null || !Boolean.FALSE.equals(map.get("kickNewbies"));
