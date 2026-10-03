@@ -35,8 +35,10 @@ public class LoveEconomyTracker {
 
     private final Map<String, LastSeen> lastKnownBalances = new ConcurrentHashMap<>();
 
-    // Порог прироста за 5 минут, считающийся подозрительным аномальным скачком (дюп)
-    private static final long DEFAULT_ANOMALY_THRESHOLD = 50_000L;
+    // Порог прироста за 5 минут, считающийся подозрительным скачком (дюп): ключ economy.anomaly-threshold,
+    // читается при каждом срезе, поэтому после перезагрузки конфига новое значение действует сразу.
+    // Запасное значение — 10 алмазных монет в стандартной шкале LoveCore (1/100/2000/20000).
+    private static final long FALLBACK_ANOMALY_THRESHOLD = 200_000L;
 
     public LoveEconomyTracker(LoveWebAdmin plugin, LoveEconomyBridge bridge) {
         this.plugin = plugin;
@@ -70,6 +72,7 @@ public class LoveEconomyTracker {
         // This runs on the async scheduler; balances are read from live inventories, so the bridge
         // collects them all in one pass on the main thread.
         long now = System.currentTimeMillis();
+        long anomalyThreshold = anomalyThreshold();
         for (Map.Entry<String, Long> online : bridge.onlineBalances().entrySet()) {
             long currentBalance = online.getValue();
             totalCirculation += currentBalance;
@@ -85,7 +88,7 @@ public class LoveEconomyTracker {
             Long previousBalance = previous != null ? previous.balance() : null;
             if (previousBalance != null) {
                 long delta = currentBalance - previousBalance;
-                if (delta >= DEFAULT_ANOMALY_THRESHOLD) {
+                if (delta >= anomalyThreshold) {
                     plugin.getDatabaseManager().recordEconomyAnomaly(name, previousBalance, currentBalance, delta);
                     plugin.getLogManager().logWebAction(
                         "SYSTEM",
@@ -106,7 +109,18 @@ public class LoveEconomyTracker {
         List<Map<String, Object>> top20 = playerBalances.subList(0, Math.min(20, playerBalances.size()));
 
         String topJson = JsonUtils.toJson(top20);
-        plugin.getDatabaseManager().saveEconomySnapshot(totalCirculation, playerBalances.size(), topJson);
+        plugin.getDatabaseManager().saveEconomySnapshot(totalCirculation, playerBalances.size(), topJson, bridge.scaleVersion());
+    }
+
+    /** economy.anomaly-threshold: a number (copper units) or a money string such as "10d"; unreadable -> fallback. */
+    private long anomalyThreshold() {
+        try {
+            long value = dev.lovelace.lovecore.api.economy.MoneyConfig.get(
+                    plugin.getConfig(), "economy.anomaly-threshold", FALLBACK_ANOMALY_THRESHOLD);
+            return value > 0 ? value : FALLBACK_ANOMALY_THRESHOLD;
+        } catch (Throwable t) {
+            return plugin.getConfig().getLong("economy.anomaly-threshold", FALLBACK_ANOMALY_THRESHOLD);
+        }
     }
 
     public Map<String, Object> getOverview() {
@@ -114,6 +128,7 @@ public class LoveEconomyTracker {
         boolean available = bridge.isAvailable();
         data.put("available", available);
         data.put("currencyName", bridge.currencyName());
+        data.put("scaleVersion", bridge.scaleVersion());
 
         if (!available) {
             data.put("totalCirculation", 0);

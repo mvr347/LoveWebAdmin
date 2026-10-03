@@ -5,5 +5,6 @@ public record EconomySnapshotRecord(
     long timestamp,
     long totalCoins,
     int trackedPlayers,
-    String topBalancesJson
+    String topBalancesJson,
+    int scaleVersion
 ) {}
