@@ -393,6 +393,7 @@ public class DatabaseManager {
                 plugin.getLogger().warning("migrate invites totp_secret: " + e.getMessage());
             }
 
+            migrateEconomySnapshots();
             migrateWebRoles();
             migrateWebAdmins();
             migrateWebSessions();
@@ -403,6 +404,27 @@ public class DatabaseManager {
 
         } catch (SQLException e) {
             plugin.getLogger().severe("Не удалось инициализировать базу данных: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 2026-10-03: snapshots remember the LoveCore economy scale version they were taken under. After a
+     * denomination change the same balance means a different amount of coins, so the history of "total in
+     * circulation" has a break at the version change - old rows default to version 1.
+     */
+    private void migrateEconomySnapshots() {
+        try {
+            var cols = new java.util.HashSet<String>();
+            try (var rs = connection.getMetaData().getColumns(null, null, "economy_snapshots", null)) {
+                while (rs.next()) cols.add(rs.getString("COLUMN_NAME").toLowerCase());
+            }
+            if (!cols.contains("scale_version")) {
+                try (var st = connection.createStatement()) {
+                    st.execute("ALTER TABLE economy_snapshots ADD COLUMN scale_version INTEGER DEFAULT 1");
+                }
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().warning("migrate economy_snapshots scale_version: " + e.getMessage());
         }
     }
 
@@ -2307,13 +2329,14 @@ public class DatabaseManager {
 
     // ---------- Economy Snapshots & Anomalies ----------
 
-    public synchronized void saveEconomySnapshot(long totalCoins, int trackedPlayers, String topBalancesJson) {
-        String sql = "INSERT INTO economy_snapshots (timestamp, total_coins, tracked_players, top_balances_json) VALUES (?, ?, ?, ?)";
+    public synchronized void saveEconomySnapshot(long totalCoins, int trackedPlayers, String topBalancesJson, int scaleVersion) {
+        String sql = "INSERT INTO economy_snapshots (timestamp, total_coins, tracked_players, top_balances_json, scale_version) VALUES (?, ?, ?, ?, ?)";
         try (PreparedStatement ps = connection.prepareStatement(sql)) {
             ps.setLong(1, System.currentTimeMillis() / 1000L);
             ps.setLong(2, totalCoins);
             ps.setInt(3, trackedPlayers);
             ps.setString(4, topBalancesJson != null ? topBalancesJson : "[]");
+            ps.setInt(5, scaleVersion);
             ps.executeUpdate();
         } catch (SQLException e) {
             plugin.getLogger().warning("Ошибка сохранения среза экономики: " + e.getMessage());
@@ -2322,7 +2345,7 @@ public class DatabaseManager {
 
     public synchronized List<EconomySnapshotRecord> getRecentEconomySnapshots(int limit) {
         List<EconomySnapshotRecord> list = new ArrayList<>();
-        String sql = "SELECT id, timestamp, total_coins, tracked_players, top_balances_json FROM economy_snapshots ORDER BY id DESC LIMIT ?";
+        String sql = "SELECT id, timestamp, total_coins, tracked_players, top_balances_json, scale_version FROM economy_snapshots ORDER BY id DESC LIMIT ?";
         try (PreparedStatement ps = connection.prepareStatement(sql)) {
             ps.setInt(1, limit);
             try (ResultSet rs = ps.executeQuery()) {
@@ -2332,7 +2355,8 @@ public class DatabaseManager {
                         rs.getLong("timestamp"),
                         rs.getLong("total_coins"),
                         rs.getInt("tracked_players"),
-                        rs.getString("top_balances_json")
+                        rs.getString("top_balances_json"),
+                        rs.getInt("scale_version")
                     ));
                 }
             }

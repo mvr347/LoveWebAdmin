@@ -40,6 +40,15 @@ public class LoveEconomyBridge {
         }
     }
 
+    /** LoveCore's economy scale version (changes when the denominations are rebalanced); 1 without LoveCore. */
+    public int scaleVersion() {
+        try {
+            return economy().map(LoveEconomy::economyScaleVersion).orElse(1);
+        } catch (Throwable t) {
+            return 1;
+        }
+    }
+
     private Optional<LoveEconomy> economy() {
         try {
             return LoveCore.service(LoveEconomy.class);
