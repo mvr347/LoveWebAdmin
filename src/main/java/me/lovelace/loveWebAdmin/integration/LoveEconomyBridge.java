@@ -10,6 +10,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 
@@ -71,6 +72,10 @@ public class LoveEconomyBridge {
             return Bukkit.getScheduler().callSyncMethod(plugin, task).get(MAIN_THREAD_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            return fallback;
+        } catch (CancellationException e) {
+            // Bukkit cancels pending main-thread calls when this plugin is disabled; that is expected, not a fault.
+            plugin.getLogger().log(Level.FINE, "LoveEconomy call cancelled during shutdown", e);
             return fallback;
         } catch (Exception e) {
             plugin.getLogger().log(Level.WARNING, "LoveEconomy call on the main thread failed or timed out", e);
