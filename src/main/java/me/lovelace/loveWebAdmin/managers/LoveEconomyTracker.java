@@ -6,8 +6,10 @@ import me.lovelace.loveWebAdmin.integration.LoveEconomyBridge;
 import me.lovelace.loveWebAdmin.models.EconomyAnomalyRecord;
 import me.lovelace.loveWebAdmin.models.EconomySnapshotRecord;
 import me.lovelace.loveWebAdmin.utils.JsonUtils;
+import me.lovelace.loveWebAdmin.utils.RunGuard;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
+import org.bukkit.plugin.IllegalPluginAccessException;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -35,6 +37,10 @@ public class LoveEconomyTracker {
 
     private final Map<String, LastSeen> lastKnownBalances = new ConcurrentHashMap<>();
 
+    // Замер, который уже идёт в момент выключения, успевает дописать снимок до закрытия БД и jar.
+    private static final long SHUTDOWN_WAIT_SECONDS = 3L;
+    private final RunGuard guard = new RunGuard();
+
     // Порог прироста за 5 минут, считающийся подозрительным скачком (дюп): ключ economy.anomaly-threshold,
     // читается при каждом срезе, поэтому после перезагрузки конфига новое значение действует сразу.
     // Запасное значение — 10 алмазных монет в стандартной шкале LoveCore (1/100/2000/20000).
@@ -47,6 +53,7 @@ public class LoveEconomyTracker {
 
     public void start() {
         if (scheduledTask != null) return;
+        guard.reopen();
         scheduledTask = Bukkit.getAsyncScheduler().runAtFixedRate(
             plugin,
             task -> takeSnapshot(),
@@ -56,24 +63,66 @@ public class LoveEconomyTracker {
         );
     }
 
+    /**
+     * Отменяет расписание и ждёт, пока уже начатый замер (включая запись в БД) завершится.
+     * Так jar плагина и база остаются открытыми до конца работы замера.
+     */
     public void stop() {
         if (scheduledTask != null) {
             scheduledTask.cancel();
             scheduledTask = null;
         }
+        if (!guard.stopAndAwait(SHUTDOWN_WAIT_SECONDS, TimeUnit.SECONDS)) {
+            plugin.getLogger().warning("LoveEconomy: замер балансов не завершился за " + SHUTDOWN_WAIT_SECONDS
+                + " с, выключение продолжается");
+        }
     }
 
+    /**
+     * Запускается с async-расписания и ничего не ждёт. Балансы читаются на главном потоке (там живые
+     * инвентари), обработка идёт обратно в async. Блокирующий вызов с async-потока во время выключения
+     * зависал, а потом писал в уже закрытый jar плагина.
+     */
     public void takeSnapshot() {
-        if (!bridge.isAvailable()) return;
+        if (!bridge.isAvailable() || !guard.enter()) return;
+        try {
+            Bukkit.getScheduler().runTask(plugin, this::collectOnMain);
+        } catch (IllegalPluginAccessException e) {
+            // Плагин уже выключается: замера в этот раз не будет.
+        } finally {
+            guard.exit();
+        }
+    }
 
+    /** Главный поток: один проход по онлайн-игрокам, затем обработка в async. */
+    private void collectOnMain() {
+        if (!guard.enter()) return;
+        try {
+            Map<String, Long> balances = bridge.onlineBalances();
+            Bukkit.getAsyncScheduler().runNow(plugin, task -> record(balances));
+        } catch (IllegalPluginAccessException e) {
+            // Плагин уже выключается: замера в этот раз не будет.
+        } finally {
+            guard.exit();
+        }
+    }
+
+    private void record(Map<String, Long> balances) {
+        if (!guard.enter()) return;
+        try {
+            recordBalances(balances);
+        } finally {
+            guard.exit();
+        }
+    }
+
+    private void recordBalances(Map<String, Long> balances) {
         List<Map<String, Object>> playerBalances = new ArrayList<>();
         long totalCirculation = 0L;
 
-        // This runs on the async scheduler; balances are read from live inventories, so the bridge
-        // collects them all in one pass on the main thread.
         long now = System.currentTimeMillis();
         long anomalyThreshold = anomalyThreshold();
-        for (Map.Entry<String, Long> online : bridge.onlineBalances().entrySet()) {
+        for (Map.Entry<String, Long> online : balances.entrySet()) {
             long currentBalance = online.getValue();
             totalCirculation += currentBalance;
             String name = online.getKey();
