@@ -113,7 +113,15 @@ public class LoveCoreDiscordBridge implements Listener {
                     if (closed) break;
                     int id=((Number)item.get("id")).intValue();
                     if(!plugin.moderation().takeDelivery(id))continue;
-                    var sent=service.directMessage(item.get("recipient").toString(),item.get("payload").toString());
+                    Map<String,Object> payload=JsonUtils.parseObject(item.get("payload").toString());
+                    CompletableFuture<String> sent;
+                    if("APPEAL_TICKET".equals(payload.get("type"))) {
+                        int appealId=((Number)payload.get("appealId")).intValue();
+                        var appeal=plugin.getDatabaseManager().getAppealById(appealId);
+                        if(appeal.isEmpty()||!"PENDING".equals(appeal.get().status()))sent=CompletableFuture.completedFuture("closed");
+                        else if(appeal.get().discordChannelId()!=null)sent=CompletableFuture.completedFuture(appeal.get().discordChannelId());
+                        else sent=doCreateAppealTicket(appeal.get());
+                    } else sent=service.directMessage(item.get("recipient").toString(),item.get("payload").toString());
                     pending.add(sent.handle((message,error)->plugin.io().run(()->{
                         try{plugin.moderation().delivered(id,error==null&&message!=null,((Number)item.get("attempts")).intValue()+1,error==null&&message!=null?null:"ЛС недоступны или ошибка Discord");}
                         catch(java.sql.SQLException e){throw new IllegalStateException(e);}
@@ -147,7 +155,7 @@ public class LoveCoreDiscordBridge implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onReportCreated(PlayerReportCreatedEvent event) {
-        notifyReportCreated(event.getReport());
+        notifyReportCreated(event.getReport(),true);
     }
 
     @EventHandler(priority=EventPriority.MONITOR,ignoreCancelled=true)
@@ -155,29 +163,42 @@ public class LoveCoreDiscordBridge implements Listener {
         // Refresh from persisted state rather than trusting a client-provided status.
         plugin.getDatabaseManager().getReportById(event.getReportId()).ifPresent(this::notifyReportCreated);
     }
-    public void notifyReportCreated(PlayerReport report) {
+    public void notifyReportCreated(PlayerReport report) {notifyReportCreated(report,false);}
+    private void notifyReportCreated(PlayerReport report,boolean freshNotification) {
+        var currentRecord=plugin.getDatabaseManager().getReportById(report.id());if(currentRecord.isEmpty())return;
+        PlayerReport current=currentRecord.get();
         var opt=discord().filter(DiscordService::isEnabled);if(opt.isEmpty())return;
         var service=opt.get();
-        String channel=plugin.getConfig().getString("discord.reports-channel-id","");if(channel.isBlank())return;
+        String channel=plugin.getConfig().getString("discord.reports-channel-id","");
         try {
-            var existing=plugin.moderation().card("report",report.id());
-            String state=switch(report.status()){case "ACCEPTED"->"Подтверждена";case "REJECTED"->"Отклонена";case "EXPIRED"->"Истекла";default->"На рассмотрении";};
-            String assigned=plugin.moderation().work("report",report.id()).get("assignee").toString();
-            String content="Жалоба №"+report.id()+" · "+state+"\nИгрок: "+report.targetName()+"\nЗаявитель: "+report.reporterName()+"\nПричина: "+String.join(", ",report.reasons())+"\nОтветственный: "+(assigned.isBlank()?"Не назначен":assigned);
+            var existing=plugin.moderation().card("report",current.id());
+            String state=switch(current.status()){case "ACCEPTED"->"Подтверждена";case "REJECTED"->"Отклонена";case "EXPIRED"->"Истекла";default->"На рассмотрении";};
+            String assigned=plugin.moderation().work("report",current.id()).get("assignee").toString();
+            String content="Жалоба №"+current.id()+" · "+state+"\nИгрок: "+current.targetName()+"\nЗаявитель: "+current.reporterName()+"\nПричина: "+String.join(", ",current.reasons())+"\nОтветственный: "+(assigned.isBlank()?"Не назначен":assigned);
+            if(freshNotification)dispatchAdminDirectMessages("discordNotifyReports",new DiscordEmbed("Новая жалоба №"+current.id(),content,0xE74C3C,List.of(),"LoveWebAdmin",Instant.now()));
+            if(channel.isBlank()||"webhook".equalsIgnoreCase(plugin.getConfig().getString("discord.reports-transport","auto")))return;
             var buttons=new ArrayList<Map<String,Object>>();
-            if(report.status().equals("PENDING")&&assigned.isBlank())buttons.add(Map.of("type",2,"style",1,"label","Взять в работу","custom_id","lwa:report:claim:"+report.id()));
+            if(current.status().equals("PENDING")&&assigned.isBlank())buttons.add(Map.of("type",2,"style",1,"label","Взять в работу","custom_id","lwa:report:claim:"+current.id()));
             String url=plugin.getConfig().getString("web.public-url","");
-            if(!url.isBlank())buttons.add(Map.of("type",2,"style",5,"label","Открыть дело","url",url.replaceAll("/+$", "")+"/case.html?kind=report&id="+report.id()));
+            if(!url.isBlank())buttons.add(Map.of("type",2,"style",5,"label","Открыть дело","url",url.replaceAll("/+$", "")+"/case.html?kind=report&id="+current.id()));
             var body=new java.util.LinkedHashMap<String,Object>();body.put("content",content);
             body.put("components",buttons.isEmpty()?List.of():List.of(Map.of("type",1,"components",buttons)));
             service.sendMessage(channel,JsonUtils.toJson(body),existing.map(c->c.get("message")).orElse(null)).thenAccept(message->{
-                if(message!=null)plugin.io().run(()->{try{plugin.moderation().card("report",report.id(),channel,message);}catch(java.sql.SQLException e){throw new IllegalStateException(e);}});
+                if(message!=null)plugin.io().run(()->{try{plugin.moderation().card("report",current.id(),channel,message);}catch(java.sql.SQLException e){throw new IllegalStateException(e);}});
             });
-            if(existing.isEmpty()&&report.status().equals("PENDING"))dispatchAdminDirectMessages("discordNotifyReports",new DiscordEmbed("Новая жалоба №"+report.id(),content,0xE74C3C,List.of(),"LoveWebAdmin",Instant.now()));
+
         }catch(java.sql.SQLException e){plugin.getLogger().warning("Не удалось обновить карточку жалобы");}
     }
 
     public CompletableFuture<String> createAppealTicket(WebBanAppeal appeal) {
+        try {
+            String owner=plugin.moderation().owner(appeal.id()).orElse("");
+            plugin.moderation().enqueue("ticket:"+appeal.id(),owner,JsonUtils.toJson(Map.of("type","APPEAL_TICKET","appealId",appeal.id())));
+            return CompletableFuture.completedFuture(null);
+        }catch(java.sql.SQLException e){return CompletableFuture.failedFuture(e);}
+    }
+
+    private CompletableFuture<String> doCreateAppealTicket(WebBanAppeal appeal) {
         Optional<DiscordService> serviceOpt = discord();
         if (serviceOpt.isEmpty() || !serviceOpt.get().isEnabled()) {
             return CompletableFuture.completedFuture(null);
@@ -192,9 +213,9 @@ public class LoveCoreDiscordBridge implements Listener {
             String.valueOf(appeal.id()),
             appeal.playerName(),
             appeal.reason(),owner
-        ).thenApply(channelId -> {
+        ).thenCompose(channelId -> plugin.io().supply(() -> {
             if (channelId != null && !channelId.isBlank()) {
-                plugin.getDatabaseManager().setAppealDiscordChannelId(appeal.id(), channelId);
+                if(!plugin.getDatabaseManager().setAppealDiscordChannelId(appeal.id(), channelId))throw new IllegalStateException("Не сохранён канал апелляции");
 
                 // Отправляем вступительное сообщение в канал тикета
                 List<DiscordEmbed.Field> fields = new ArrayList<>();
@@ -217,9 +238,9 @@ public class LoveCoreDiscordBridge implements Listener {
                 ))))),null).thenAccept(message->{if(message!=null)plugin.io().run(()->{try{plugin.moderation().card("appeal",appeal.id(),channelId,message);}catch(java.sql.SQLException e){throw new IllegalStateException(e);}});});
             }
             // Оповещаем администраторов
-            notifyAppealCreated(appeal);
+            if(channelId!=null&&!channelId.isBlank())notifyAppealCreated(appeal);
             return channelId;
-        });
+        }));
     }
 
     public void notifyAppealCreated(WebBanAppeal appeal) {

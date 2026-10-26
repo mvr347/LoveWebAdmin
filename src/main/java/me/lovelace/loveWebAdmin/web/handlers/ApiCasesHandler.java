@@ -60,6 +60,25 @@ public final class ApiCasesHandler extends ApiHandlerSupport {
 
   @Override
   protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+    if (Objects.toString(req.getPathInfo(), "").matches("/deliveries/[0-9]+/retry")) {
+      var auth = requirePermission(req, resp, Permission.MANAGE_API);
+      if (auth.isEmpty()) return;
+      int id = Integer.parseInt(req.getPathInfo().split("/")[2]);
+      try {
+        if (!plugin.moderation().retryDelivery(id)) {
+          sendError(resp, 409, "Повторить можно только неудачную доставку");
+          return;
+        }
+      } catch (SQLException e) {
+        throw new IllegalStateException(e);
+      }
+      plugin
+          .getLogManager()
+          .logWebAction(auth.get().adminUsername(), "Повторил доставку Discord №" + id);
+      sendSuccess(resp, Map.of("message", "Доставка поставлена в очередь"));
+      return;
+    }
+
     String[] p = path(req);
     int id = Integer.parseInt(p[2]);
     if (p.length != 4) throw new IllegalArgumentException("Укажите действие");
@@ -126,7 +145,11 @@ public final class ApiCasesHandler extends ApiHandlerSupport {
       sendError(resp, 409, "Дело уже занято другим сотрудником");
       return;
     }
-    if(p[1].equals("report"))plugin.getDatabaseManager().getReportById(id).ifPresent(plugin.getDiscordBridge()::notifyReportCreated);
+    if (p[1].equals("report"))
+      plugin
+          .getDatabaseManager()
+          .getReportById(id)
+          .ifPresent(plugin.getDiscordBridge()::notifyReportCreated);
     plugin.getLogManager().logWebAction(actor, "Дело " + p[1] + " №" + id + ": " + p[3]);
     sendSuccess(resp, Map.of("message", "Изменения сохранены"));
   }

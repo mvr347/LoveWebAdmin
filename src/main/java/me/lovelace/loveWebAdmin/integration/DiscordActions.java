@@ -45,7 +45,7 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
                 plugin
                     .getDatabaseManager()
                     .getRoleById(a.roleId())
-                    .map(r -> r.isOwner() || r.permissions().contains(perm))
+                    .map(r -> r.isOwner() || perm == null || r.permissions().contains(perm))
                     .orElse(false));
   }
 
@@ -144,9 +144,15 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
   private String execute(DiscordInteraction i) throws Exception {
     if (i.name().startsWith("lwa:appeal:submit:")) return createAppeal(i);
     Permission permission =
-        i.name().startsWith("lwa:report:") || i.name().equals("жалобы")
-            ? Permission.MANAGE_REPORTS
-            : i.name().equals("игрок") ? Permission.VIEW_PLAYERS : Permission.MANAGE_APPEALS;
+        i.name().equals("смена")
+            ? null
+            : i.name().equals("дело")
+                ? Permission.VIEW_APPEALS
+                : i.name().startsWith("lwa:report:") || i.name().equals("жалобы")
+                    ? Permission.MANAGE_REPORTS
+                    : i.name().equals("игрок")
+                        ? Permission.VIEW_PLAYERS
+                        : Permission.MANAGE_APPEALS;
     var auth = staff(i.userId(), permission);
     if (auth.isEmpty()) return "Недостаточно прав. Нужен привязанный аккаунт сотрудника WebAdmin.";
     WebAdmin admin = auth.get();
@@ -158,7 +164,11 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
           .filter(r -> r.status().equals("PENDING"))
           .isEmpty()) return "Жалоба закрыта или не найдена.";
       boolean ok = plugin.moderation().claim("report", id, admin.username());
-      if(ok)plugin.getDatabaseManager().getReportById(id).ifPresent(plugin.getDiscordBridge()::notifyReportCreated);
+      if (ok)
+        plugin
+            .getDatabaseManager()
+            .getReportById(id)
+            .ifPresent(plugin.getDiscordBridge()::notifyReportCreated);
       if (ok)
         plugin
             .getLogManager()

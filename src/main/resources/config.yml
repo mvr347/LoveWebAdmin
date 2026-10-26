@@ -87,5 +87,7 @@ security:
 
 # Бот и привязки аккаунтов настраиваются в LoveCore.
 discord:
+  # auto: бот при доступности, иначе Discord-вебхук; bot, webhook, both.
+  reports-transport: auto
   reports-channel-id: ""
   appeals-channel-id: ""
