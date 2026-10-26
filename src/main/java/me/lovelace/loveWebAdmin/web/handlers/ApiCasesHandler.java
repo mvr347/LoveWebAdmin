@@ -126,6 +126,7 @@ public final class ApiCasesHandler extends ApiHandlerSupport {
       sendError(resp, 409, "Дело уже занято другим сотрудником");
       return;
     }
+    if(p[1].equals("report"))plugin.getDatabaseManager().getReportById(id).ifPresent(plugin.getDiscordBridge()::notifyReportCreated);
     plugin.getLogManager().logWebAction(actor, "Дело " + p[1] + " №" + id + ": " + p[3]);
     sendSuccess(resp, Map.of("message", "Изменения сохранены"));
   }

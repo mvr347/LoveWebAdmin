@@ -20,6 +20,7 @@ public final class ModerationStore implements AutoCloseable {
     try (var s = db.createStatement()) {
       s.execute("PRAGMA busy_timeout=3000");
       s.execute("PRAGMA journal_mode=WAL");
+      s.execute("CREATE TABLE IF NOT EXISTS discord_cards(kind TEXT NOT NULL,id INTEGER NOT NULL,channel TEXT NOT NULL,message TEXT NOT NULL,PRIMARY KEY(kind,id))");
       s.execute(
           "CREATE TABLE IF NOT EXISTS case_work (kind TEXT NOT NULL,id INTEGER NOT NULL, assignee"
               + " TEXT, priority TEXT NOT NULL DEFAULT 'NORMAL', state TEXT NOT NULL DEFAULT"
@@ -402,6 +403,12 @@ public final class ModerationStore implements AutoCloseable {
     return result;
   }
 
+  public synchronized Optional<Map<String,String>> card(String kind,int id)throws SQLException {
+    try(var q=db.prepareStatement("SELECT channel,message FROM discord_cards WHERE kind=? AND id=?")){q.setString(1,kind(kind));q.setInt(2,id);try(var r=q.executeQuery()){return r.next()?Optional.of(Map.of("channel",r.getString(1),"message",r.getString(2))):Optional.empty();}}
+  }
+  public synchronized void card(String kind,int id,String channel,String message)throws SQLException {
+    try(var q=db.prepareStatement("INSERT INTO discord_cards(kind,id,channel,message) VALUES(?,?,?,?) ON CONFLICT(kind,id) DO UPDATE SET channel=excluded.channel,message=excluded.message")){q.setString(1,kind(kind));q.setInt(2,id);q.setString(3,channel);q.setString(4,message);q.executeUpdate();}
+  }
   @Override
   public synchronized void close() throws SQLException {
     db.close();

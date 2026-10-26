@@ -158,6 +158,7 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
           .filter(r -> r.status().equals("PENDING"))
           .isEmpty()) return "Жалоба закрыта или не найдена.";
       boolean ok = plugin.moderation().claim("report", id, admin.username());
+      if(ok)plugin.getDatabaseManager().getReportById(id).ifPresent(plugin.getDiscordBridge()::notifyReportCreated);
       if (ok)
         plugin
             .getLogManager()

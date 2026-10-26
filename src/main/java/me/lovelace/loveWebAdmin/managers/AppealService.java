@@ -42,8 +42,7 @@ public final class AppealService {
               + ".\n"
               + reason.trim();
       plugin.getDatabaseManager().addAppealMessage(id, actor, true, message);
-      plugin.getDiscordBridge().sendTicketReply(appeal, actor, true, message);
-      plugin.getDiscordBridge().closeAppealTicket(appeal, message);
+      plugin.getDiscordBridge().finishAppeal(appeal,message);
       plugin
           .getLogManager()
           .logWebAction(

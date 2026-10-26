@@ -344,6 +344,7 @@
         } catch (e) {
             throw new Error('Некорректный ответ сервера');
         }
+        if(method==='GET'&&generation!==requestGeneration)throw new Error('Открыт другой раздел');
         if (!res.ok || !json.success) {
             if (res.status === 401 && token && !path.includes('/login')) {
                 setToken(null);
@@ -1918,8 +1919,24 @@
         startTopbarStatusPoller();
 
         // Navigate to initially selected section
-        navigateTo(activeNavSection);
+        const route=new URLSearchParams(location.hash.slice(1));
+        const section=route.get('section');
+        const visible=SECTIONS.filter(isSectionVisible);
+        if(section&&visible.some(s=>s.id===section))activeNavSection=section;
+        else if(!visible.some(s=>s.id===activeNavSection))activeNavSection=visible[0]?.id||'dashboard';
+        navigateTo(activeNavSection,false);
+        const player=route.get('player');
+        if(player&&/^[A-Za-z0-9_]{1,16}$/.test(player)&&hasPerm('VIEW_PLAYERS'))window.viewPlayerProfile(player);
     }
+
+    window.addEventListener('popstate',()=>{
+        if(!me)return;
+        const route=new URLSearchParams(location.hash.slice(1));
+        const section=route.get('section')||'dashboard';
+        if(SECTIONS.some(s=>s.id===section&&isSectionVisible(s)))navigateTo(section,false);
+        const player=route.get('player');
+        if(player&&/^[A-Za-z0-9_]{1,16}$/.test(player)&&hasPerm('VIEW_PLAYERS'))window.viewPlayerProfile(player);
+    });
 
     function startTopbarStatusPoller() {
         const updateStatus = async () => {
@@ -1946,7 +1963,8 @@
         globalPollers.status=setInterval(()=>{if(!document.hidden)updateStatus();},5000);
     }
 
-    function navigateTo(sectionId) {
+    function navigateTo(sectionId,recordHistory=true) {
+        if(recordHistory)history.pushState({section:sectionId},'', '#section='+encodeURIComponent(sectionId));
         clearPollers();
         activeNavSection = sectionId;
 
@@ -8772,8 +8790,8 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 } else if (tabId === 'webhooks') {
                     // TAB 5: ВЕБХУКИ И СВЯЗЬ (DISCORD + TELEGRAM)
                     const discordId = me.discordVerified ? me.discordId : ''; 
-                    const notifyReports = userPrefs.discordNotifyReports !== false;
-                    const notifyTickets = userPrefs.discordNotifyTickets !== false;
+                    const notifyReports = userPrefs.discordNotifyReports === true;
+                    const notifyTickets = userPrefs.discordNotifyTickets === true;
 
                     contentPane.innerHTML = `
                         <h4 style="color:var(--text-heading); margin-bottom:14px;">ОПОВЕЩЕНИЯ, DISCORD И TELEGRAM ВЕБХУКИ</h4>

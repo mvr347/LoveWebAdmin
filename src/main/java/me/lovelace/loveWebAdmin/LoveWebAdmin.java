@@ -30,7 +30,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.event.HandlerList;
 import org.bukkit.plugin.java.JavaPlugin;
 
-public final class LoveWebAdmin extends JavaPlugin {
+public class LoveWebAdmin extends JavaPlugin {
 
     private me.lovelace.loveWebAdmin.concurrent.MainDispatcher main;
     private me.lovelace.loveWebAdmin.concurrent.VirtualIoExecutor io;
@@ -215,7 +215,7 @@ public final class LoveWebAdmin extends JavaPlugin {
             getLogger().warning("=============================================================================");
         }
         this.webServer = new WebServer(this, port, host);
-        io.run(webServer::start);
+        if(getConfig().getBoolean("web.enabled",true))io.run(webServer::start);
 
         getLogger().info("LoveWebAdmin запущен на " + host + ":" + port);
     }
@@ -236,8 +236,8 @@ public final class LoveWebAdmin extends JavaPlugin {
         if(freezeManager!=null)safely("заморозка",freezeManager::clearAll);
         me.lovelace.loveWebAdmin.api.LoveWebAdminAPIProvider.unregister();
         HandlerList.unregisterAll(this);
-        getServer().getScheduler().cancelTasks(this);
-        getServer().getAsyncScheduler().cancelTasks(this);
+        safely("Bukkit scheduler",()->getServer().getScheduler().cancelTasks(this));
+        safely("Async scheduler",()->getServer().getAsyncScheduler().cancelTasks(this));
         if(io!=null)io.stop(java.time.Duration.ofSeconds(3));
         if(moderation!=null)safely("дела",()->{try{moderation.close();}catch(java.sql.SQLException e){throw new IllegalStateException(e);}});
         if(databaseManager!=null)safely("SQLite",databaseManager::close);

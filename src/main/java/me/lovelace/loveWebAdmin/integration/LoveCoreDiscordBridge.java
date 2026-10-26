@@ -150,39 +150,31 @@ public class LoveCoreDiscordBridge implements Listener {
         notifyReportCreated(event.getReport());
     }
 
+    @EventHandler(priority=EventPriority.MONITOR,ignoreCancelled=true)
+    public void onReportResolved(me.lovelace.loveWebAdmin.api.events.PlayerReportResolvedEvent event) {
+        // Refresh from persisted state rather than trusting a client-provided status.
+        plugin.getDatabaseManager().getReportById(event.getReportId()).ifPresent(this::notifyReportCreated);
+    }
     public void notifyReportCreated(PlayerReport report) {
-        Optional<DiscordService> serviceOpt = discord();
-        if (serviceOpt.isEmpty() || !serviceOpt.get().isEnabled()) return;
-        DiscordService service = serviceOpt.get();
-
-        String title = "🚨 Новая жалоба #" + report.id();
-        String desc = "Поступила жалоба на игрока **" + report.targetName() + "** от **" + report.reporterName() + "**";
-        List<DiscordEmbed.Field> fields = new ArrayList<>();
-        fields.add(new DiscordEmbed.Field("Нарушитель", report.targetName(), true));
-        fields.add(new DiscordEmbed.Field("Отправитель", report.reporterName(), true));
-        fields.add(new DiscordEmbed.Field("Причины", String.join(", ", report.reasons()), false));
-        if (report.description() != null && !report.description().isBlank()) {
-            fields.add(new DiscordEmbed.Field("Описание", report.description(), false));
-        }
-
-        DiscordEmbed embed = new DiscordEmbed(
-            title,
-            desc,
-            0xE74C3C, // Red
-            fields,
-            "LoveWebAdmin • Жалобы",
-            Instant.now()
-        );
-
-        // Канал жалоб
-        String channelId = plugin.getConfig().getString("discord.reports-channel-id", "");
-        if (channelId != null && !channelId.isBlank()) {
-            service.sendMessage(channelId,JsonUtils.toJson(Map.of("content",title+"\n"+desc+"\nПричины: "+String.join(", ",report.reasons()),
-                "components",List.of(Map.of("type",1,"components",List.of(Map.of("type",2,"style",1,"label","Взять в работу","custom_id","lwa:report:claim:"+report.id())))))),null);
-        }
-
-        // Уведомления в ЛС администраторам
-        dispatchAdminDirectMessages("discordNotifyReports", embed);
+        var opt=discord().filter(DiscordService::isEnabled);if(opt.isEmpty())return;
+        var service=opt.get();
+        String channel=plugin.getConfig().getString("discord.reports-channel-id","");if(channel.isBlank())return;
+        try {
+            var existing=plugin.moderation().card("report",report.id());
+            String state=switch(report.status()){case "ACCEPTED"->"Подтверждена";case "REJECTED"->"Отклонена";case "EXPIRED"->"Истекла";default->"На рассмотрении";};
+            String assigned=plugin.moderation().work("report",report.id()).get("assignee").toString();
+            String content="Жалоба №"+report.id()+" · "+state+"\nИгрок: "+report.targetName()+"\nЗаявитель: "+report.reporterName()+"\nПричина: "+String.join(", ",report.reasons())+"\nОтветственный: "+(assigned.isBlank()?"Не назначен":assigned);
+            var buttons=new ArrayList<Map<String,Object>>();
+            if(report.status().equals("PENDING")&&assigned.isBlank())buttons.add(Map.of("type",2,"style",1,"label","Взять в работу","custom_id","lwa:report:claim:"+report.id()));
+            String url=plugin.getConfig().getString("web.public-url","");
+            if(!url.isBlank())buttons.add(Map.of("type",2,"style",5,"label","Открыть дело","url",url.replaceAll("/+$", "")+"/case.html?kind=report&id="+report.id()));
+            var body=new java.util.LinkedHashMap<String,Object>();body.put("content",content);
+            body.put("components",buttons.isEmpty()?List.of():List.of(Map.of("type",1,"components",buttons)));
+            service.sendMessage(channel,JsonUtils.toJson(body),existing.map(c->c.get("message")).orElse(null)).thenAccept(message->{
+                if(message!=null)plugin.io().run(()->{try{plugin.moderation().card("report",report.id(),channel,message);}catch(java.sql.SQLException e){throw new IllegalStateException(e);}});
+            });
+            if(existing.isEmpty()&&report.status().equals("PENDING"))dispatchAdminDirectMessages("discordNotifyReports",new DiscordEmbed("Новая жалоба №"+report.id(),content,0xE74C3C,List.of(),"LoveWebAdmin",Instant.now()));
+        }catch(java.sql.SQLException e){plugin.getLogger().warning("Не удалось обновить карточку жалобы");}
     }
 
     public CompletableFuture<String> createAppealTicket(WebBanAppeal appeal) {
@@ -222,7 +214,7 @@ public class LoveCoreDiscordBridge implements Listener {
                 service.sendMessage(channelId, JsonUtils.toJson(Map.of("content","Действия персонала", "components",List.of(Map.of("type",1,"components",List.of(
                     Map.of("type",2,"style",3,"label","Одобрить","custom_id","lwa:decision:approve:"+appeal.id()),
                     Map.of("type",2,"style",4,"label","Отклонить","custom_id","lwa:decision:reject:"+appeal.id())
-                ))))),null);
+                ))))),null).thenAccept(message->{if(message!=null)plugin.io().run(()->{try{plugin.moderation().card("appeal",appeal.id(),channelId,message);}catch(java.sql.SQLException e){throw new IllegalStateException(e);}});});
             }
             // Оповещаем администраторов
             notifyAppealCreated(appeal);
@@ -272,6 +264,18 @@ public class LoveCoreDiscordBridge implements Listener {
             String formatted = "**" + roleTag + " " + authorName + "**: " + message;
             serviceOpt.get().sendChannelMessage(channelId, formatted, null);
         }
+    }
+
+    public CompletableFuture<Boolean> finishAppeal(WebBanAppeal appeal,String reason) {
+        var service=discord();String channel=appeal.discordChannelId();
+        if(service.isEmpty()||channel==null)return CompletableFuture.completedFuture(false);
+        Optional<Map<String,String>> card;
+        try{card=plugin.moderation().card("appeal",appeal.id());}catch(java.sql.SQLException e){return CompletableFuture.failedFuture(e);}
+        return service.get().sendChannelMessage(channel,reason,null).thenCompose(sent->{
+            if(!sent)return CompletableFuture.completedFuture(false);
+            if(card.isEmpty())return CompletableFuture.completedFuture(true);
+            return service.get().sendMessage(channel,JsonUtils.toJson(Map.of("content","Рассмотрение завершено","components",List.of())),card.get().get("message")).thenApply(id->id!=null);
+        }).thenCompose(updated->updated?service.get().closeTicketChannel(channel,reason):CompletableFuture.completedFuture(false));
     }
 
     public void closeAppealTicket(WebBanAppeal appeal, String reason) {
