@@ -222,7 +222,6 @@ public class ApiReportsHandler extends ApiHandlerSupport {
         m.put("id", r.id());
         m.put("reporterUuid", r.reporterUuid());
         m.put("reporterName", r.reporterName());
-        m.put("reporterIp", r.reporterIp());
         m.put("targetUuid", r.targetUuid());
         m.put("targetName", r.targetName());
         m.put("reasons", r.reasons());

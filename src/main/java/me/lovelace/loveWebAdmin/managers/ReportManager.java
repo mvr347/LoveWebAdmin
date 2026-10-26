@@ -289,13 +289,13 @@ public class ReportManager {
                 plugin.main().call(() -> {
                     reporter.sendMessage(Component.text("§a✔ Ваша жалоба на игрока §e" + targetName + " §aуспешно отправлена модераторам сервера!"));
                     reporter.sendMessage(Component.text("§7Мы рассмотрим её в ближайшее время. Спасибо за помощь проекту!"));
-                
+
                 return null;
             });
             } else {
                 plugin.main().call(() -> {
                     reporter.sendMessage(Component.text("§cОшибка отправки жалобы. Пожалуйста, попробуйте позже."));
-                
+
                 return null;
             });
             }

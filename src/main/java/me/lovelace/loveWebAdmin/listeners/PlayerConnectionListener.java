@@ -32,6 +32,7 @@ public class PlayerConnectionListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onPlayerJoin(PlayerJoinEvent event) {
+        plugin.connected(event.getPlayer().getUniqueId(),true);
         Player player = event.getPlayer();
         UUID uuid = player.getUniqueId();
         String name = player.getName();
@@ -86,6 +87,7 @@ public class PlayerConnectionListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onPlayerQuit(PlayerQuitEvent event) {
+        plugin.connected(event.getPlayer().getUniqueId(),false);
         UUID uuid = event.getPlayer().getUniqueId();
         Long joinTime = joinTimes.remove(uuid);
         if (joinTime != null) {

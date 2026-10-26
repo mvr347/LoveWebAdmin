@@ -29,8 +29,13 @@ public final class CommandRedactor {
     String label = words[0].replaceFirst("^/", "");
     int colon = label.lastIndexOf(':');
     if (colon >= 0) label = label.substring(colon + 1);
-    return SECRET.contains(label.toLowerCase(Locale.ROOT))
+    return (SECRET.contains(label.toLowerCase(Locale.ROOT)) || label.toLowerCase(Locale.ROOT).contains("auth"))
         ? words[0] + " [параметры скрыты]"
         : clean;
   }
+  public static String redactLog(String line) {
+    String marker="issued server command: ";int start=line.indexOf(marker);
+    return start<0?line:line.substring(0,start+marker.length())+redact(line.substring(start+marker.length()));
+  }
+
 }

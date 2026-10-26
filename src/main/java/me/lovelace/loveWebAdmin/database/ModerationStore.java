@@ -20,7 +20,9 @@ public final class ModerationStore implements AutoCloseable {
     try (var s = db.createStatement()) {
       s.execute("PRAGMA busy_timeout=3000");
       s.execute("PRAGMA journal_mode=WAL");
-      s.execute("CREATE TABLE IF NOT EXISTS discord_cards(kind TEXT NOT NULL,id INTEGER NOT NULL,channel TEXT NOT NULL,message TEXT NOT NULL,PRIMARY KEY(kind,id))");
+      s.execute(
+          "CREATE TABLE IF NOT EXISTS discord_cards(kind TEXT NOT NULL,id INTEGER NOT NULL,channel"
+              + " TEXT NOT NULL,message TEXT NOT NULL,PRIMARY KEY(kind,id))");
       s.execute(
           "CREATE TABLE IF NOT EXISTS case_work (kind TEXT NOT NULL,id INTEGER NOT NULL, assignee"
               + " TEXT, priority TEXT NOT NULL DEFAULT 'NORMAL', state TEXT NOT NULL DEFAULT"
@@ -47,7 +49,23 @@ public final class ModerationStore implements AutoCloseable {
           "CREATE TABLE IF NOT EXISTS confiscated_items(id TEXT PRIMARY KEY,owner TEXT NOT"
               + " NULL,actor TEXT NOT NULL,item BLOB NOT NULL,state TEXT NOT NULL DEFAULT"
               + " 'PENDING',created_at INTEGER NOT NULL)");
+      s.execute(
+          "CREATE TABLE IF NOT EXISTS confiscation_reasons(id TEXT PRIMARY KEY,reason TEXT NOT"
+              + " NULL)");
+      s.execute(
+          "CREATE TABLE IF NOT EXISTS confiscation_returns(id TEXT PRIMARY KEY,actor TEXT NOT"
+              + " NULL,at INTEGER NOT NULL)");
+      s.execute("CREATE INDEX IF NOT EXISTS idx_delivery_due ON delivery_outbox(state,next_at,id)");
+      s.execute(
+          "CREATE INDEX IF NOT EXISTS idx_delivery_ticket ON delivery_outbox(recipient,id,state)");
       s.execute("UPDATE delivery_outbox SET state='PENDING' WHERE state='SENDING'");
+    } catch (SQLException | RuntimeException error) {
+      try {
+        db.close();
+      } catch (SQLException close) {
+        error.addSuppressed(close);
+      }
+      throw error;
     }
   }
 
@@ -260,7 +278,8 @@ public final class ModerationStore implements AutoCloseable {
       throws SQLException {
     try (var q =
         db.prepareStatement(
-            "INSERT OR IGNORE INTO delivery_outbox(event_key,recipient,payload) VALUES(?,?,?)")) {
+            "INSERT INTO delivery_outbox(event_key,recipient,payload) VALUES(?,?,?) ON"
+                + " CONFLICT(event_key) DO NOTHING")) {
       q.setString(1, key);
       q.setString(2, recipient);
       q.setString(3, payload);
@@ -268,12 +287,35 @@ public final class ModerationStore implements AutoCloseable {
     }
   }
 
+  public record Delivery(String key, String recipient, String payload) {}
+
+  public synchronized void enqueueBatch(List<Delivery> deliveries) throws SQLException {
+    if (deliveries.size() > 8) throw new IllegalArgumentException("Слишком много частей сообщения");
+    db.setAutoCommit(false);
+    try {
+      for (var delivery : deliveries)
+        enqueue(delivery.key(), delivery.recipient(), delivery.payload());
+      db.commit();
+    } catch (SQLException | RuntimeException error) {
+      try {
+        db.rollback();
+      } catch (SQLException rollback) {
+        error.addSuppressed(rollback);
+      }
+      throw error;
+    } finally {
+      db.setAutoCommit(true);
+    }
+  }
+
   public synchronized List<Map<String, Object>> due() throws SQLException {
     var result = new ArrayList<Map<String, Object>>();
     try (var q =
         db.prepareStatement(
-            "SELECT * FROM delivery_outbox WHERE state='PENDING' AND next_at<=? ORDER BY id"
-                + " LIMIT 8")) {
+            "SELECT o.* FROM delivery_outbox o WHERE o.state='PENDING' AND o.next_at<=? AND"
+                + " (o.recipient NOT LIKE 'ticket:%' OR NOT EXISTS(SELECT 1 FROM delivery_outbox"
+                + " earlier WHERE earlier.recipient=o.recipient AND earlier.id<o.id AND"
+                + " earlier.state IN ('PENDING','SENDING'))) ORDER BY o.id LIMIT 8")) {
       q.setLong(1, System.currentTimeMillis() / 1000);
       try (var r = q.executeQuery()) {
         while (r.next())
@@ -305,7 +347,8 @@ public final class ModerationStore implements AutoCloseable {
       throws SQLException {
     try (var q =
         db.prepareStatement(
-            "UPDATE delivery_outbox SET state=?,attempts=?,next_at=?,error=? WHERE id=?")) {
+            "UPDATE delivery_outbox SET state=?,attempts=?,next_at=?,error=? WHERE id=? AND"
+                + " state='SENDING'")) {
       q.setString(1, ok ? "DELIVERED" : attempts >= 6 ? "FAILED" : "PENDING");
       q.setInt(2, attempts);
       q.setLong(
@@ -313,6 +356,37 @@ public final class ModerationStore implements AutoCloseable {
       q.setString(4, error);
       q.setInt(5, id);
       q.executeUpdate();
+    }
+  }
+
+  public synchronized void deferDelivery(int id, long epochSeconds) throws SQLException {
+    try (var q =
+        db.prepareStatement(
+            "UPDATE delivery_outbox SET state='PENDING',next_at=? WHERE id=? AND"
+                + " state='SENDING'")) {
+      q.setLong(1, epochSeconds);
+      q.setInt(2, id);
+      q.executeUpdate();
+    }
+  }
+
+  public synchronized void skipDelivery(int id, String reason) throws SQLException {
+    try (var q =
+        db.prepareStatement(
+            "UPDATE delivery_outbox SET state='SKIPPED',error=? WHERE id=? AND state='SENDING'")) {
+      q.setString(1, reason);
+      q.setInt(2, id);
+      q.executeUpdate();
+    }
+  }
+
+  public synchronized boolean retryDelivery(int id) throws SQLException {
+    try (var q =
+        db.prepareStatement(
+            "UPDATE delivery_outbox SET state='PENDING',attempts=0,next_at=0,error=NULL WHERE id=?"
+                + " AND state='FAILED'")) {
+      q.setInt(1, id);
+      return q.executeUpdate() == 1;
     }
   }
 
@@ -340,20 +414,104 @@ public final class ModerationStore implements AutoCloseable {
     return result;
   }
 
-  public synchronized String evidence(String owner, String actor, byte[] bytes)
-      throws SQLException {
-    String id = UUID.randomUUID().toString();
+  public record Evidence(String id, String owner, String actor, byte[] item, String reason) {
+    public Evidence(String id, String owner, String actor, byte[] item) {
+      this(id, owner, actor, item, "Очистка инвентаря через WebAdmin");
+    }
+  }
+
+  public synchronized void evidenceBatch(java.util.List<Evidence> items) throws SQLException {
+    if (items.isEmpty() || items.size() > 41)
+      throw new IllegalArgumentException("Недопустимый размер снимка");
+    db.setAutoCommit(false);
     try (var q =
         db.prepareStatement(
             "INSERT INTO confiscated_items(id,owner,actor,item,created_at) VALUES(?,?,?,?,?)")) {
-      q.setString(1, id);
-      q.setString(2, owner);
-      q.setString(3, actor);
-      q.setBytes(4, bytes);
-      q.setLong(5, System.currentTimeMillis() / 1000);
-      q.executeUpdate();
+      for (var item : items) {
+        q.setString(1, item.id());
+        q.setString(2, item.owner());
+        q.setString(3, item.actor());
+        q.setBytes(4, item.item());
+        q.setLong(5, System.currentTimeMillis() / 1000);
+        q.addBatch();
+      }
+      q.executeBatch();
+      try (var reasons =
+          db.prepareStatement("INSERT INTO confiscation_reasons(id,reason) VALUES(?,?)")) {
+        for (var item : items) {
+          if (item.reason() == null || item.reason().isBlank() || item.reason().length() > 2000)
+            throw new IllegalArgumentException("Укажите причину изъятия");
+          reasons.setString(1, item.id());
+          reasons.setString(2, item.reason());
+          reasons.addBatch();
+        }
+        reasons.executeBatch();
+      }
+      db.commit();
+    } catch (SQLException | RuntimeException e) {
+      try {
+        db.rollback();
+      } catch (SQLException rollback) {
+        e.addSuppressed(rollback);
+      }
+      throw e;
+    } finally {
+      db.setAutoCommit(true);
     }
+  }
+
+  public synchronized void holdBatch(java.util.List<Evidence> items) throws SQLException {
+    String placeholders = String.join(",", java.util.Collections.nCopies(items.size(), "?"));
+    try (var q =
+        db.prepareStatement(
+            "UPDATE confiscated_items SET state='HELD' WHERE state='PENDING' AND id IN ("
+                + placeholders
+                + ")")) {
+      for (int i = 0; i < items.size(); i++) q.setString(i + 1, items.get(i).id());
+      if (q.executeUpdate() != items.size()) throw new SQLException("Не весь снимок подтверждён");
+    }
+  }
+
+  public synchronized String evidence(String owner, String actor, byte[] bytes)
+      throws SQLException {
+    return evidence(owner, actor, bytes, "Изъятие через API WebAdmin");
+  }
+
+  public synchronized String evidence(String owner, String actor, byte[] bytes, String reason)
+      throws SQLException {
+    if (reason == null || reason.isBlank() || reason.length() > 2000)
+      throw new IllegalArgumentException("Укажите причину изъятия");
+    String id = UUID.randomUUID().toString();
+    evidenceBatch(java.util.List.of(new Evidence(id, owner, actor, bytes, reason)));
     return id;
+  }
+
+  public synchronized boolean confirmReturn(String id, String actor) throws SQLException {
+    db.setAutoCommit(false);
+    try {
+      if (!evidenceState(id, "RETURNING", "RETURNED")) {
+        db.rollback();
+        return false;
+      }
+      try (var q =
+          db.prepareStatement("INSERT INTO confiscation_returns(id,actor,at) VALUES(?,?,?)")) {
+        q.setString(1, id);
+        q.setString(2, actor);
+        q.setLong(3, System.currentTimeMillis() / 1000);
+        q.executeUpdate();
+      }
+      db.commit();
+      return true;
+    } catch (SQLException e) {
+      try {
+        db.rollback();
+      } catch (SQLException error) {
+        e.addSuppressed(error);
+      }
+      throw e;
+    } finally {
+      db.setAutoCommit(true);
+    }
   }
 
   public synchronized boolean evidenceState(String id, String before, String after)
@@ -383,8 +541,9 @@ public final class ModerationStore implements AutoCloseable {
     var result = new ArrayList<Map<String, Object>>();
     try (var q =
         db.prepareStatement(
-            "SELECT id,actor,state,created_at FROM confiscated_items WHERE owner=? ORDER BY"
-                + " created_at DESC LIMIT 200")) {
+            "SELECT c.id,c.actor,c.state,c.created_at,r.reason,t.actor FROM confiscated_items c"
+                + " LEFT JOIN confiscation_reasons r ON r.id=c.id LEFT JOIN confiscation_returns t"
+                + " ON t.id=c.id WHERE c.owner=? ORDER BY c.created_at DESC LIMIT 200")) {
       q.setString(1, owner);
       try (var r = q.executeQuery()) {
         while (r.next())
@@ -397,18 +556,44 @@ public final class ModerationStore implements AutoCloseable {
                   "state",
                   r.getString(3),
                   "createdAt",
-                  r.getLong(4)));
+                  r.getLong(4),
+                  "reason",
+                  Objects.toString(r.getString(5), "Причина не указана"),
+                  "returnedBy",
+                  Objects.toString(r.getString(6), "")));
       }
     }
     return result;
   }
 
-  public synchronized Optional<Map<String,String>> card(String kind,int id)throws SQLException {
-    try(var q=db.prepareStatement("SELECT channel,message FROM discord_cards WHERE kind=? AND id=?")){q.setString(1,kind(kind));q.setInt(2,id);try(var r=q.executeQuery()){return r.next()?Optional.of(Map.of("channel",r.getString(1),"message",r.getString(2))):Optional.empty();}}
+  public synchronized Optional<Map<String, String>> card(String kind, int id) throws SQLException {
+    try (var q =
+        db.prepareStatement("SELECT channel,message FROM discord_cards WHERE kind=? AND id=?")) {
+      q.setString(1, kind(kind));
+      q.setInt(2, id);
+      try (var r = q.executeQuery()) {
+        return r.next()
+            ? Optional.of(Map.of("channel", r.getString(1), "message", r.getString(2)))
+            : Optional.empty();
+      }
+    }
   }
-  public synchronized void card(String kind,int id,String channel,String message)throws SQLException {
-    try(var q=db.prepareStatement("INSERT INTO discord_cards(kind,id,channel,message) VALUES(?,?,?,?) ON CONFLICT(kind,id) DO UPDATE SET channel=excluded.channel,message=excluded.message")){q.setString(1,kind(kind));q.setInt(2,id);q.setString(3,channel);q.setString(4,message);q.executeUpdate();}
+
+  public synchronized void card(String kind, int id, String channel, String message)
+      throws SQLException {
+    try (var q =
+        db.prepareStatement(
+            "INSERT INTO discord_cards(kind,id,channel,message) VALUES(?,?,?,?) ON"
+                + " CONFLICT(kind,id) DO UPDATE SET"
+                + " channel=excluded.channel,message=excluded.message")) {
+      q.setString(1, kind(kind));
+      q.setInt(2, id);
+      q.setString(3, channel);
+      q.setString(4, message);
+      q.executeUpdate();
+    }
   }
+
   @Override
   public synchronized void close() throws SQLException {
     db.close();

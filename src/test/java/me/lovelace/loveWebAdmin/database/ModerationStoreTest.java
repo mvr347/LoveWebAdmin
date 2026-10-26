@@ -69,6 +69,22 @@ class ModerationStoreTest {
   }
 
   @Test
+  void failedBatchDoesNotLeavePartOfSnapshotReturnable() throws Exception {
+    var item = new ModerationStore.Evidence("duplicate", "uuid", "Staff", new byte[] {1});
+    assertThrows(SQLException.class, () -> store.evidenceBatch(java.util.List.of(item, item)));
+    assertFalse(store.evidenceState("duplicate", "PENDING", "HELD"));
+  }
+
+  @Test
+  void snapshotRemainsNonReturnableUntilNativeSaveIsConfirmed() throws Exception {
+    var item = new ModerationStore.Evidence("entry", "uuid", "Staff", new byte[] {1});
+    store.evidenceBatch(java.util.List.of(item));
+    assertTrue(store.evidenceItem("entry", "uuid").isEmpty());
+    store.holdBatch(java.util.List.of(item));
+    assertArrayEquals(new byte[] {1}, store.evidenceItem("entry", "uuid").orElseThrow());
+  }
+
+  @Test
   void notesSeparateByKindAndId() throws Exception {
     store.note("report", 1, "A", "Внутренняя заметка");
     assertEquals(1, store.notes("report", 1).size());
@@ -130,6 +146,22 @@ class ModerationStoreTest {
   }
 
   @Test
+  void retryCannotResendSuccessfulOrRunningDelivery() throws Exception {
+    store.enqueue("ban:1", "user", "body");
+    int id = ((Number) store.due().getFirst().get("id")).intValue();
+    store.takeDelivery(id);
+    assertFalse(store.retryDelivery(id));
+    store.delivered(id, true, 1, null);
+    assertFalse(store.retryDelivery(id));
+    store.enqueue("ban:2", "user", "a");
+    id = ((Number) store.due().getFirst().get("id")).intValue();
+    store.takeDelivery(id);
+    store.delivered(id, false, 6, "Ошибка");
+    assertTrue(store.retryDelivery(id));
+    assertEquals(1, store.due().size());
+  }
+
+  @Test
   void evidenceReturnCanBeReservedOnce() throws Exception {
     String id = store.evidence("uuid", "A", new byte[] {1, 2});
     assertTrue(store.evidenceItem(id, "uuid").isEmpty());
@@ -139,6 +171,100 @@ class ModerationStoreTest {
     assertTrue(store.evidenceState(id, "HELD", "RETURNING"));
     assertFalse(store.evidenceState(id, "HELD", "RETURNING"));
     assertTrue(store.evidenceItem(id, "uuid").isEmpty());
+  }
+
+  @Test
+  void reasonAndReturnAuthorAreDurable() throws Exception {
+    String id = store.evidence("uuid", "Staff", new byte[] {1}, "Проверка жалобы №12");
+    assertEquals("Проверка жалобы №12", store.evidenceList("uuid").getFirst().get("reason"));
+    store.evidenceState(id, "PENDING", "HELD");
+    store.evidenceState(id, "HELD", "RETURNING");
+    assertTrue(store.confirmReturn(id, "Reviewer"));
+    assertFalse(store.confirmReturn(id, "Other"));
+    assertEquals("Reviewer", store.evidenceList("uuid").getFirst().get("returnedBy"));
+  }
+
+  @Test
+  void quietHoursDoNotConsumeAnAttemptAndRevocationCannotBeRetried() throws Exception {
+    store.enqueue("staff:1", "discord", "{}");
+    int id = ((Number) store.due().getFirst().get("id")).intValue();
+    store.takeDelivery(id);
+    store.deferDelivery(id, System.currentTimeMillis() / 1000 + 3600);
+    assertTrue(store.due().isEmpty());
+    assertEquals(0, store.deliveries().getFirst().get("attempts"));
+    store.takeDelivery(id);
+    store.skipDelivery(id, "Доступ отозван");
+    assertEquals("SKIPPED", store.deliveries().getFirst().get("state"));
+    assertFalse(store.retryDelivery(id));
+  }
+
+  @Test
+  void ticketRepliesAndClosureAreDeliveredInOrder() throws Exception {
+    store.enqueue("reply:1:1", "ticket:1", "first");
+    store.enqueue("finish:1", "ticket:1", "last");
+    store.enqueue("reply:2:1", "ticket:2", "independent");
+    var due = store.due();
+    assertEquals(2, due.size());
+    int first = ((Number) due.getFirst().get("id")).intValue();
+    store.takeDelivery(first);
+    assertEquals(1, store.due().size());
+    store.delivered(first, true, 1, null);
+    assertEquals(2, store.due().size());
+    assertEquals("last", store.due().getFirst().get("payload"));
+  }
+
+  @Test
+  void quietStaffMessageDoesNotBlockBanDmToSameUser() throws Exception {
+    store.enqueue("staff:1", "discord-id", "staff");
+    int first = ((Number) store.due().getFirst().get("id")).intValue();
+    store.takeDelivery(first);
+    store.deferDelivery(first, System.currentTimeMillis() / 1000 + 3600);
+    store.enqueue("ban:1", "discord-id", "ban");
+    assertEquals("ban", store.due().getFirst().get("payload"));
+  }
+
+  @Test
+  void multipartMessageIsEnqueuedAsOneTransaction() throws Exception {
+    assertThrows(
+        SQLException.class,
+        () ->
+            store.enqueueBatch(
+                List.of(
+                    new ModerationStore.Delivery("first", "ticket:1", "first"),
+                    new ModerationStore.Delivery("bad", null, "second"))));
+    assertTrue(store.due().isEmpty());
+  }
+
+  @Test
+  void lateCallbackCannotChangeACompletedDelivery() throws Exception {
+    store.enqueue("reply:1", "ticket:1", "text");
+    int id = ((Number) store.due().getFirst().get("id")).intValue();
+    store.takeDelivery(id);
+    store.delivered(id, true, 1, null);
+    store.delivered(id, false, 6, "Устаревший ответ");
+    assertEquals("DELIVERED", store.deliveries().getFirst().get("state"));
+    assertFalse(store.retryDelivery(id));
+  }
+
+  @Test
+  void failedInitializationClosesTheOwnedConnection() {
+    var closed = new java.util.concurrent.atomic.AtomicBoolean();
+    var connection =
+        (java.sql.Connection)
+            java.lang.reflect.Proxy.newProxyInstance(
+                getClass().getClassLoader(),
+                new Class[] {java.sql.Connection.class},
+                (p, m, a) -> {
+                  if (m.getName().equals("createStatement"))
+                    throw new SQLException("Schema unavailable");
+                  if (m.getName().equals("close")) {
+                    closed.set(true);
+                    return null;
+                  }
+                  return null;
+                });
+    assertThrows(SQLException.class, () -> new ModerationStore(connection));
+    assertTrue(closed.get());
   }
 
   @Test
