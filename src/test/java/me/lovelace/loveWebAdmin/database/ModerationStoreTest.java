@@ -247,6 +247,27 @@ class ModerationStoreTest {
   }
 
   @Test
+  void failedInitializationClosesTheOwnedConnection() {
+    var closed = new java.util.concurrent.atomic.AtomicBoolean();
+    var connection =
+        (java.sql.Connection)
+            java.lang.reflect.Proxy.newProxyInstance(
+                getClass().getClassLoader(),
+                new Class[] {java.sql.Connection.class},
+                (p, m, a) -> {
+                  if (m.getName().equals("createStatement"))
+                    throw new SQLException("Schema unavailable");
+                  if (m.getName().equals("close")) {
+                    closed.set(true);
+                    return null;
+                  }
+                  return null;
+                });
+    assertThrows(SQLException.class, () -> new ModerationStore(connection));
+    assertTrue(closed.get());
+  }
+
+  @Test
   void legacySourceIsNotGuessed() throws Exception {
     assertEquals("UNKNOWN", store.source(1).get("kind"));
     store.source(1, "ANTICHEAT", "Vesuvio", "unique-1");

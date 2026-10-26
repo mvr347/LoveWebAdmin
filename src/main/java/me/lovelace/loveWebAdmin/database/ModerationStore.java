@@ -59,6 +59,13 @@ public final class ModerationStore implements AutoCloseable {
       s.execute(
           "CREATE INDEX IF NOT EXISTS idx_delivery_ticket ON delivery_outbox(recipient,id,state)");
       s.execute("UPDATE delivery_outbox SET state='PENDING' WHERE state='SENDING'");
+    } catch (SQLException | RuntimeException error) {
+      try {
+        db.close();
+      } catch (SQLException close) {
+        error.addSuppressed(close);
+      }
+      throw error;
     }
   }
 
