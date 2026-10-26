@@ -33,6 +33,12 @@ public class LoveCoreDiscordBridge implements Listener {
 
     private final LoveWebAdmin plugin;
     private boolean initialized = false;
+    private dev.lovelace.lovecore.api.discord.TicketMessageListener ticketListener;
+    private volatile DiscordService registeredService;
+    private DiscordActions actions;
+    private org.bukkit.scheduler.BukkitTask maintenanceTask;
+    private volatile boolean closed;
+    private final java.util.concurrent.atomic.AtomicBoolean delivering = new java.util.concurrent.atomic.AtomicBoolean();
 
     public LoveCoreDiscordBridge(LoveWebAdmin plugin) {
         this.plugin = plugin;
@@ -44,16 +50,78 @@ public class LoveCoreDiscordBridge implements Listener {
 
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
 
-        discord().ifPresent(service -> {
-            try {
-                service.registerTicketMessageListener((ticketId, authorName, isStaff, message) -> {
-                    onDiscordTicketMessage(ticketId, authorName, isStaff, message);
-                });
-                plugin.getLogger().info("[DiscordBridge] Успешно подключен к LoveCore DiscordService!");
-            } catch (Exception e) {
-                plugin.getLogger().warning("[DiscordBridge] Ошибка регистрации слушателя тикетов: " + e.getMessage());
-            }
+        ticketListener = this::onDiscordTicketMessage;
+        maintenanceTask = plugin.getServer().getScheduler().runTaskTimerAsynchronously(plugin, () -> {
+            if (closed) return;
+            discord().filter(DiscordService::isEnabled).ifPresent(service -> {
+                if (registeredService != service) {
+                    unregister();
+                    synchronized(this) {
+                        if(closed)return;
+                        actions = new DiscordActions(plugin,service);
+                        actions.register();
+                        registeredService = service;
+                    }
+                    for(var appeal:plugin.getDatabaseManager().getAllAppeals("PENDING",200,0))
+                        if(appeal.discordChannelId()!=null)service.restoreTicket(String.valueOf(appeal.id()),appeal.discordChannelId());
+                }
+                deliver(service);
+            });
+        },20L,100L);
+    }
+
+    private synchronized void unregister() {
+        if(actions!=null){actions.close();actions=null;}
+        if (registeredService != null && ticketListener != null) {
+            try { registeredService.getClass().getMethod("unregisterTicketMessageListener", dev.lovelace.lovecore.api.discord.TicketMessageListener.class).invoke(registeredService,ticketListener); }
+            catch (ReflectiveOperationException e) { plugin.getLogger().warning("LoveCore требует обновления для снятия слушателя Discord"); }
+        }
+        registeredService = null;
+    }
+
+    public synchronized void close() {
+        closed = true;
+        if (maintenanceTask != null) maintenanceTask.cancel();
+        unregister();
+    }
+
+    public void notifyBanned(me.lovelace.loveWebAdmin.models.WebBan ban, me.lovelace.loveWebAdmin.models.BanOrigin origin) {
+        if (ban.targetUuid() == null) return;
+        discord().flatMap(service -> service.getLinkedDiscordId(java.util.UUID.fromString(ban.targetUuid()))).ifPresent(id -> {
+            String end = ban.expiresAt()>0 ? "<t:"+ban.expiresAt()+":F>" : "Бессрочно";
+            String text = "⛔ **Вы заблокированы на сервере**\nИгрок: " + ban.targetName()
+                + "\nПричина: " + ban.ruleReason() + "\nИсточник: " + origin.display()
+                + "\nСрок: " + (ban.durationSeconds()>0 ? ban.durationSeconds()+" сек." : "Бессрочно")
+                + "\nОкончание: " + end + "\nНаказание: №" + ban.id();
+            String url = plugin.getConfig().getString("web.public-url", "");
+            if (!url.isBlank()) text += "\nПодать апелляцию: " + url.replaceAll("/+$", "") + "/appeal.html?ban=" + ban.id();
+            try { plugin.moderation().enqueue("ban:"+ban.id()+":"+id,id,JsonUtils.toJson(Map.of(
+                "content",text,
+                "nonce",me.lovelace.loveWebAdmin.database.ModerationStore.hash("ban:"+ban.id()+":"+id).substring(0,24),
+                "enforce_nonce",true,
+                "components",List.of(Map.of("type",1,"components",List.of(Map.of("type",2,"style",1,"label","Подать апелляцию","custom_id","lwa:appeal:new:"+ban.id()))))))); }
+            catch (java.sql.SQLException e) { throw new IllegalStateException("Не удалось сохранить уведомление",e); }
         });
+    }
+
+    private void deliver(DiscordService service) {
+        if (!delivering.compareAndSet(false,true)) return;
+        plugin.io().supply(() -> {
+            var pending = new ArrayList<CompletableFuture<Void>>();
+            try {
+                for (var item : plugin.moderation().due()) {
+                    if (closed) break;
+                    int id=((Number)item.get("id")).intValue();
+                    if(!plugin.moderation().takeDelivery(id))continue;
+                    var sent=service.directMessage(item.get("recipient").toString(),item.get("payload").toString());
+                    pending.add(sent.handle((message,error)->plugin.io().run(()->{
+                        try{plugin.moderation().delivered(id,error==null&&message!=null,((Number)item.get("attempts")).intValue()+1,error==null&&message!=null?null:"ЛС недоступны или ошибка Discord");}
+                        catch(java.sql.SQLException e){throw new IllegalStateException(e);}
+                    })).thenCompose(java.util.function.Function.identity()));
+                }
+            }catch(java.sql.SQLException e){throw new IllegalStateException(e);}
+            return CompletableFuture.allOf(pending.toArray(CompletableFuture[]::new));
+        }).thenCompose(java.util.function.Function.identity()).whenComplete((v,e)->delivering.set(false));
     }
 
     public boolean isAvailable() {
@@ -73,27 +141,8 @@ public class LoveCoreDiscordBridge implements Listener {
     }
 
     private void onDiscordTicketMessage(String ticketId, String authorName, boolean isStaff, String message) {
-        try {
-            int appealId = -1;
-            try {
-                appealId = Integer.parseInt(ticketId);
-            } catch (NumberFormatException e) {
-                Optional<WebBanAppeal> appealOpt = plugin.getDatabaseManager().getAppealByDiscordChannel(ticketId);
-                if (appealOpt.isPresent()) {
-                    appealId = appealOpt.get().id();
-                }
-            }
-
-            if (appealId <= 0) {
-                Optional<WebBanAppeal> appealOpt = plugin.getDatabaseManager().getAppealById(appealId);
-                if (appealOpt.isEmpty()) return;
-            }
-
-            plugin.getDatabaseManager().addAppealMessage(appealId, authorName, isStaff, message);
-            plugin.getLogger().info("[DiscordBridge] Новое сообщение из тикета Discord #" + appealId + " от " + authorName);
-        } catch (Exception e) {
-            plugin.getLogger().warning("[DiscordBridge] Ошибка обработки входящего сообщения тикета: " + e.getMessage());
-        }
+        // Legacy callbacks carry a display name only; no ownership or staff authorization can be proven.
+        // Authenticated callbacks are registered by the v2 bridge when the upgraded LoveCore is present.
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -128,7 +177,8 @@ public class LoveCoreDiscordBridge implements Listener {
         // Канал жалоб
         String channelId = plugin.getConfig().getString("discord.reports-channel-id", "");
         if (channelId != null && !channelId.isBlank()) {
-            service.sendChannelMessage(channelId, null, embed);
+            service.sendMessage(channelId,JsonUtils.toJson(Map.of("content",title+"\n"+desc+"\nПричины: "+String.join(", ",report.reasons()),
+                "components",List.of(Map.of("type",1,"components",List.of(Map.of("type",2,"style",1,"label","Взять в работу","custom_id","lwa:report:claim:"+report.id())))))),null);
         }
 
         // Уведомления в ЛС администраторам
@@ -142,11 +192,14 @@ public class LoveCoreDiscordBridge implements Listener {
         }
         DiscordService service = serviceOpt.get();
 
+        String owner;
+        try { owner=plugin.moderation().owner(appeal.id()).orElse(null); }
+        catch(java.sql.SQLException e){return CompletableFuture.failedFuture(e);}
         return service.createTicketChannel(
             TicketType.BAN_APPEAL,
             String.valueOf(appeal.id()),
             appeal.playerName(),
-            appeal.reason()
+            appeal.reason(),owner
         ).thenApply(channelId -> {
             if (channelId != null && !channelId.isBlank()) {
                 plugin.getDatabaseManager().setAppealDiscordChannelId(appeal.id(), channelId);
@@ -165,7 +218,11 @@ public class LoveCoreDiscordBridge implements Listener {
                     "LoveWebAdmin • Тикеты",
                     Instant.now()
                 );
-                service.sendChannelMessage(channelId, "Здравствуйте, @" + appeal.playerName() + "! Ваша апелляция принята к рассмотрению персоналом сервера.", embed);
+                service.sendChannelMessage(channelId, "Ваша апелляция принята к рассмотрению персоналом сервера.", embed);
+                service.sendMessage(channelId, JsonUtils.toJson(Map.of("content","Действия персонала", "components",List.of(Map.of("type",1,"components",List.of(
+                    Map.of("type",2,"style",3,"label","Одобрить","custom_id","lwa:decision:approve:"+appeal.id()),
+                    Map.of("type",2,"style",4,"label","Отклонить","custom_id","lwa:decision:reject:"+appeal.id())
+                ))))),null);
             }
             // Оповещаем администраторов
             notifyAppealCreated(appeal);
@@ -248,7 +305,12 @@ public class LoveCoreDiscordBridge implements Listener {
 
                 if (!notify) continue;
 
-                Object discordIdObj = prefs.get("discordId");
+                Object discordIdObj = plugin.getDatabaseManager().getPlayerStats(admin.username())
+                    .map(data -> data.get("uuid"))
+                    .flatMap(uuid -> {
+                        try { return service.getLinkedDiscordId(java.util.UUID.fromString(uuid.toString())); }
+                        catch (IllegalArgumentException e) { return Optional.empty(); }
+                    }).orElse(null);
                 if (discordIdObj != null) {
                     String discordId = String.valueOf(discordIdObj).trim();
                     if (!discordId.isBlank() && !discordId.equalsIgnoreCase("null")) {

@@ -27,7 +27,7 @@ public class ApiEconomyHandler extends ApiHandlerSupport {
 
     @Override
     protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws IOException {
-        Optional<WebSession> sessionOpt = authenticate(req);
+        Optional<WebSession> sessionOpt = requireSession(req,resp);
         if (sessionOpt.isEmpty()) {
             sendError(resp, 401, "Необходима авторизация");
             return;
@@ -75,7 +75,7 @@ public class ApiEconomyHandler extends ApiHandlerSupport {
                     "available", bridge.isAvailable(),
                     "online", false,
                     "name", target,
-                    "balance", 0,
+                    "balanceAvailable", false,
                     "currencyName", bridge.currencyName(),
                     "message", "Игрок не в сети (монеты инвентарные)"
                 ));

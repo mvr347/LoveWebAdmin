@@ -28,151 +28,72 @@ public class PlayerInventoryManager {
         this.plugin = plugin;
     }
 
-    public CompletableFuture<Map<String, Object>> getInventoryData(Player player) {
-        CompletableFuture<Map<String, Object>> future = new CompletableFuture<>();
-
-        plugin.getServer().getScheduler().runTask(plugin, () -> {
-            try {
-                if (!player.isOnline()) {
-                    future.complete(Map.of("error", "Игрок не в сети"));
-                    return;
-                }
-
-                Map<String, Object> data = new LinkedHashMap<>();
-                PlayerInventory inv = player.getInventory();
-
-                // 1. Основной инвентарь (36 слотов: 0-8 хотбар, 9-35 основные)
-                List<Map<String, Object>> storage = new ArrayList<>();
-                ItemStack[] storageContents = inv.getStorageContents();
-                for (int i = 0; i < storageContents.length; i++) {
-                    storage.add(serializeItem(storageContents[i], i));
-                }
-                data.put("storage", storage);
-
-                // 2. Броня (Шлем, Нагрудник, Поножи, Ботинки)
-                Map<String, Object> armor = new LinkedHashMap<>();
-                armor.put("helmet", serializeItem(inv.getHelmet(), 39));
-                armor.put("chestplate", serializeItem(inv.getChestplate(), 38));
-                armor.put("leggings", serializeItem(inv.getLeggings(), 37));
-                armor.put("boots", serializeItem(inv.getBoots(), 36));
-                data.put("armor", armor);
-
-                // 3. Оффхенд (вторая рука)
-                data.put("offhand", serializeItem(inv.getItemInOffHand(), 40));
-
-                // 4. Эндер-сундук (27 слотов)
-                List<Map<String, Object>> enderChest = new ArrayList<>();
-                ItemStack[] ecContents = player.getEnderChest().getContents();
-                for (int i = 0; i < ecContents.length; i++) {
-                    enderChest.add(serializeItem(ecContents[i], i));
-                }
-                data.put("enderchest", enderChest);
-
-                // Дополнительные параметры состояния
-                data.put("health", Math.round(player.getHealth() * 10.0) / 10.0);
-                data.put("maxHealth", player.getMaxHealth());
-                data.put("foodLevel", player.getFoodLevel());
-                data.put("level", player.getLevel());
-                data.put("exp", Math.round(player.getExp() * 100.0) / 100.0);
-                data.put("gameMode", player.getGameMode().name());
-                data.put("isFrozen", plugin.getFreezeManager().isFrozen(player));
-
-                future.complete(data);
-            } catch (Exception e) {
-                plugin.getLogger().warning("Ошибка получения инвентаря игрока " + player.getName() + ": " + e.getMessage());
-                future.completeExceptionally(e);
-            }
-        });
-
-        return future;
+    public static String fingerprint(ItemStack item) {
+        try{return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(item.serializeAsBytes()));}
+        catch(java.security.NoSuchAlgorithmException e){throw new IllegalStateException(e);}
     }
-
-    public CompletableFuture<Boolean> removeItem(Player player, String containerType, int slot, String moderator) {
-        CompletableFuture<Boolean> future = new CompletableFuture<>();
-
-        plugin.getServer().getScheduler().runTask(plugin, () -> {
-            try {
-                if (!player.isOnline()) {
-                    future.complete(false);
-                    return;
-                }
-
-                String removedItemName = "предмет";
-                if ("enderchest".equalsIgnoreCase(containerType)) {
-                    ItemStack item = player.getEnderChest().getItem(slot);
-                    if (item != null && item.getType() != Material.AIR) {
-                        removedItemName = item.getType().name() + " x" + item.getAmount();
-                        player.getEnderChest().setItem(slot, null);
-                    }
-                } else if ("armor".equalsIgnoreCase(containerType)) {
-                    PlayerInventory inv = player.getInventory();
-                    switch (slot) {
-                        case 39 -> {
-                            if (inv.getHelmet() != null) removedItemName = inv.getHelmet().getType().name();
-                            inv.setHelmet(null);
-                        }
-                        case 38 -> {
-                            if (inv.getChestplate() != null) removedItemName = inv.getChestplate().getType().name();
-                            inv.setChestplate(null);
-                        }
-                        case 37 -> {
-                            if (inv.getLeggings() != null) removedItemName = inv.getLeggings().getType().name();
-                            inv.setLeggings(null);
-                        }
-                        case 36 -> {
-                            if (inv.getBoots() != null) removedItemName = inv.getBoots().getType().name();
-                            inv.setBoots(null);
-                        }
-                    }
-                } else if ("offhand".equalsIgnoreCase(containerType)) {
-                    if (player.getInventory().getItemInOffHand().getType() != Material.AIR) {
-                        removedItemName = player.getInventory().getItemInOffHand().getType().name();
-                        player.getInventory().setItemInOffHand(null);
-                    }
-                } else {
-                    ItemStack item = player.getInventory().getItem(slot);
-                    if (item != null && item.getType() != Material.AIR) {
-                        removedItemName = item.getType().name() + " x" + item.getAmount();
-                        player.getInventory().setItem(slot, null);
-                    }
-                }
-
-                plugin.getLogManager().logWebAction(moderator != null ? moderator : "WebAdmin",
-                    "Изъял " + removedItemName + " у игрока " + player.getName() + " (Слот: " + slot + ", " + containerType + ")");
-                future.complete(true);
-            } catch (Exception e) {
-                plugin.getLogger().warning("Ошибка удаления предмета: " + e.getMessage());
-                future.complete(false);
-            }
+    public CompletableFuture<Map<String,Object>> getInventoryData(Player player) {
+        return plugin.main().call(()->{
+            if(!player.isOnline())throw new IllegalArgumentException("Игрок не в сети");
+            Map<String,Object> data=new LinkedHashMap<>();
+            var inv=player.getInventory();var storage=new ArrayList<Map<String,Object>>();
+            for(int slot=0;slot<36;slot++)storage.add(serializeItem(inv.getItem(slot),slot));data.put("storage",storage);
+            data.put("armor",Map.of("helmet",serializeItem(inv.getHelmet(),39),"chestplate",serializeItem(inv.getChestplate(),38),"leggings",serializeItem(inv.getLeggings(),37),"boots",serializeItem(inv.getBoots(),36)));
+            data.put("offhand",serializeItem(inv.getItemInOffHand(),40));
+            var ender=new ArrayList<Map<String,Object>>();for(int slot=0;slot<27;slot++)ender.add(serializeItem(player.getEnderChest().getItem(slot),slot));data.put("enderchest",ender);
+            data.put("health",player.getHealth());data.put("maxHealth",player.getMaxHealth());data.put("foodLevel",player.getFoodLevel());data.put("level",player.getLevel());data.put("exp",player.getExp());data.put("gameMode",player.getGameMode().name());data.put("isFrozen",plugin.getFreezeManager().isFrozen(player));return data;
         });
-
-        return future;
     }
-
-    public CompletableFuture<Boolean> clearInventory(Player player, String moderator) {
-        CompletableFuture<Boolean> future = new CompletableFuture<>();
-
-        plugin.getServer().getScheduler().runTask(plugin, () -> {
-            try {
-                if (!player.isOnline()) {
-                    future.complete(false);
-                    return;
-                }
-
-                player.getInventory().clear();
-                player.getInventory().setArmorContents(null);
-                player.getInventory().setItemInOffHand(null);
-
-                plugin.getLogManager().logWebAction(moderator != null ? moderator : "WebAdmin",
-                    "Очистил полный инвентарь игрока " + player.getName());
-                future.complete(true);
-            } catch (Exception e) {
-                plugin.getLogger().warning("Ошибка очистки инвентаря: " + e.getMessage());
-                future.complete(false);
+    /** Kept for source compatibility. Web clients must provide the fingerprint overload. */
+    public CompletableFuture<Boolean> removeItem(Player player,String container,int slot,String moderator) {
+        return CompletableFuture.failedFuture(new IllegalArgumentException("Обновите инвентарь и передайте fingerprint предмета"));
+    }
+    public CompletableFuture<Boolean> removeItem(Player player,String container,int slot,String moderator,String expected) {
+        return plugin.main().call(()->{
+            if(!player.isOnline()||player.isDead())return false;
+            org.bukkit.inventory.Inventory inv;
+            switch(container) {
+                case "enderchest" -> {if(slot<0||slot>=27)throw new IllegalArgumentException("Недопустимый слот");inv=player.getEnderChest();}
+                case "armor" -> {if(slot<36||slot>39)throw new IllegalArgumentException("Недопустимый слот");inv=player.getInventory();}
+                case "offhand" -> {slotCheck(slot,40,40);inv=player.getInventory();}
+                case "storage" -> {slotCheck(slot,0,35);inv=player.getInventory();}
+                default -> throw new IllegalArgumentException("Неизвестный контейнер");
             }
+            ItemStack item=inv.getItem(slot);
+            if(item==null||item.getType().isAir()||expected==null||!fingerprint(item).equals(expected))return false;
+            try {
+                String id=plugin.moderation().evidence(player.getUniqueId().toString(),moderator,item.serializeAsBytes());
+                inv.setItem(slot,null);player.saveData();plugin.moderation().evidenceState(id,"PENDING","HELD");
+                plugin.getLogManager().logWebAction(moderator,"Изъял "+item.getType()+" x"+item.getAmount()+" у "+player.getName()+"; запись "+id);return true;
+            }catch(java.sql.SQLException e){throw new IllegalStateException("Ошибка хранилища изъятых предметов",e);}
         });
-
-        return future;
+    }
+    private static void slotCheck(int slot,int min,int max){if(slot<min||slot>max)throw new IllegalArgumentException("Недопустимый слот");}
+    public CompletableFuture<Boolean> clearInventory(Player player,String moderator) {
+        return plugin.main().call(()->{
+            if(!player.isOnline()||player.isDead())return false;
+            for(int slot=0;slot<=40;slot++){
+                ItemStack item=player.getInventory().getItem(slot);if(item==null||item.getType().isAir())continue;
+                String container=slot<36?"storage":slot<40?"armor":"offhand";
+                if(!removeItem(player,container,slot,moderator,fingerprint(item)).join())return false;
+            }
+            return true;
+        });
+    }
+    public CompletableFuture<Boolean> restore(Player player,String id,String moderator) {
+        return plugin.main().call(()->{
+            if(!player.isOnline()||player.isDead())return false;
+            try {
+                var bytes=plugin.moderation().evidenceItem(id,player.getUniqueId().toString());if(bytes.isEmpty())return false;
+                ItemStack item=ItemStack.deserializeBytes(bytes.get());
+                // An empty storage slot guarantees the whole original stack fits without dropping anything.
+                int slot=player.getInventory().firstEmpty();if(slot<0||slot>=36)return false;
+                if(!plugin.moderation().evidenceState(id,"HELD","RETURNING"))return false;
+                player.getInventory().setItem(slot,item);player.saveData();
+                plugin.moderation().evidenceState(id,"RETURNING","RETURNED");
+                plugin.getLogManager().logWebAction(moderator,"Вернул изъятое игроку "+player.getName()+"; запись "+id);return true;
+            }catch(java.sql.SQLException e){throw new IllegalStateException(e);}
+        });
     }
 
     private Map<String, Object> serializeItem(ItemStack item, int slot) {
@@ -187,6 +108,7 @@ public class PlayerInventoryManager {
         }
 
         map.put("empty", false);
+        map.put("fingerprint", fingerprint(item));
         map.put("material", item.getType().name());
         map.put("amount", item.getAmount());
 

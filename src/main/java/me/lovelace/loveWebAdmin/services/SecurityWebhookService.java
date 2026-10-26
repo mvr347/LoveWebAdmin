@@ -85,7 +85,7 @@ public class SecurityWebhookService {
         boolean enabled = plugin.getConfig().getBoolean("security.webhooks.enabled", false);
         if (!enabled) return;
 
-        String discordUrl = plugin.getConfig().getString("security.webhooks.discord-url");
+        String discordUrl = plugin.getConfig().getString("security.webhooks.discord.webhook-url", plugin.getConfig().getString("security.webhooks.discord-url", ""));
         String tgToken = plugin.getConfig().getString("security.webhooks.telegram.bot-token");
         String tgChatId = plugin.getConfig().getString("security.webhooks.telegram.chat-id");
 
@@ -123,7 +123,7 @@ public class SecurityWebhookService {
 
             httpClient.sendAsync(request, HttpResponse.BodyHandlers.discarding())
                 .exceptionally(ex -> {
-                    plugin.getLogger().warning("Ошибка отправки Discord вебхука: " + ex.getMessage());
+                    plugin.getLogger().warning("Ошибка отправки Discord вебхука");
                     return null;
                 });
         } catch (Exception e) {
@@ -146,7 +146,7 @@ public class SecurityWebhookService {
 
             httpClient.sendAsync(request, HttpResponse.BodyHandlers.discarding())
                 .exceptionally(ex -> {
-                    plugin.getLogger().warning("Ошибка отправки Telegram уведомления: " + ex.getMessage());
+                    plugin.getLogger().warning("Ошибка отправки Telegram уведомления");
                     return null;
                 });
         } catch (Exception e) {

@@ -437,8 +437,15 @@ public class ApiBansHandler extends ApiHandlerSupport {
         map.put("id", ban.id());
         map.put("targetName", ban.targetName());
         map.put("targetUuid", ban.targetUuid());
-        map.put("targetIp", ban.targetIp());
+        // Raw IP is available only through the dedicated player permission.
         map.put("creatorName", ban.creatorName());
+        try {
+            var source = plugin.moderation().source(ban.id());
+            map.put("source",source);
+            map.put("sourceDisplay", new me.lovelace.loveWebAdmin.models.BanOrigin(
+                me.lovelace.loveWebAdmin.models.BanOrigin.Kind.valueOf(source.get("kind").toString()),
+                source.get("actor").toString().isBlank() ? ban.creatorName() : source.get("actor").toString(),null).display());
+        } catch (java.sql.SQLException e) { throw new IllegalStateException(e); }
         map.put("ruleReason", ban.ruleReason());
         map.put("description", ban.description());
         List<String> proofs = new ArrayList<>();

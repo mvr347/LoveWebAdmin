@@ -127,7 +127,7 @@ public class LogManager {
     }
 
     public void logWebAction(String actor, String action) {
-        plugin.getServer().getAsyncScheduler().runNow(plugin, task ->
+        plugin.io().run(() ->
             plugin.getDatabaseManager().saveWebLog(actor, action));
     }
 }

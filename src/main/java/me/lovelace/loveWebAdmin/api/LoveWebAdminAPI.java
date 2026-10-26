@@ -49,6 +49,12 @@ public interface LoveWebAdminAPI {
      */
     boolean unbanPlayer(String target, String adminName);
 
+    /** Explicit origin for automated sanctions; legacy entry points remain available. */
+    default WebBan banPlayer(String target, String reason, String description, long durationSeconds,
+            me.lovelace.loveWebAdmin.models.BanOrigin origin) {
+        throw new UnsupportedOperationException("Structured sanctions are not supported by this provider");
+    }
+
     /**
      * Возвращает список всех активных блокировок.
      */

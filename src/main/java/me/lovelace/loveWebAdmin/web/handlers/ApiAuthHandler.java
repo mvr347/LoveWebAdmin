@@ -601,6 +601,10 @@ public class ApiAuthHandler extends ApiHandlerSupport {
         data.put("isOwner", role.isOwner());
         data.put("permissions", role.permissions().stream().map(Enum::name).toList());
         data.put("uiPreferences", adminOpt.map(WebAdmin::uiPreferences).orElse("{}"));
+        String linkedDiscord=plugin.getDatabaseManager().getPlayerStats(session.adminUsername()).map(stats->stats.get("uuid"))
+            .flatMap(uuid->plugin.getDiscordBridge().discord().flatMap(service->{try{return service.getLinkedDiscordId(java.util.UUID.fromString(uuid.toString()));}catch(IllegalArgumentException e){return Optional.empty();}})).orElse("");
+        data.put("discordId",linkedDiscord);
+        data.put("discordVerified",!linkedDiscord.isBlank());
         data.put("totpEnabled", adminOpt.map(WebAdmin::totpEnabled).orElse(false));
         data.put("last2faIp", adminOpt.map(WebAdmin::last2faIp).orElse("—"));
 

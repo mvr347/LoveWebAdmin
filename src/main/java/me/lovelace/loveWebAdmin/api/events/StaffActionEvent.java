@@ -16,7 +16,7 @@ public class StaffActionEvent extends Event {
     private final String details;
 
     public StaffActionEvent(String actor, String action, String details) {
-        super(true);
+        super(!org.bukkit.Bukkit.isPrimaryThread());
         this.actor = actor;
         this.action = action;
         this.details = details;

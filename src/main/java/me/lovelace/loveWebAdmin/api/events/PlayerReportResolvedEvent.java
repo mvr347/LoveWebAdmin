@@ -17,7 +17,7 @@ public class PlayerReportResolvedEvent extends Event {
     private final Integer linkedBanId;
 
     public PlayerReportResolvedEvent(int reportId, String status, String resolvedBy, Integer linkedBanId) {
-        super(true);
+        super(!org.bukkit.Bukkit.isPrimaryThread());
         this.reportId = reportId;
         this.status = status;
         this.resolvedBy = resolvedBy;

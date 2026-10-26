@@ -99,7 +99,7 @@ public class ApiKeyManager {
     private void touchUsage(ApiKeyRecord record) {
         long now = System.currentTimeMillis() / 1000L;
         // Обновляем асинхронно
-        plugin.getServer().getAsyncScheduler().runNow(plugin, task -> {
+        plugin.io().run(() -> {
             plugin.getDatabaseManager().updateApiKeyLastUsed(record.id(), now);
         });
     }

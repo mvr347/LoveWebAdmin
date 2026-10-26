@@ -23,7 +23,7 @@ public class ChatLogListener implements Listener {
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPaperChat(AsyncChatEvent event) {
         String msg = PlainTextComponentSerializer.plainText().serialize(event.message());
-        plugin.getServer().getAsyncScheduler().runNow(plugin, task -> {
+        plugin.io().run(() -> {
             plugin.getDatabaseManager().saveChatLog(
                 event.getPlayer().getName(),
                 event.getPlayer().getUniqueId().toString(),
@@ -36,7 +36,7 @@ public class ChatLogListener implements Listener {
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onLegacyChat(AsyncPlayerChatEvent event) {
         String msg = event.getMessage();
-        plugin.getServer().getAsyncScheduler().runNow(plugin, task -> {
+        plugin.io().run(() -> {
             plugin.getDatabaseManager().saveChatLog(
                 event.getPlayer().getName(),
                 event.getPlayer().getUniqueId().toString(),

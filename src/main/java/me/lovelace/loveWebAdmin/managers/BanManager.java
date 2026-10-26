@@ -53,6 +53,7 @@ public class BanManager {
      * Создает черновик бана из игры (/бан <игрок>) или веб-панели.
      */
     public WebBan createDraft(String creatorName, String targetName) {
+        if(!Bukkit.isPrimaryThread())return plugin.main().call(()->createDraft(creatorName,targetName)).join();
         String cleanTarget = targetName.trim();
         String targetUuid = null;
         String targetIp = null;
@@ -65,10 +66,8 @@ public class BanManager {
                 targetIp = address.getAddress().getHostAddress();
             }
         } else {
-            OfflinePlayer offline = Bukkit.getOfflinePlayer(cleanTarget);
-            if (offline.hasPlayedBefore() || offline.getName() != null) {
-                targetUuid = offline.getUniqueId().toString();
-            }
+            var identity=plugin.getDatabaseManager().getPlayerStats(cleanTarget);
+            if(identity.isPresent()&&identity.get().get("uuid")!=null)targetUuid=identity.get().get("uuid").toString();
             // Пытаемся взять последний известный IP из статистики
             var stats = plugin.getDatabaseManager().getPlayerStats(cleanTarget);
             if (stats.isPresent() && stats.get().get("lastIp") != null) {
@@ -111,7 +110,20 @@ public class BanManager {
             boolean isIpBan,
             long durationSeconds,
             Integer linkedReportId) {
+        var kind = "CONSOLE".equalsIgnoreCase(actorUsername) ? me.lovelace.loveWebAdmin.models.BanOrigin.Kind.CONSOLE : me.lovelace.loveWebAdmin.models.BanOrigin.Kind.STAFF;
+        return finalizeBan(banId,actorUsername,targetName,ruleReason,description,proofUrls,isIpBan,durationSeconds,linkedReportId,
+            new me.lovelace.loveWebAdmin.models.BanOrigin(kind,actorUsername,null));
+    }
 
+    public boolean finalizeBan(int banId, String actorUsername, String targetName, String ruleReason,
+            String description, List<String> proofUrls, boolean isIpBan, long durationSeconds, Integer linkedReportId,
+            me.lovelace.loveWebAdmin.models.BanOrigin origin) {
+        if(origin.kind()==me.lovelace.loveWebAdmin.models.BanOrigin.Kind.SECURITY)
+            throw new IllegalArgumentException("Ограничения LoveAuth нужно применять через его API безопасности, а не через игровой BanList");
+        if (!Bukkit.isPrimaryThread()) return plugin.main().call(() -> finalizeBan(banId,actorUsername,targetName,ruleReason,description,proofUrls,isIpBan,durationSeconds,linkedReportId,origin)).join();
+        try{if(plugin.moderation().externalBan(origin.externalEventId()).isPresent())return true;}
+        catch(java.sql.SQLException e){throw new IllegalStateException(e);}
+        if(banId>0 && plugin.getDatabaseManager().getBanById(banId).filter(b->b.status().equals("ACTIVE")).isPresent())return false;
         String cleanTarget = targetName.trim();
         String targetUuid = null;
         String targetIp = null;
@@ -124,10 +136,8 @@ public class BanManager {
                 targetIp = address.getAddress().getHostAddress();
             }
         } else {
-            OfflinePlayer offline = Bukkit.getOfflinePlayer(cleanTarget);
-            if (offline.hasPlayedBefore() || offline.getName() != null) {
-                targetUuid = offline.getUniqueId().toString();
-            }
+            var identity=plugin.getDatabaseManager().getPlayerStats(cleanTarget);
+            if(identity.isPresent()&&identity.get().get("uuid")!=null)targetUuid=identity.get().get("uuid").toString();
             var stats = plugin.getDatabaseManager().getPlayerStats(cleanTarget);
             if (stats.isPresent() && stats.get().get("lastIp") != null) {
                 targetIp = String.valueOf(stats.get().get("lastIp"));
@@ -155,7 +165,13 @@ public class BanManager {
             linkedReportId
         );
 
+        var before=new me.lovelace.loveWebAdmin.api.events.WebAdminBanEvent(cleanTarget,ruleReason,actorUsername,isIpBan,linkedReportId);
+        before.setCreatedBan(ban);Bukkit.getPluginManager().callEvent(before);if(before.isCancelled())return false;
         WebBan savedBan = plugin.getDatabaseManager().saveBan(ban);
+
+        if (savedBan == null || savedBan.id() <= 0) return false;
+        try { plugin.moderation().source(savedBan.id(),origin.kind().name(),origin.actor(),origin.externalEventId()); }
+        catch (java.sql.SQLException e) { throw new IllegalStateException("Не удалось записать источник наказания",e); }
 
         // Если бан привязан к жалобе — автоматически принимаем жалобу и награждаем заявителя
         if (linkedReportId != null && linkedReportId > 0) {
@@ -166,22 +182,12 @@ public class BanManager {
         // Применяем бан в Minecraft (в главном потоке)
         final String finalTargetUuid = targetUuid;
         final String finalTargetIp = targetIp;
-        Bukkit.getScheduler().runTask(plugin, () -> {
-            applyBanInBukkit(cleanTarget, finalTargetUuid, finalTargetIp, ruleReason, description, expiresAt, isIpBan, actorUsername);
-        });
+        applyBanInBukkit(cleanTarget, finalTargetUuid, finalTargetIp, ruleReason, description, expiresAt, isIpBan, actorUsername);
+        if (plugin.getDiscordBridge() != null) plugin.getDiscordBridge().notifyBanned(savedBan,origin);
 
         String reportNote = (linkedReportId != null && linkedReportId > 0) ? " (по жалобе #" + linkedReportId + ")" : "";
         plugin.getLogManager().logWebAction(actorUsername,
             "Забанил игрока " + cleanTarget + " по причине [" + ruleReason + "]" + reportNote + (isIpBan ? " (+бан по IP)" : ""));
-
-        // Вызываем Bukkit Event для разработчиков сторонних плагинов
-        try {
-            var banEvent = new me.lovelace.loveWebAdmin.api.events.WebAdminBanEvent(cleanTarget, ruleReason, actorUsername, isIpBan, linkedReportId);
-            banEvent.setCreatedBan(savedBan);
-            Bukkit.getPluginManager().callEvent(banEvent);
-        } catch (Exception e) {
-            plugin.getLogger().warning("[BanManager] Ошибка вызова WebAdminBanEvent: " + e.getMessage());
-        }
 
         // Отправляем исходящий вебхук (Discord / HTTP)
         if (plugin.getWebhookManager() != null) {
@@ -262,7 +268,7 @@ public class BanManager {
                 online.kickPlayer(banMessage);
             }
         } catch (Exception e) {
-            plugin.getLogger().warning("Ошибка применения бана через Bukkit API: " + e.getMessage());
+            throw new IllegalStateException("Блокировка не применена сервером",e);
         }
     }
 
@@ -270,6 +276,7 @@ public class BanManager {
      * Разбанивает игрока.
      */
     public boolean unban(int banId, String actorUsername) {
+        if (!Bukkit.isPrimaryThread()) return plugin.main().call(() -> unban(banId,actorUsername)).join();
         Optional<WebBan> banOpt = plugin.getDatabaseManager().getBanById(banId);
         if (banOpt.isEmpty()) return false;
 
@@ -288,16 +295,13 @@ public class BanManager {
 
         boolean ok = plugin.getDatabaseManager().unban(banId);
         if (ok) {
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                try {
-                    Bukkit.getBanList(BanList.Type.NAME).pardon(ban.targetName());
-                    if (ban.isIpBan() && ban.targetIp() != null) {
-                        Bukkit.getBanList(BanList.Type.IP).pardon(ban.targetIp());
-                    }
-                } catch (Exception e) {
-                    plugin.getLogger().warning("Ошибка разбана в Bukkit API: " + e.getMessage());
+            try {
+                Bukkit.getBanList(BanList.Type.NAME).pardon(ban.targetName());
+                if(ban.isIpBan() && ban.targetIp()!=null) {
+                    boolean other=plugin.getDatabaseManager().getActiveBansForPlayer("",null,ban.targetIp()).stream().anyMatch(b->b.id()!=banId&&b.isIpBan());
+                    if(!other)Bukkit.getBanList(BanList.Type.IP).pardon(ban.targetIp());
                 }
-            });
+            }catch(RuntimeException e){plugin.getDatabaseManager().saveBan(ban);throw e;}
             plugin.getLogManager().logWebAction(actorUsername, "Разбанил игрока " + ban.targetName());
 
             // Отправляем исходящий вебхук (Discord / HTTP)
@@ -317,6 +321,7 @@ public class BanManager {
      * Сначала проверяет активный бан в базе данных LoveWebAdmin, затем снимает ограничения в Bukkit BanList.
      */
     public boolean unban(String targetName, String actorUsername) {
+        if(!Bukkit.isPrimaryThread())return plugin.main().call(()->unban(targetName,actorUsername)).join();
         if (targetName == null || targetName.isBlank()) return false;
         String cleanTarget = targetName.trim();
 

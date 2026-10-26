@@ -43,7 +43,7 @@ public class UnbanCommand implements CommandExecutor, TabCompleter {
         }
 
         String target = args[0].trim();
-        plugin.getServer().getAsyncScheduler().runNow(plugin, task -> {
+        plugin.io().run(() -> {
             boolean success = plugin.getBanManager().unban(target, sender.getName());
             if (success) {
                 sender.sendMessage("§a[WebAdmin] Игрок §e" + target + " §aуспешно разбанен!");

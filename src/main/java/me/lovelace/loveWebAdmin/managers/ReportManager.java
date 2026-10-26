@@ -85,35 +85,15 @@ public class ReportManager {
             ? reporter.getAddress().getAddress().getHostAddress()
             : "";
 
-        // Асинхронная проверка кулдауна в БД (1 раз в неделю на конкретного игрока по UUID и IP)
-        plugin.getServer().getAsyncScheduler().runNow(plugin, task -> {
-            boolean canReport = plugin.getDatabaseManager().canPlayerReportTarget(
-                reporter.getUniqueId().toString(),
-                ip,
-                target.getUniqueId().toString()
-            );
-
-            if (!canReport) {
-                plugin.getServer().getRegionScheduler().run(plugin, reporter.getLocation(), t -> {
-                    reporter.sendMessage(Component.text("§cВы уже отправляли жалобу на игрока §e" + target.getName() + " §cна этой неделе!"));
-                });
-                return;
-            }
-
-            // Создаем или обновляем сессию
-            ReportGuiSession session = new ReportGuiSession(
-                reporter.getUniqueId(),
-                reporter.getName(),
-                ip,
-                target.getUniqueId(),
-                target.getName() != null ? target.getName() : "Unknown"
-            );
-            activeSessions.put(reporter.getUniqueId(), session);
-
-            plugin.getServer().getRegionScheduler().run(plugin, reporter.getLocation(), t -> {
-                renderAndOpenGui(reporter, target, session);
-            });
-        });
+        ReportGuiSession session=new ReportGuiSession(reporter.getUniqueId(),reporter.getName(),ip,target.getUniqueId(),target.getName()!=null?target.getName():"Неизвестный игрок");
+        activeSessions.put(session.getReporterUuid(),session);
+        plugin.io().supply(()->plugin.getDatabaseManager().canPlayerReportTarget(session.getReporterUuid().toString(),ip,session.getTargetUuid().toString()))
+            .thenCompose(allowed->plugin.main().call(()->{
+                if(!reporter.isOnline() || activeSessions.get(session.getReporterUuid())!=session)return null;
+                if(!allowed){activeSessions.remove(session.getReporterUuid(),session);reporter.sendMessage(Component.text("Вы уже отправляли жалобу на этого игрока на этой неделе."));}
+                else renderAndOpenGui(reporter,target,session);
+                return null;
+            }));
     }
 
     /**
@@ -261,7 +241,7 @@ public class ReportManager {
 
         reporter.sendMessage(Component.text("§7[Жалоба] Отправка данных администрации..."));
 
-        plugin.getServer().getAsyncScheduler().runNow(plugin, task -> {
+        plugin.io().run(() -> {
             // 1. Создаем запись в БД
             int reportId = plugin.getDatabaseManager().createPlayerReport(
                 session.getReporterUuid().toString(),
@@ -272,14 +252,10 @@ public class ReportManager {
                 reasons,
                 description,
                 isRecent,
-                REPUTATION_DEDUCTION
+                0
             );
 
             if (reportId > 0) {
-                // 2. Слегка опускаем репутацию цели в LoveBehavior
-                if (behaviorBridge.isAvailable()) {
-                    behaviorBridge.modifyPoliteness(targetUuid, -REPUTATION_DEDUCTION);
-                }
 
                 // 3. Проверяем, не набрал ли нарушитель > 4 репортов (подозрительный)
                 int activeCount = plugin.getDatabaseManager().getActiveReportsCountForTarget(targetUuid.toString());
@@ -310,14 +286,18 @@ public class ReportManager {
                     }
                 }
 
-                plugin.getServer().getRegionScheduler().run(plugin, reporter.getLocation(), t -> {
+                plugin.main().call(() -> {
                     reporter.sendMessage(Component.text("§a✔ Ваша жалоба на игрока §e" + targetName + " §aуспешно отправлена модераторам сервера!"));
                     reporter.sendMessage(Component.text("§7Мы рассмотрим её в ближайшее время. Спасибо за помощь проекту!"));
-                });
+                
+                return null;
+            });
             } else {
-                plugin.getServer().getRegionScheduler().run(plugin, reporter.getLocation(), t -> {
+                plugin.main().call(() -> {
                     reporter.sendMessage(Component.text("§cОшибка отправки жалобы. Пожалуйста, попробуйте позже."));
-                });
+                
+                return null;
+            });
             }
         });
     }
@@ -326,6 +306,7 @@ public class ReportManager {
      * Программное создание жалобы (API).
      */
     public PlayerReport createReport(String reporter, String target, List<String> reasons, String description, boolean isRecent) {
+        if(!Bukkit.isPrimaryThread())return plugin.main().call(()->createReport(reporter,target,reasons,description,isRecent)).join();
         OfflinePlayer reporterPlayer = Bukkit.getOfflinePlayer(reporter);
         OfflinePlayer targetPlayer = Bukkit.getOfflinePlayer(target);
         String reporterUuid = (reporterPlayer.getUniqueId() != null) ? reporterPlayer.getUniqueId().toString() : UUID.nameUUIDFromBytes(reporter.getBytes()).toString();
@@ -340,16 +321,11 @@ public class ReportManager {
             reasons != null ? reasons : List.of(),
             description != null ? description : "",
             isRecent,
-            REPUTATION_DEDUCTION
+            0
         );
 
         if (reportId <= 0) return null;
 
-        if (behaviorBridge.isAvailable()) {
-            try {
-                behaviorBridge.modifyPoliteness(UUID.fromString(targetUuid), -REPUTATION_DEDUCTION);
-            } catch (Exception ignored) {}
-        }
 
         Optional<PlayerReport> reportOpt = plugin.getDatabaseManager().getReportById(reportId);
         if (reportOpt.isPresent()) {
@@ -407,6 +383,7 @@ public class ReportManager {
      * Администратор принял жалобу и наказал нарушителя (ACCEPTED), опционально привязав выданный бан.
      */
     public boolean acceptReport(int reportId, String adminName, Integer linkedBanId) {
+        if(!Bukkit.isPrimaryThread())return plugin.main().call(()->acceptReport(reportId,adminName,linkedBanId)).join();
         Optional<PlayerReport> reportOpt = plugin.getDatabaseManager().getReportById(reportId);
         if (reportOpt.isEmpty()) return false;
         PlayerReport report = reportOpt.get();
@@ -416,6 +393,7 @@ public class ReportManager {
 
         UUID reporterUuid = UUID.fromString(report.reporterUuid());
 
+        if(report.reputationDeducted()==0 && behaviorBridge.isAvailable())behaviorBridge.modifyPoliteness(UUID.fromString(report.targetUuid()),-REPUTATION_DEDUCTION);
         // Награждаем репортера небольшой репутацией
         if (behaviorBridge.isAvailable()) {
             behaviorBridge.modifyPoliteness(reporterUuid, REPUTATION_BONUS_REPORTER);
@@ -468,6 +446,7 @@ public class ReportManager {
      * Администратор пометил жалобу как ложную (REJECTED).
      */
     public boolean rejectReport(int reportId, String adminName) {
+        if(!Bukkit.isPrimaryThread())return plugin.main().call(()->rejectReport(reportId,adminName)).join();
         Optional<PlayerReport> reportOpt = plugin.getDatabaseManager().getReportById(reportId);
         if (reportOpt.isEmpty()) return false;
         PlayerReport report = reportOpt.get();

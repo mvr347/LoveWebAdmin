@@ -18,7 +18,7 @@ public class NotificationManager {
     }
 
     public void createNotification(String title, String message, String type, String createdBy) {
-        plugin.getServer().getAsyncScheduler().runNow(plugin, task -> {
+        plugin.io().run(() -> {
             plugin.getDatabaseManager().saveStaffNotification(title, message, type, createdBy);
         });
     }
@@ -36,13 +36,13 @@ public class NotificationManager {
     }
 
     public void markAsRead(int notificationId, int adminId) {
-        plugin.getServer().getAsyncScheduler().runNow(plugin, task -> {
+        plugin.io().run(() -> {
             plugin.getDatabaseManager().markStaffNotificationRead(notificationId, adminId);
         });
     }
 
     public void markAllAsRead(int adminId) {
-        plugin.getServer().getAsyncScheduler().runNow(plugin, task -> {
+        plugin.io().run(() -> {
             plugin.getDatabaseManager().markAllStaffNotificationsRead(adminId);
         });
     }

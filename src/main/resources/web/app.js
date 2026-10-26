@@ -96,6 +96,7 @@
 
     const ALL_PERMISSIONS = [
         'VIEW_STATS', 'VIEW_ANALYTICS', 'VIEW_PLAYERS', 'MANAGE_PLAYERS', 'VIEW_BANS', 'MANAGE_BANS',
+        'VIEW_PLAYER_IP', 'VIEW_PLAYER_INVENTORY', 'CONFISCATE_ITEMS', 'RESTORE_ITEMS', 'FREEZE_PLAYERS', 'TELEPORT_PLAYERS', 'CHANGE_GAMEMODE', 'KICK_PLAYERS', 'KILL_PLAYERS',
         'VIEW_APPEALS', 'MANAGE_APPEALS',
         'VIEW_REPORTS', 'MANAGE_REPORTS',
         'VIEW_VESUVIO', 'VIEW_VESUVIO_ADVANCED', 'MANAGE_VESUVIO',
@@ -106,6 +107,16 @@
     ];
 
     const PERMISSION_LABELS = {
+        VIEW_PLAYER_IP: 'Просмотр IP и связанных аккаунтов',
+        VIEW_PLAYER_INVENTORY: 'Просмотр инвентаря',
+        CONFISCATE_ITEMS: 'Изъятие предметов',
+        RESTORE_ITEMS: 'Возврат изъятого',
+        FREEZE_PLAYERS: 'Заморозка игроков',
+        TELEPORT_PLAYERS: 'Телепортация игроков',
+        CHANGE_GAMEMODE: 'Изменение режима игры',
+        KICK_PLAYERS: 'Отключение игроков',
+        KILL_PLAYERS: 'Убийство игроков',
+
         VIEW_STATS: 'Просмотр метрик сервера (TPS, MSPT, память, онлайн)',
         VIEW_ANALYTICS: 'Просмотр аналитики базы данных и активности',
         VIEW_PLAYERS: 'Просмотр списков и профилей игроков',
@@ -292,7 +303,12 @@
         return hasPerm(section.perm);
     }
 
+    const globalPollers={};
+    let requestGeneration=0;
+    const readRequests=new Set();
     function clearPollers() {
+        requestGeneration++;
+        for(const controller of readRequests)controller.abort();readRequests.clear();
         Object.values(pollers).forEach(clearInterval);
         for (const k in pollers) delete pollers[k];
     }
@@ -316,7 +332,12 @@
             opts.headers['Content-Type'] = 'application/json';
             opts.body = JSON.stringify(body);
         }
-        const res = await fetch(path, opts);
+        const generation=requestGeneration;
+        const controller=new AbortController();
+        if(method==='GET'){opts.signal=controller.signal;readRequests.add(controller);}
+        let res;
+        try{res=await fetch(path,opts);}finally{readRequests.delete(controller);}
+        if(method==='GET'&&generation!==requestGeneration)throw new Error('Открыт другой раздел');
         let json;
         try {
             json = await res.json();
@@ -797,7 +818,7 @@
                                         <span style="display:inline-flex; align-items:center;">${renderSvgIcon('ban', 'red', 16)}</span>
                                         <div style="flex:1;">
                                             <div style="font-weight:700; color:var(--text-main);">${esc(b.targetName)} <span class="badge red">${esc(b.ruleReason)}</span></div>
-                                            <div style="font-size:11px; color:var(--text-muted);">Администратор: ${esc(b.creatorName)} • ${fmtTime(b.createdAt)}</div>
+                                            <div style="font-size:11px; color:var(--text-muted);">Администратор: ${esc(b.sourceDisplay || b.creatorName)} • ${fmtTime(b.createdAt)}</div>
                                         </div>
                                     </div>`;
                             });
@@ -1853,7 +1874,8 @@
         // Notifications button handler
         document.getElementById('topbar-notif-btn')?.addEventListener('click', openNotificationsModal);
         updateNotificationsBadge();
-        setInterval(updateNotificationsBadge, 6000);
+        globalPollers.notifications && clearInterval(globalPollers.notifications);
+        globalPollers.notifications=setInterval(()=>{if(!document.hidden)updateNotificationsBadge();},6000);
 
         // Admin settings modal button
         document.getElementById('topbar-settings-btn')?.addEventListener('click', () => openAdminSettingsModal('general'));
@@ -1920,7 +1942,8 @@
             updateReportsBadge();
         };
         updateStatus();
-        setInterval(updateStatus, 5000);
+        globalPollers.status && clearInterval(globalPollers.status);
+        globalPollers.status=setInterval(()=>{if(!document.hidden)updateStatus();},5000);
     }
 
     function navigateTo(sectionId) {
@@ -3363,7 +3386,7 @@
                 wrap.innerHTML = `
                     <div class="frequent-offenders-card">
                         <div class="frequent-offenders-title">
-                            <span style="display:flex; align-items:center; gap:6px;">${renderSvgIcon('alert', 'red', 14)} ПОВТОРНЫЕ НАРУШИТЕЛИ (4+ ЖАЛОБЫ)</span>
+                            <span style="display:flex; align-items:center; gap:6px;">${renderSvgIcon('alert', 'red', 14)} ПОВТОРНЫЕ ЖАЛОБЫ (4+)</span>
                             <span class="badge red">ТРЕБУЮТ ПРИОРИТЕТНОГО ВНИМАНИЯ</span>
                         </div>
                         <div class="frequent-offenders-grid">
@@ -3476,7 +3499,7 @@
                             </td>
                             <td style="text-align:right; white-space:nowrap;">
                                 <div style="display:inline-flex; gap:5px;">
-                                    <button type="button" class="secondary btn-sm" onclick="window.openReportDetailModal(${r.id})" title="Просмотреть детали и контекст чата">ИНФО</button>
+                                    <a class="secondary btn-sm" href="/case.html?kind=report&id=${r.id}">РАБОТА С ДЕЛОМ</a><button type="button" class="secondary btn-sm" onclick="window.openReportDetailModal(${r.id})" title="Просмотреть детали и контекст чата">ИНФО</button>
                                     ${isPending ? `
                                         <button type="button" class="primary btn-sm" onclick="window.handleAcceptReport(${r.id}, '${esc(r.targetName)}')" title="Принять и наказать (начислить репутацию заявителю)">${renderSvgIcon('check', 'white', 12)}</button>
                                         <button type="button" class="secondary btn-sm" onclick="window.handleRejectReport(${r.id}, '${esc(r.targetName)}')" title="Пометить как ложную (вернуть репутацию цели)">ЛОЖЬ</button>
@@ -3633,7 +3656,7 @@
                                 </div>
                                 ${b.description ? `<div style="font-size:11.5px; color:var(--text-muted); margin-top:4px;">${esc(b.description)}</div>` : ''}
                             </td>
-                            <td style="font-weight:600; color:var(--accent-light);">${esc(b.creatorName)}</td>
+                            <td style="font-weight:600; color:var(--accent-light);">${esc(b.sourceDisplay || b.creatorName)}</td>
                             <td class="font-mono" style="font-size:12px; color:var(--text-muted);">${fmtTime(b.createdAt)}</td>
                             <td><span class="badge purple">БЕССРОЧНО</span></td>
                             <td>
@@ -3795,7 +3818,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                                             </div>
                                         </div>
                                         <div style="display:flex; gap:8px;">
-                                            <button type="button" class="primary btn-sm" data-open-appeal-thread="${a.id}" style="display:inline-flex; align-items:center; gap:6px;">${renderSvgIcon('message', 'white', 12)} ТИКЕТ / ТРЕД</button>
+                                            <button type="button" class="primary btn-sm" data-open-appeal-thread="${a.id}" style="display:inline-flex; align-items:center; gap:6px;">${renderSvgIcon('message', 'white', 12)} ПЕРЕПИСКА</button>
                                         </div>
                                     </div>
                                 `;
@@ -3822,7 +3845,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                             <div style="display:flex; align-items:center; gap:10px;">
                                 <img src="https://mc-heads.net/avatar/${esc(appeal.playerName)}/32" style="width:32px; height:32px; border-radius:4px;" alt="">
                                 <div>
-                                    <h3 style="margin:0; font-size:16px;">ТИКЕТ АПЕЛЛЯЦИИ #${appeal.id}: ${esc(appeal.playerName)}</h3>
+                                    <h3 style="margin:0; font-size:16px;">АПЕЛЛЯЦИЯ #${appeal.id}: ${esc(appeal.playerName)}</h3><a href="/case.html?kind=appeal&id=${appeal.id}">Ответственный, заметки и решение</a>
                                     <div style="font-size:11.5px; color:var(--text-muted);">Бан #${appeal.banId} • Причина: ${esc(appeal.banReason || '—')} • ${statusBadge}</div>
                                 </div>
                             </div>
@@ -4338,7 +4361,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                         <div><span class="badge red">${esc(b.ruleReason)}</span></div>
 
                         <div style="color:var(--text-dim); font-weight:700;">АДМИНИСТРАТОР:</div>
-                        <div style="color:var(--accent-light); font-weight:600;">${esc(b.creatorName)}</div>
+                        <div style="color:var(--accent-light); font-weight:600;">${esc(b.sourceDisplay || b.creatorName)}</div>
 
                         <div style="color:var(--text-dim); font-weight:700;">СРОК ДЕЙСТВИЯ:</div>
                         <div><span class="badge purple">БЕССРОЧНО (PERMANENT)</span></div>
@@ -5907,8 +5930,8 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                                 <div style="font-size:16px; font-weight:700; color:var(--accent-light);">${fmtDuration(p.playtimeSeconds || 0)}</div>
                             </div>
                             <div class="stat-card" style="padding:12px;">
-                                <div class="stat-label">Баланс монет (Экономика)</div>
-                                <div style="font-size:16px; font-weight:700; color:var(--text-main);">${(p.economy && p.economy.balance) ? p.economy.balance.toLocaleString() : 0} монет</div>
+                                <a href="/inventory.html?player=${encodeURIComponent(p.name)}">Инвентарь и изъятые предметы</a><div class="stat-label">Баланс монет (Экономика)</div>
+                                <div style="font-size:16px; font-weight:700; color:var(--text-main);">${p.economy?.balance != null ? p.economy.balance.toLocaleString()+' монет' : 'Нет актуальных данных'}</div>
                             </div>
                         </div>
 
@@ -6015,7 +6038,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                                         <span class="badge ${b.status === 'ACTIVE' ? 'red' : 'green'}">${b.status === 'ACTIVE' ? 'АКТИВЕН' : 'СНЯТ'}</span>
                                     </div>
                                     <div style="font-size:12px; color:var(--text-muted);">${esc(b.description || 'Без описания')}</div>
-                                    <div style="font-size:11px; color:var(--text-dim); margin-top:4px;">Выдал: ${esc(b.creatorName)} • ${fmtTime(b.createdAt)}</div>
+                                    <div style="font-size:11px; color:var(--text-dim); margin-top:4px;">Источник: ${esc(b.sourceDisplay || b.creatorName)} • ${fmtTime(b.createdAt)}</div>
                                 </div>
                             `).join('') : '<div style="color:var(--text-dim); font-size:12px; text-align:center; padding:20px;">Наказаний нет</div>'}
                         </div>
@@ -8748,7 +8771,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                     renderBlacklistUI();
                 } else if (tabId === 'webhooks') {
                     // TAB 5: ВЕБХУКИ И СВЯЗЬ (DISCORD + TELEGRAM)
-                    const discordId = userPrefs.discordId || '';
+                    const discordId = me.discordVerified ? me.discordId : ''; 
                     const notifyReports = userPrefs.discordNotifyReports !== false;
                     const notifyTickets = userPrefs.discordNotifyTickets !== false;
 
@@ -8797,8 +8820,8 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                             </div>
 
                             <div class="form-group">
-                                <label>Ваш Discord User ID (числовой снепшот)</label>
-                                <input type="text" id="pref-discord-id" value="${esc(discordId)}" placeholder="например: 345678901234567890">
+                                <label>Подтверждённый Discord-аккаунт</label>
+                                <input type="text" id="pref-discord-id" value="${esc(discordId)}" readonly placeholder="Привяжите Minecraft-аккаунт через LoveCore или LoveAuth">
                             </div>
 
                             <div style="display:flex; flex-direction:column; gap:8px;">
@@ -8824,7 +8847,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                         const tgToken = document.getElementById('cfg-tg-token').value.trim();
                         const tgChat = document.getElementById('cfg-tg-chat').value.trim();
 
-                        userPrefs.discordId = document.getElementById('pref-discord-id').value.trim();
+                        delete userPrefs.discordId;
                         userPrefs.discordNotifyReports = document.getElementById('pref-notify-reports').checked;
                         userPrefs.discordNotifyTickets = document.getElementById('pref-notify-tickets').checked;
 

@@ -20,6 +20,7 @@
         <finalName>LoveWebAdmin</finalName>
         <defaultGoal>clean package</defaultGoal>
         <plugins>
+            <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId><version>3.5.4</version></plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
@@ -94,6 +95,7 @@
     </repositories>
 
     <dependencies>
+        <dependency><groupId>org.mockbukkit.mockbukkit</groupId><artifactId>mockbukkit-v26.2</artifactId><version>4.117.0</version><scope>test</scope></dependency>
         <dependency>
             <groupId>io.papermc.paper</groupId>
             <artifactId>paper-api</artifactId>
@@ -110,7 +112,7 @@
         <dependency>
             <groupId>com.github.mvr347.LoveCore</groupId>
             <artifactId>lovecore-api</artifactId>
-            <version>ff8d28387d</version>
+            <version>0d852bffb28599459857c26b1c3646c882bfa60e</version>
             <scope>provided</scope>
         </dependency>
 

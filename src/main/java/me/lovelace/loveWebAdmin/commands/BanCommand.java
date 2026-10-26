@@ -41,7 +41,7 @@ public class BanCommand implements CommandExecutor, TabCompleter {
         }
 
         String target = args[0].trim();
-        plugin.getServer().getAsyncScheduler().runNow(plugin, task -> {
+        plugin.io().run(() -> {
             WebBan draft = plugin.getBanManager().createDraft(sender.getName(), target);
             sender.sendMessage("§a[WebAdmin] Черновик бана #" + draft.id() + " для игрока §e" + target + " §aсоздан!");
             sender.sendMessage("§7Откройте веб-панель §bWebAdmin §7(раздел §f«Баны»§7), чтобы прикрепить скриншоты, выбрать пункт правил и подтвердить бан.");

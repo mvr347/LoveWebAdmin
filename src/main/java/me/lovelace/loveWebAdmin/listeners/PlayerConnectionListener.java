@@ -45,12 +45,15 @@ public class PlayerConnectionListener implements Listener {
         }
 
         final String finalIp = ip;
-        plugin.getServer().getAsyncScheduler().runNow(plugin, task -> {
+        final int currentOnline = Bukkit.getOnlinePlayers().size();
+        final boolean isNew = !player.hasPlayedBefore();
+        plugin.io().run(() -> {
             // Проверка активного бана в WebAdmin
             List<WebBan> activeBans = plugin.getDatabaseManager().getActiveBansForPlayer(name, uuid.toString(), finalIp);
             if (!activeBans.isEmpty()) {
                 WebBan ban = activeBans.get(0);
                 Bukkit.getScheduler().runTask(plugin, () -> {
+                    if(!player.isOnline())return;
                     player.kickPlayer("§c§lВЫ ЗАБЛОКИРОВАНЫ НА СЕРВЕРЕ!\n"
                             + "§7Причина: §f" + ban.ruleReason() + "\n"
                             + (ban.description() != null && !ban.description().isBlank() ? "§7Детали: §f" + ban.description() + "\n" : "")
@@ -64,14 +67,13 @@ public class PlayerConnectionListener implements Listener {
 
             // Дневная аналитика
             String today = LocalDate.now().toString();
-            int currentOnline = Bukkit.getOnlinePlayers().size();
-            boolean isNew = !player.hasPlayedBefore();
+
             plugin.getDatabaseManager().recordDailyStats(today, 1, isNew ? 1 : 0, currentOnline, 0);
 
             // Доставка отложенных уведомлений о рассмотренных жалобах
             List<String> pendingNotifications = plugin.getDatabaseManager().getAndClearPendingReportNotifications(uuid.toString());
             if (!pendingNotifications.isEmpty()) {
-                plugin.getServer().getRegionScheduler().runDelayed(plugin, player.getLocation(), t -> {
+                plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
                     if (player.isOnline()) {
                         for (String msg : pendingNotifications) {
                             player.sendMessage(net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacySection().deserialize(msg));
@@ -89,7 +91,7 @@ public class PlayerConnectionListener implements Listener {
         if (joinTime != null) {
             long duration = (System.currentTimeMillis() / 1000L) - joinTime;
             if (duration > 0) {
-                plugin.getServer().getAsyncScheduler().runNow(plugin, task -> {
+                plugin.io().run(() -> {
                     plugin.getDatabaseManager().recordPlayerQuit(uuid.toString(), duration);
                     String today = LocalDate.now().toString();
                     plugin.getDatabaseManager().recordDailyStats(today, 0, 0, 0, (int) (duration / 60));

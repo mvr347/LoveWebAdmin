@@ -99,7 +99,7 @@ public class LoveEconomyTracker {
         if (!guard.enter()) return;
         try {
             Map<String, Long> balances = bridge.onlineBalances();
-            Bukkit.getAsyncScheduler().runNow(plugin, task -> record(balances));
+            plugin.io().run(() -> record(balances));
         } catch (IllegalPluginAccessException e) {
             // Плагин уже выключается: замера в этот раз не будет.
         } finally {
@@ -202,6 +202,8 @@ public class LoveEconomyTracker {
             currentTop = JsonUtils.parseList(latest.topBalancesJson());
         }
 
+        data.put("measurementScope","ONLINE_PLAYERS_ONLY");
+        data.put("measurementDescription","Сумма монет отслеживаемых игроков онлайн, не общий оборот сервера");
         data.put("totalCirculation", currentTotal);
         data.put("trackedOnline", trackedCount);
         data.put("topPlayers", currentTop);

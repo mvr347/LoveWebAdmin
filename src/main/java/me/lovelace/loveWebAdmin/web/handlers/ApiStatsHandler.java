@@ -19,6 +19,13 @@ import java.util.Optional;
  */
 public class ApiStatsHandler extends ApiHandlerSupport {
 
+    private volatile Map<String,Object> snapshot;
+    private volatile long snapshotAt;
+    private synchronized Map<String,Object> cachedStats() {
+        long now=System.nanoTime();
+        if(snapshot==null||now-snapshotAt>1_000_000_000L){snapshot=collectStats();snapshotAt=now;}
+        return snapshot;
+    }
     public ApiStatsHandler(LoveWebAdmin plugin) {
         super(plugin);
     }
@@ -29,8 +36,7 @@ public class ApiStatsHandler extends ApiHandlerSupport {
         if (sessionOpt.isEmpty()) return;
 
         try {
-            Map<String, Object> stats = plugin.getServer().getScheduler()
-                .callSyncMethod(plugin, this::collectStats)
+            Map<String, Object> stats = plugin.main().call( this::cachedStats)
                 .get();
             sendSuccess(resp, stats);
         } catch (Exception e) {
