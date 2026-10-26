@@ -3567,6 +3567,11 @@ public class DatabaseManager {
         }
     }
 
+    public synchronized int addOpenAppealMessage(int id,String author,boolean staff,String message) {
+        if(getAppealById(id).filter(a->"PENDING".equals(a.status())).isEmpty())return -1;
+        return addAppealMessage(id,author,staff,message);
+    }
+
     public synchronized int addAppealMessage(int appealId, String authorName, boolean isStaff, String message) {
         if (getAppealById(appealId).isEmpty()) return -1;
         String sql = """

@@ -29,6 +29,10 @@ import org.bukkit.event.Listener;
 public class LoveCoreDiscordBridge implements Listener {
 
   private final LoveWebAdmin plugin;
+  private final me.lovelace.loveWebAdmin.database.ModerationStore store;
+  private final me.lovelace.loveWebAdmin.database.DatabaseManager database;
+  private final me.lovelace.loveWebAdmin.concurrent.VirtualIoExecutor io;
+  private final me.lovelace.loveWebAdmin.concurrent.MainDispatcher main;
   private final DiscordNotificationPolicy notificationPolicy;
   private long lastEscalationScan;
 
@@ -43,6 +47,10 @@ public class LoveCoreDiscordBridge implements Listener {
 
   public LoveCoreDiscordBridge(LoveWebAdmin plugin) {
     this.plugin = plugin;
+    this.store = plugin.moderation();
+    this.database = plugin.getDatabaseManager();
+    this.io = plugin.io();
+    this.main = plugin.main();
     this.notificationPolicy = DiscordNotificationPolicy.from(plugin.getConfig());
   }
 
@@ -73,8 +81,7 @@ public class LoveCoreDiscordBridge implements Listener {
                                 actions.register();
                                 registeredService = service;
                               }
-                              for (var appeal :
-                                  plugin.getDatabaseManager().getAllAppeals("PENDING", 200, 0))
+                              for (var appeal : database.getAllAppeals("PENDING", 200, 0))
                                 if (appeal.discordChannelId() != null)
                                   service.restoreTicket(
                                       String.valueOf(appeal.id()), appeal.discordChannelId());
@@ -149,40 +156,38 @@ public class LoveCoreDiscordBridge implements Listener {
                         + "/appeal.html?ban="
                         + ban.id();
               try {
-                plugin
-                    .moderation()
-                    .enqueue(
-                        "ban:" + ban.id() + ":" + id,
-                        id,
-                        JsonUtils.toJson(
-                            Map.of(
-                                "content",
-                                text,
-                                "nonce",
-                                me.lovelace
-                                    .loveWebAdmin
-                                    .database
-                                    .ModerationStore
-                                    .hash("ban:" + ban.id() + ":" + id)
-                                    .substring(0, 24),
-                                "enforce_nonce",
-                                true,
-                                "components",
-                                List.of(
-                                    Map.of(
-                                        "type",
-                                        1,
-                                        "components",
-                                        List.of(
-                                            Map.of(
-                                                "type",
-                                                2,
-                                                "style",
-                                                1,
-                                                "label",
-                                                "Подать апелляцию",
-                                                "custom_id",
-                                                "lwa:appeal:new:" + ban.id())))))));
+                store.enqueue(
+                    "ban:" + ban.id() + ":" + id,
+                    id,
+                    JsonUtils.toJson(
+                        Map.of(
+                            "content",
+                            text,
+                            "nonce",
+                            me.lovelace
+                                .loveWebAdmin
+                                .database
+                                .ModerationStore
+                                .hash("ban:" + ban.id() + ":" + id)
+                                .substring(0, 24),
+                            "enforce_nonce",
+                            true,
+                            "components",
+                            List.of(
+                                Map.of(
+                                    "type",
+                                    1,
+                                    "components",
+                                    List.of(
+                                        Map.of(
+                                            "type",
+                                            2,
+                                            "style",
+                                            1,
+                                            "label",
+                                            "Подать апелляцию",
+                                            "custom_id",
+                                            "lwa:appeal:new:" + ban.id())))))));
               } catch (java.sql.SQLException e) {
                 throw new IllegalStateException("Не удалось сохранить уведомление", e);
               }
@@ -190,23 +195,22 @@ public class LoveCoreDiscordBridge implements Listener {
   }
 
   private void deliver(DiscordService service) {
+    if (closed) return;
     if (!delivering.compareAndSet(false, true)) return;
-    plugin
-        .io()
-        .supply(
+    io.supply(
             () -> {
               var pending = new ArrayList<CompletableFuture<Void>>();
               try {
-                for (var item : plugin.moderation().due()) {
+                for (var item : store.due()) {
                   if (closed) break;
                   int id = ((Number) item.get("id")).intValue();
-                  if (!plugin.moderation().takeDelivery(id)) continue;
+                  if (!store.takeDelivery(id)) continue;
                   try {
                     Map<String, Object> payload =
                         JsonUtils.parseObject(item.get("payload").toString());
                     if ("STAFF_DM".equals(payload.get("type"))) {
                       int adminId = ((Number) payload.get("adminId")).intValue();
-                      var admin = plugin.getDatabaseManager().getAdminById(adminId);
+                      var admin = database.getAdminById(adminId);
                       String required = payload.get("permission").toString();
                       if (admin.isEmpty()
                           || !eligibleStaff(
@@ -216,10 +220,8 @@ public class LoveCoreDiscordBridge implements Listener {
                           || !linkedDiscord(admin.get(), service)
                               .filter(item.get("recipient").toString()::equals)
                               .isPresent()) {
-                        plugin
-                            .moderation()
-                            .skipDelivery(
-                                id, "Смена завершена, привязка изменена или доступ отозван");
+                        store.skipDelivery(
+                            id, "Смена завершена, привязка изменена или доступ отозван");
                         continue;
                       }
                       var prefs =
@@ -228,46 +230,68 @@ public class LoveCoreDiscordBridge implements Listener {
                                   ? "{}"
                                   : admin.get().uiPreferences());
                       if (!Boolean.TRUE.equals(prefs.get(payload.get("preference").toString()))) {
-                        plugin.moderation().skipDelivery(id, "Сотрудник выключил уведомления");
+                        store.skipDelivery(id, "Сотрудник выключил уведомления");
                         continue;
                       }
                       String event = payload.get("event").toString();
                       if (event.startsWith("report:") || event.startsWith("escalate-report:")) {
                         int reportId = Integer.parseInt(event.substring(event.indexOf(':') + 1));
                         boolean stale =
-                            plugin
-                                .getDatabaseManager()
+                            database
                                 .getReportById(reportId)
                                 .filter(r -> r.status().equals("PENDING"))
                                 .isEmpty();
                         if (!stale && Boolean.TRUE.equals(payload.get("escalation")))
                           stale =
-                              !plugin
-                                  .moderation()
-                                  .work("report", reportId)
-                                  .get("assignee")
-                                  .toString()
-                                  .isBlank();
+                              !store.work("report", reportId).get("assignee").toString().isBlank();
                         if (stale) {
-                          plugin.moderation().skipDelivery(id, "Жалоба закрыта или уже назначена");
+                          store.skipDelivery(id, "Жалоба закрыта или уже назначена");
                           continue;
                         }
                       }
                       var next = notificationPolicy.nextDelivery(Instant.now());
                       if (next.isAfter(Instant.now())) {
-                        plugin.moderation().deferDelivery(id, next.getEpochSecond());
+                        store.deferDelivery(id, next.getEpochSecond());
                         continue;
                       }
                     }
                     CompletableFuture<String> sent;
                     if ("APPEAL_TICKET".equals(payload.get("type"))) {
                       int appealId = ((Number) payload.get("appealId")).intValue();
-                      var appeal = plugin.getDatabaseManager().getAppealById(appealId);
+                      var appeal = database.getAppealById(appealId);
                       if (appeal.isEmpty() || !"PENDING".equals(appeal.get().status()))
                         sent = CompletableFuture.completedFuture("closed");
                       else if (appeal.get().discordChannelId() != null)
                         sent = CompletableFuture.completedFuture(appeal.get().discordChannelId());
                       else sent = doCreateAppealTicket(appeal.get());
+                    } else if ("APPEAL_MESSAGE".equals(payload.get("type"))
+                        || "APPEAL_FINISH".equals(payload.get("type"))) {
+                      int appealId = ((Number) payload.get("appealId")).intValue();
+                      var appeal = database.getAppealById(appealId);
+                      if (appeal.isEmpty() || appeal.get().discordChannelId() == null) {
+                        store.skipDelivery(id, "Тикет не создан; переписка сохранена в панели");
+                        continue;
+                      }
+                      if ("APPEAL_FINISH".equals(payload.get("type")))
+                        sent =
+                            doFinishAppeal(
+                                    appeal.get(),
+                                    payload.get("text").toString(),
+                                    payload.get("nonce").toString())
+                                .thenApply(ok -> ok ? "closed" : null);
+                      else
+                        sent =
+                            service.sendMessage(
+                                appeal.get().discordChannelId(),
+                                JsonUtils.toJson(
+                                    Map.of(
+                                        "content",
+                                        payload.get("text"),
+                                        "nonce",
+                                        payload.get("nonce"),
+                                        "enforce_nonce",
+                                        true)),
+                                null);
                     } else if ("STAFF_DM".equals(payload.get("type"))) {
                       sent =
                           service.directMessage(
@@ -279,34 +303,27 @@ public class LoveCoreDiscordBridge implements Listener {
                     pending.add(
                         sent.handle(
                                 (message, error) ->
-                                    plugin
-                                        .io()
-                                        .run(
-                                            () -> {
-                                              try {
-                                                plugin
-                                                    .moderation()
-                                                    .delivered(
-                                                        id,
-                                                        error == null && message != null,
-                                                        ((Number) item.get("attempts")).intValue()
-                                                            + 1,
-                                                        error == null && message != null
-                                                            ? null
-                                                            : "ЛС недоступны или ошибка Discord");
-                                              } catch (java.sql.SQLException e) {
-                                                throw new IllegalStateException(e);
-                                              }
-                                            }))
+                                    io.run(
+                                        () -> {
+                                          try {
+                                            store.delivered(
+                                                id,
+                                                error == null && message != null,
+                                                ((Number) item.get("attempts")).intValue() + 1,
+                                                error == null && message != null
+                                                    ? null
+                                                    : "ЛС недоступны или ошибка Discord");
+                                          } catch (java.sql.SQLException e) {
+                                            throw new IllegalStateException(e);
+                                          }
+                                        }))
                             .thenCompose(java.util.function.Function.identity()));
                   } catch (RuntimeException invalid) {
-                    plugin
-                        .moderation()
-                        .delivered(
-                            id,
-                            false,
-                            ((Number) item.get("attempts")).intValue() + 1,
-                            "Не удалось обработать доставку");
+                    store.delivered(
+                        id,
+                        false,
+                        ((Number) item.get("attempts")).intValue() + 1,
+                        "Не удалось обработать доставку");
                   }
                 }
                 escalateUnclaimed(service);
@@ -329,72 +346,57 @@ public class LoveCoreDiscordBridge implements Listener {
     if (recipient.isPresent())
       try {
         String event = "clarify:" + messageId + ":" + recipient.get();
-        plugin
-            .moderation()
-            .enqueue(
-                event,
-                recipient.get(),
-                JsonUtils.toJson(
-                    Map.of(
-                        "content",
-                        plugin
-                            .discordTemplates()
-                            .render(
-                                "clarification",
-                                Map.of(
-                                    "id",
-                                    String.valueOf(report.id()),
-                                    "actor",
-                                    actor,
-                                    "text",
-                                    text)),
-                        "nonce",
-                        me.lovelace
-                            .loveWebAdmin
-                            .database
-                            .ModerationStore
-                            .hash(event)
-                            .substring(0, 24),
-                        "enforce_nonce",
-                        true,
-                        "components",
-                        List.of(
+        store.enqueue(
+            event,
+            recipient.get(),
+            JsonUtils.toJson(
+                Map.of(
+                    "content",
+                    plugin
+                        .discordTemplates()
+                        .render(
+                            "clarification",
                             Map.of(
-                                "type",
-                                1,
-                                "components",
-                                List.of(
-                                    Map.of(
-                                        "type",
-                                        2,
-                                        "style",
-                                        1,
-                                        "label",
-                                        "Ответить",
-                                        "custom_id",
-                                        "lwa:clarify:new:" + report.id())))))));
+                                "id", String.valueOf(report.id()), "actor", actor, "text", text)),
+                    "nonce",
+                    me.lovelace.loveWebAdmin.database.ModerationStore.hash(event).substring(0, 24),
+                    "enforce_nonce",
+                    true,
+                    "components",
+                    List.of(
+                        Map.of(
+                            "type",
+                            1,
+                            "components",
+                            List.of(
+                                Map.of(
+                                    "type",
+                                    2,
+                                    "style",
+                                    1,
+                                    "label",
+                                    "Ответить",
+                                    "custom_id",
+                                    "lwa:clarify:new:" + report.id())))))));
       } catch (java.sql.SQLException e) {
         throw new IllegalStateException("Вопрос сохранён, но доставка не поставлена в очередь", e);
       }
-    plugin
-        .main()
-        .call(
-            () -> {
-              var player =
-                  org.bukkit.Bukkit.getPlayer(java.util.UUID.fromString(report.reporterUuid()));
-              String message =
-                  "§eУточнение по вашей жалобе №"
-                      + report.id()
-                      + ": §f"
-                      + text
-                      + (recipient.isPresent()
-                          ? " §7Ответьте в личном сообщении Discord."
-                          : " §7Для ответа свяжитесь с сотрудником " + actor + ".");
-              if (player != null && player.isOnline()) player.sendMessage(message);
-              else
-                plugin.getDatabaseManager().queueReportNotification(report.reporterUuid(), message);
-              return null;
-            });
+    main.call(
+        () -> {
+          var player =
+              org.bukkit.Bukkit.getPlayer(java.util.UUID.fromString(report.reporterUuid()));
+          String message =
+              "§eУточнение по вашей жалобе №"
+                  + report.id()
+                  + ": §f"
+                  + text
+                  + (recipient.isPresent()
+                      ? " §7Ответьте в личном сообщении Discord."
+                      : " §7Для ответа свяжитесь с сотрудником " + actor + ".");
+          if (player != null && player.isOnline()) player.sendMessage(message);
+          else database.queueReportNotification(report.reporterUuid(), message);
+          return null;
+        });
   }
 
   public boolean isAvailable() {
@@ -430,10 +432,7 @@ public class LoveCoreDiscordBridge implements Listener {
   public void onReportResolved(
       me.lovelace.loveWebAdmin.api.events.PlayerReportResolvedEvent event) {
     // Refresh from persisted state rather than trusting a client-provided status.
-    plugin
-        .getDatabaseManager()
-        .getReportById(event.getReportId())
-        .ifPresent(this::notifyReportCreated);
+    database.getReportById(event.getReportId()).ifPresent(this::notifyReportCreated);
   }
 
   public void notifyReportCreated(PlayerReport report) {
@@ -441,7 +440,7 @@ public class LoveCoreDiscordBridge implements Listener {
   }
 
   private void notifyReportCreated(PlayerReport report, boolean freshNotification) {
-    var currentRecord = plugin.getDatabaseManager().getReportById(report.id());
+    var currentRecord = database.getReportById(report.id());
     if (currentRecord.isEmpty()) return;
     PlayerReport current = currentRecord.get();
     var opt = discord().filter(DiscordService::isEnabled);
@@ -449,7 +448,7 @@ public class LoveCoreDiscordBridge implements Listener {
     var service = opt.get();
     String channel = plugin.getConfig().getString("discord.reports-channel-id", "");
     try {
-      var existing = plugin.moderation().card("report", current.id());
+      var existing = store.card("report", current.id());
       String state =
           switch (current.status()) {
             case "ACCEPTED" -> "Подтверждена";
@@ -458,7 +457,7 @@ public class LoveCoreDiscordBridge implements Listener {
             case "MERGED" -> "Объединена с другим делом";
             default -> "На рассмотрении";
           };
-      String assigned = plugin.moderation().work("report", current.id()).get("assignee").toString();
+      String assigned = store.work("report", current.id()).get("assignee").toString();
       String content =
           plugin
               .discordTemplates()
@@ -528,16 +527,14 @@ public class LoveCoreDiscordBridge implements Listener {
           .thenAccept(
               message -> {
                 if (message != null)
-                  plugin
-                      .io()
-                      .run(
-                          () -> {
-                            try {
-                              plugin.moderation().card("report", current.id(), channel, message);
-                            } catch (java.sql.SQLException e) {
-                              throw new IllegalStateException(e);
-                            }
-                          });
+                  io.run(
+                      () -> {
+                        try {
+                          store.card("report", current.id(), channel, message);
+                        } catch (java.sql.SQLException e) {
+                          throw new IllegalStateException(e);
+                        }
+                      });
               });
 
     } catch (java.sql.SQLException e) {
@@ -547,13 +544,10 @@ public class LoveCoreDiscordBridge implements Listener {
 
   public CompletableFuture<String> createAppealTicket(WebBanAppeal appeal) {
     try {
-      String owner = plugin.moderation().owner(appeal.id()).orElse("");
-      plugin
-          .moderation()
-          .enqueue(
-              "ticket:" + appeal.id(),
-              owner,
-              JsonUtils.toJson(Map.of("type", "APPEAL_TICKET", "appealId", appeal.id())));
+      store.enqueue(
+          "ticket:" + appeal.id(),
+          "ticket:" + appeal.id(),
+          JsonUtils.toJson(Map.of("type", "APPEAL_TICKET", "appealId", appeal.id())));
       return CompletableFuture.completedFuture(null);
     } catch (java.sql.SQLException e) {
       return CompletableFuture.failedFuture(e);
@@ -569,7 +563,7 @@ public class LoveCoreDiscordBridge implements Listener {
 
     String owner;
     try {
-      owner = plugin.moderation().owner(appeal.id()).orElse(null);
+      owner = store.owner(appeal.id()).orElse(null);
     } catch (java.sql.SQLException e) {
       return CompletableFuture.failedFuture(e);
     }
@@ -582,110 +576,95 @@ public class LoveCoreDiscordBridge implements Listener {
             owner)
         .thenCompose(
             channelId ->
-                plugin
-                    .io()
-                    .supply(
-                        () -> {
-                          if (channelId != null && !channelId.isBlank()) {
-                            if (!plugin
-                                .getDatabaseManager()
-                                .setAppealDiscordChannelId(appeal.id(), channelId))
-                              throw new IllegalStateException("Не сохранён канал апелляции");
+                io.supply(
+                    () -> {
+                      if (closed) return null;
+                      if (channelId != null && !channelId.isBlank()) {
+                        if (!database.setAppealDiscordChannelId(appeal.id(), channelId))
+                          throw new IllegalStateException("Не сохранён канал апелляции");
 
-                            // Отправляем вступительное сообщение в канал тикета
-                            List<DiscordEmbed.Field> fields = new ArrayList<>();
-                            fields.add(new DiscordEmbed.Field("Игрок", appeal.playerName(), true));
-                            fields.add(
-                                new DiscordEmbed.Field("Бан ID", "#" + appeal.banId(), true));
-                            fields.add(
-                                new DiscordEmbed.Field(
-                                    "Причина апелляции", appeal.reason(), false));
+                        // Отправляем вступительное сообщение в канал тикета
+                        List<DiscordEmbed.Field> fields = new ArrayList<>();
+                        fields.add(new DiscordEmbed.Field("Игрок", appeal.playerName(), true));
+                        fields.add(new DiscordEmbed.Field("Бан ID", "#" + appeal.banId(), true));
+                        fields.add(
+                            new DiscordEmbed.Field("Причина апелляции", appeal.reason(), false));
 
-                            DiscordEmbed embed =
-                                new DiscordEmbed(
-                                    "⚖ Апелляция бана #" + appeal.id(),
-                                    "Канал тикета для обсуждения снятия блокировки игрока **"
-                                        + appeal.playerName()
-                                        + "**.\n"
-                                        + "Все сообщения синхронизируются с панелью управления"
-                                        + " WebAdmin.",
-                                    0xF1C40F, // Gold
-                                    fields,
-                                    "LoveWebAdmin • Тикеты",
-                                    Instant.now());
-                            service.sendChannelMessage(
+                        DiscordEmbed embed =
+                            new DiscordEmbed(
+                                "⚖ Апелляция бана #" + appeal.id(),
+                                "Канал тикета для обсуждения снятия блокировки игрока **"
+                                    + appeal.playerName()
+                                    + "**.\n"
+                                    + "Все сообщения синхронизируются с панелью управления"
+                                    + " WebAdmin.",
+                                0xF1C40F, // Gold
+                                fields,
+                                "LoveWebAdmin • Тикеты",
+                                Instant.now());
+                        service.sendChannelMessage(
+                            channelId,
+                            "Ваша апелляция принята к рассмотрению персоналом сервера.",
+                            embed);
+                        service
+                            .sendMessage(
                                 channelId,
-                                "Ваша апелляция принята к рассмотрению персоналом сервера.",
-                                embed);
-                            service
-                                .sendMessage(
-                                    channelId,
-                                    JsonUtils.toJson(
-                                        Map.of(
-                                            "content",
-                                            "Действия персонала",
-                                            "components",
-                                            List.of(
-                                                Map.of(
-                                                    "type",
-                                                    1,
-                                                    "components",
-                                                    List.of(
-                                                        Map.of(
-                                                            "type",
-                                                            2,
-                                                            "style",
-                                                            3,
-                                                            "label",
-                                                            "Одобрить",
-                                                            "custom_id",
-                                                            "lwa:decision:approve:" + appeal.id()),
-                                                        Map.of(
-                                                            "type",
-                                                            2,
-                                                            "style",
-                                                            1,
-                                                            "label",
-                                                            "Сократить срок",
-                                                            "custom_id",
-                                                            "lwa:decision:reduce:" + appeal.id()),
-                                                        Map.of(
-                                                            "type",
-                                                            2,
-                                                            "style",
-                                                            4,
-                                                            "label",
-                                                            "Отклонить",
-                                                            "custom_id",
-                                                            "lwa:decision:reject:"
-                                                                + appeal.id())))))),
-                                    null)
-                                .thenAccept(
-                                    message -> {
-                                      if (message != null)
-                                        plugin
-                                            .io()
-                                            .run(
-                                                () -> {
-                                                  try {
-                                                    plugin
-                                                        .moderation()
-                                                        .card(
-                                                            "appeal",
-                                                            appeal.id(),
-                                                            channelId,
-                                                            message);
-                                                  } catch (java.sql.SQLException e) {
-                                                    throw new IllegalStateException(e);
-                                                  }
-                                                });
-                                    });
-                          }
-                          // Оповещаем администраторов
-                          if (channelId != null && !channelId.isBlank())
-                            notifyAppealCreated(appeal);
-                          return channelId;
-                        }));
+                                JsonUtils.toJson(
+                                    Map.of(
+                                        "content",
+                                        "Действия персонала",
+                                        "components",
+                                        List.of(
+                                            Map.of(
+                                                "type",
+                                                1,
+                                                "components",
+                                                List.of(
+                                                    Map.of(
+                                                        "type",
+                                                        2,
+                                                        "style",
+                                                        3,
+                                                        "label",
+                                                        "Одобрить",
+                                                        "custom_id",
+                                                        "lwa:decision:approve:" + appeal.id()),
+                                                    Map.of(
+                                                        "type",
+                                                        2,
+                                                        "style",
+                                                        1,
+                                                        "label",
+                                                        "Сократить срок",
+                                                        "custom_id",
+                                                        "lwa:decision:reduce:" + appeal.id()),
+                                                    Map.of(
+                                                        "type",
+                                                        2,
+                                                        "style",
+                                                        4,
+                                                        "label",
+                                                        "Отклонить",
+                                                        "custom_id",
+                                                        "lwa:decision:reject:" + appeal.id())))))),
+                                null)
+                            .thenAccept(
+                                message -> {
+                                  if (message != null)
+                                    io.run(
+                                        () -> {
+                                          try {
+                                            store.card("appeal", appeal.id(), channelId, message);
+                                          } catch (java.sql.SQLException e) {
+                                            throw new IllegalStateException(e);
+                                          }
+                                        });
+                                });
+                      }
+                      // Оповещаем администраторов
+                      if (channelId != null && !channelId.isBlank()) notifyAppealCreated(appeal);
+                      return channelId;
+                    }));
   }
 
   public void notifyAppealCreated(WebBanAppeal appeal) {
@@ -735,33 +714,90 @@ public class LoveCoreDiscordBridge implements Listener {
 
   public void sendTicketReply(
       WebBanAppeal appeal, String authorName, boolean isStaff, String message) {
-    Optional<DiscordService> serviceOpt = discord();
-    if (serviceOpt.isEmpty() || !serviceOpt.get().isEnabled()) return;
+    sendTicketReply(appeal, authorName, isStaff, message, java.util.UUID.randomUUID().toString());
+  }
 
-    String channelId = appeal.discordChannelId();
-    if (channelId != null && !channelId.isBlank()) {
-      String roleTag = isStaff ? "🛡 [Персонал]" : "👤 [Игрок]";
-      String formatted = "**" + roleTag + " " + authorName + "**: " + message;
-      serviceOpt.get().sendChannelMessage(channelId, formatted, null);
+  public void sendTicketReply(
+      WebBanAppeal appeal, String authorName, boolean isStaff, String message, String messageId) {
+    String role = isStaff ? "🛡 [Персонал]" : "👤 [Игрок]";
+    enqueueConversation(
+        "reply:" + appeal.id() + ":" + messageId,
+        appeal,
+        "APPEAL_MESSAGE",
+        "**" + role + " " + authorName + "**: " + message);
+  }
+
+  static List<String> conversationParts(String text) {
+    var parts = new ArrayList<String>();
+    for (int start = 0; start < text.length(); ) {
+      int end = Math.min(text.length(), start + 1900);
+      if (end < text.length() && Character.isHighSurrogate(text.charAt(end - 1))) end--;
+      parts.add(text.substring(start, end));
+      start = end;
+    }
+    if (parts.isEmpty()) parts.add("");
+    return List.copyOf(parts);
+  }
+
+  private void enqueueConversation(String key, WebBanAppeal appeal, String type, String text) {
+    var parts = conversationParts(text);
+    var deliveries = new ArrayList<me.lovelace.loveWebAdmin.database.ModerationStore.Delivery>();
+    for (int i = 0; i < parts.size(); i++) {
+      String partKey = key + ":part:" + i;
+      String partType = i == parts.size() - 1 ? type : "APPEAL_MESSAGE";
+      deliveries.add(
+          new me.lovelace.loveWebAdmin.database.ModerationStore.Delivery(
+              partKey,
+              "ticket:" + appeal.id(),
+              JsonUtils.toJson(
+                  Map.of(
+                      "type",
+                      partType,
+                      "appealId",
+                      appeal.id(),
+                      "text",
+                      parts.get(i),
+                      "nonce",
+                      me.lovelace
+                          .loveWebAdmin
+                          .database
+                          .ModerationStore
+                          .hash(partKey)
+                          .substring(0, 24)))));
+    }
+    try {
+      store.enqueueBatch(deliveries);
+    } catch (java.sql.SQLException e) {
+      throw new IllegalStateException(
+          "Переписка сохранена, но доставка в Discord требует проверки", e);
     }
   }
 
   public CompletableFuture<Boolean> finishAppeal(WebBanAppeal appeal, String reason) {
+    enqueueConversation("finish:" + appeal.id(), appeal, "APPEAL_FINISH", reason);
+    return CompletableFuture.completedFuture(true);
+  }
+
+  private CompletableFuture<Boolean> doFinishAppeal(
+      WebBanAppeal appeal, String reason, String nonce) {
     var service = discord();
     String channel = appeal.discordChannelId();
     if (service.isEmpty() || channel == null) return CompletableFuture.completedFuture(false);
     Optional<Map<String, String>> card;
     try {
-      card = plugin.moderation().card("appeal", appeal.id());
+      card = store.card("appeal", appeal.id());
     } catch (java.sql.SQLException e) {
       return CompletableFuture.failedFuture(e);
     }
     return service
         .get()
-        .sendChannelMessage(channel, reason, null)
+        .sendMessage(
+            channel,
+            JsonUtils.toJson(Map.of("content", reason, "nonce", nonce, "enforce_nonce", true)),
+            null)
         .thenCompose(
             sent -> {
-              if (!sent) return CompletableFuture.completedFuture(false);
+              if (closed || sent == null) return CompletableFuture.completedFuture(false);
               if (card.isEmpty()) return CompletableFuture.completedFuture(true);
               return service
                   .get()
@@ -774,7 +810,7 @@ public class LoveCoreDiscordBridge implements Listener {
             })
         .thenCompose(
             updated ->
-                updated
+                updated && !closed
                     ? service.get().closeTicketChannel(channel, reason)
                     : CompletableFuture.completedFuture(false));
   }
@@ -790,8 +826,7 @@ public class LoveCoreDiscordBridge implements Listener {
   }
 
   private Optional<String> linkedDiscord(WebAdmin admin, DiscordService service) {
-    return plugin
-        .getDatabaseManager()
+    return database
         .getPlayerStats(admin.username())
         .map(p -> p.get("uuid"))
         .flatMap(
@@ -807,14 +842,14 @@ public class LoveCoreDiscordBridge implements Listener {
   private boolean eligibleStaff(
       WebAdmin admin, me.lovelace.loveWebAdmin.models.Permission permission, boolean escalation) {
     if (!"ACTIVE".equals(admin.status())) return false;
-    var role = plugin.getDatabaseManager().getRoleById(admin.roleId());
+    var role = database.getRoleById(admin.roleId());
     if (role.isEmpty() || (!role.get().isOwner() && !role.get().permissions().contains(permission)))
       return false;
     if (escalation
         && !role.get().isOwner()
         && !notificationPolicy.escalationRoles().contains(role.get().name())) return false;
     return !notificationPolicy.onlyOnShift()
-        || plugin.getDatabaseManager().getStaffOnShift().stream()
+        || database.getStaffOnShift().stream()
             .anyMatch(a -> ((Number) a.get("id")).intValue() == admin.id());
   }
 
@@ -826,7 +861,7 @@ public class LoveCoreDiscordBridge implements Listener {
         preference.equals("discordNotifyReports")
             ? me.lovelace.loveWebAdmin.models.Permission.VIEW_REPORTS
             : me.lovelace.loveWebAdmin.models.Permission.VIEW_APPEALS;
-    for (var admin : plugin.getDatabaseManager().getAllAdmins()) {
+    for (var admin : database.getAllAdmins()) {
       if (!eligibleStaff(admin, permission, escalation)) continue;
       var prefs =
           JsonUtils.parseObject(admin.uiPreferences() == null ? "{}" : admin.uiPreferences());
@@ -850,27 +885,25 @@ public class LoveCoreDiscordBridge implements Listener {
                                   .substring(0, 24),
                               "enforce_nonce",
                               true));
-                  plugin
-                      .moderation()
-                      .enqueue(
-                          key,
-                          recipient,
-                          JsonUtils.toJson(
-                              Map.of(
-                                  "type",
-                                  "STAFF_DM",
-                                  "adminId",
-                                  admin.id(),
-                                  "permission",
-                                  permission.name(),
-                                  "body",
-                                  body,
-                                  "preference",
-                                  preference,
-                                  "event",
-                                  event,
-                                  "escalation",
-                                  escalation)));
+                  store.enqueue(
+                      key,
+                      recipient,
+                      JsonUtils.toJson(
+                          Map.of(
+                              "type",
+                              "STAFF_DM",
+                              "adminId",
+                              admin.id(),
+                              "permission",
+                              permission.name(),
+                              "body",
+                              body,
+                              "preference",
+                              preference,
+                              "event",
+                              event,
+                              "escalation",
+                              escalation)));
                 } catch (java.sql.SQLException e) {
                   throw new IllegalStateException("Уведомление сотруднику не сохранено", e);
                 }
@@ -882,10 +915,9 @@ public class LoveCoreDiscordBridge implements Listener {
     long now = System.currentTimeMillis() / 1000;
     if (notificationPolicy.escalationMinutes() == 0 || now - lastEscalationScan < 60) return;
     lastEscalationScan = now;
-    for (var report : plugin.getDatabaseManager().getAllReports("PENDING", null, 200, 0)) {
+    for (var report : database.getAllReports("PENDING", null, 200, 0)) {
       if (now - report.createdAt() < notificationPolicy.escalationMinutes() * 60L
-          || !plugin.moderation().work("report", report.id()).get("assignee").toString().isBlank())
-        continue;
+          || !store.work("report", report.id()).get("assignee").toString().isBlank()) continue;
       dispatchAdminDirectMessages(
           "discordNotifyReports",
           "escalate-report:" + report.id(),

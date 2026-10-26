@@ -22,7 +22,7 @@
       const el=document.createElement('section'), heading=document.createElement('h2'), text=document.createElement('p');
       const event=item.event.split(':');
       heading.textContent=({
-        ban:'Уведомление о блокировке №', ticket:'Создание тикета апелляции №', clarify:'Уточнение по жалобе · сообщение №', staff:'Служебное уведомление · '
+        ban:'Уведомление о блокировке №', ticket:'Создание тикета апелляции №', clarify:'Уточнение по жалобе · сообщение №', staff:'Служебное уведомление · ', reply:'Ответ в апелляции №', finish:'Закрытие апелляции №'
       })[event[0]]+event.slice(1, 3).join(' · ');
       text.textContent=({
         PENDING:'Ожидает отправки', SENDING:'Выполняется', DELIVERED:'Выполнено', FAILED:'Не удалось выполнить', SKIPPED:'Отменено по текущим правам или смене'

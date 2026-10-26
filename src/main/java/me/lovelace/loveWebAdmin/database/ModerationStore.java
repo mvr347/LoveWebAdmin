@@ -55,6 +55,9 @@ public final class ModerationStore implements AutoCloseable {
       s.execute(
           "CREATE TABLE IF NOT EXISTS confiscation_returns(id TEXT PRIMARY KEY,actor TEXT NOT"
               + " NULL,at INTEGER NOT NULL)");
+      s.execute("CREATE INDEX IF NOT EXISTS idx_delivery_due ON delivery_outbox(state,next_at,id)");
+      s.execute(
+          "CREATE INDEX IF NOT EXISTS idx_delivery_ticket ON delivery_outbox(recipient,id,state)");
       s.execute("UPDATE delivery_outbox SET state='PENDING' WHERE state='SENDING'");
     }
   }
@@ -268,7 +271,8 @@ public final class ModerationStore implements AutoCloseable {
       throws SQLException {
     try (var q =
         db.prepareStatement(
-            "INSERT OR IGNORE INTO delivery_outbox(event_key,recipient,payload) VALUES(?,?,?)")) {
+            "INSERT INTO delivery_outbox(event_key,recipient,payload) VALUES(?,?,?) ON"
+                + " CONFLICT(event_key) DO NOTHING")) {
       q.setString(1, key);
       q.setString(2, recipient);
       q.setString(3, payload);
@@ -276,12 +280,35 @@ public final class ModerationStore implements AutoCloseable {
     }
   }
 
+  public record Delivery(String key, String recipient, String payload) {}
+
+  public synchronized void enqueueBatch(List<Delivery> deliveries) throws SQLException {
+    if (deliveries.size() > 8) throw new IllegalArgumentException("Слишком много частей сообщения");
+    db.setAutoCommit(false);
+    try {
+      for (var delivery : deliveries)
+        enqueue(delivery.key(), delivery.recipient(), delivery.payload());
+      db.commit();
+    } catch (SQLException | RuntimeException error) {
+      try {
+        db.rollback();
+      } catch (SQLException rollback) {
+        error.addSuppressed(rollback);
+      }
+      throw error;
+    } finally {
+      db.setAutoCommit(true);
+    }
+  }
+
   public synchronized List<Map<String, Object>> due() throws SQLException {
     var result = new ArrayList<Map<String, Object>>();
     try (var q =
         db.prepareStatement(
-            "SELECT * FROM delivery_outbox WHERE state='PENDING' AND next_at<=? ORDER BY id"
-                + " LIMIT 8")) {
+            "SELECT o.* FROM delivery_outbox o WHERE o.state='PENDING' AND o.next_at<=? AND"
+                + " (o.recipient NOT LIKE 'ticket:%' OR NOT EXISTS(SELECT 1 FROM delivery_outbox"
+                + " earlier WHERE earlier.recipient=o.recipient AND earlier.id<o.id AND"
+                + " earlier.state IN ('PENDING','SENDING'))) ORDER BY o.id LIMIT 8")) {
       q.setLong(1, System.currentTimeMillis() / 1000);
       try (var r = q.executeQuery()) {
         while (r.next())
@@ -313,7 +340,8 @@ public final class ModerationStore implements AutoCloseable {
       throws SQLException {
     try (var q =
         db.prepareStatement(
-            "UPDATE delivery_outbox SET state=?,attempts=?,next_at=?,error=? WHERE id=?")) {
+            "UPDATE delivery_outbox SET state=?,attempts=?,next_at=?,error=? WHERE id=? AND"
+                + " state='SENDING'")) {
       q.setString(1, ok ? "DELIVERED" : attempts >= 6 ? "FAILED" : "PENDING");
       q.setInt(2, attempts);
       q.setLong(

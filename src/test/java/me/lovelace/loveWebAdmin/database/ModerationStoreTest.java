@@ -153,6 +153,9 @@ class ModerationStoreTest {
     assertFalse(store.retryDelivery(id));
     store.delivered(id, true, 1, null);
     assertFalse(store.retryDelivery(id));
+    store.enqueue("ban:2", "user", "a");
+    id = ((Number) store.due().getFirst().get("id")).intValue();
+    store.takeDelivery(id);
     store.delivered(id, false, 6, "Ошибка");
     assertTrue(store.retryDelivery(id));
     assertEquals(1, store.due().size());
@@ -192,6 +195,54 @@ class ModerationStoreTest {
     store.takeDelivery(id);
     store.skipDelivery(id, "Доступ отозван");
     assertEquals("SKIPPED", store.deliveries().getFirst().get("state"));
+    assertFalse(store.retryDelivery(id));
+  }
+
+  @Test
+  void ticketRepliesAndClosureAreDeliveredInOrder() throws Exception {
+    store.enqueue("reply:1:1", "ticket:1", "first");
+    store.enqueue("finish:1", "ticket:1", "last");
+    store.enqueue("reply:2:1", "ticket:2", "independent");
+    var due = store.due();
+    assertEquals(2, due.size());
+    int first = ((Number) due.getFirst().get("id")).intValue();
+    store.takeDelivery(first);
+    assertEquals(1, store.due().size());
+    store.delivered(first, true, 1, null);
+    assertEquals(2, store.due().size());
+    assertEquals("last", store.due().getFirst().get("payload"));
+  }
+
+  @Test
+  void quietStaffMessageDoesNotBlockBanDmToSameUser() throws Exception {
+    store.enqueue("staff:1", "discord-id", "staff");
+    int first = ((Number) store.due().getFirst().get("id")).intValue();
+    store.takeDelivery(first);
+    store.deferDelivery(first, System.currentTimeMillis() / 1000 + 3600);
+    store.enqueue("ban:1", "discord-id", "ban");
+    assertEquals("ban", store.due().getFirst().get("payload"));
+  }
+
+  @Test
+  void multipartMessageIsEnqueuedAsOneTransaction() throws Exception {
+    assertThrows(
+        SQLException.class,
+        () ->
+            store.enqueueBatch(
+                List.of(
+                    new ModerationStore.Delivery("first", "ticket:1", "first"),
+                    new ModerationStore.Delivery("bad", null, "second"))));
+    assertTrue(store.due().isEmpty());
+  }
+
+  @Test
+  void lateCallbackCannotChangeACompletedDelivery() throws Exception {
+    store.enqueue("reply:1", "ticket:1", "text");
+    int id = ((Number) store.due().getFirst().get("id")).intValue();
+    store.takeDelivery(id);
+    store.delivered(id, true, 1, null);
+    store.delivered(id, false, 6, "Устаревший ответ");
+    assertEquals("DELIVERED", store.deliveries().getFirst().get("state"));
     assertFalse(store.retryDelivery(id));
   }
 

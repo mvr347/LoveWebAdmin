@@ -285,7 +285,48 @@ class AppealAuthorizationTest {
     assertEquals(before, plugin.getDatabaseManager().getAllBans(null).size());
   }
 
+  @Test
+  void responseCannotRaceWithAnAppealDecision() {
+    var db = plugin.getDatabaseManager();
+    assertTrue(db.reserveAppealDecision(appeal));
+    int before = db.getAppealMessages(appeal).size();
+    assertEquals(-1, db.addOpenAppealMessage(appeal, "Ada123", false, "Запоздалое сообщение"));
+    assertEquals(before, db.getAppealMessages(appeal).size());
+  }
+
+  @Test
+  void reportViewDoesNotDiscloseTheReportersIp() throws Exception {
+    var db = plugin.getDatabaseManager();
+    var role =
+        plugin.getRoleManager().createRole("Читатель жалоб", "", Set.of(Permission.VIEW_REPORTS));
+    db.saveAdmin(new WebAdmin(0, "ReportReader", "hash", role.id(), 100, 0));
+    var admin = db.getAdminByUsername("ReportReader").orElseThrow();
+    var session = plugin.getSessionManager().createSession(admin, role);
+    int id =
+        db.createPlayerReport(
+            UUID.randomUUID().toString(),
+            "Author",
+            "198.51.100.42",
+            UUID.randomUUID().toString(),
+            "Target",
+            List.of("Причина"),
+            "Описание",
+            true,
+            0);
+    var response =
+        get("/" + id, Map.of(), Map.of("Authorization", "Bearer " + session.token()), true);
+    assertEquals(200, response.status);
+    assertFalse(response.body.toString().contains("198.51.100.42"));
+    assertFalse(response.body.toString().contains("reporterIp"));
+  }
+
   private Result get(String path, Map<String, String> params, Map<String, String> headers)
+      throws Exception {
+    return get(path, params, headers, false);
+  }
+
+  private Result get(
+      String path, Map<String, String> params, Map<String, String> headers, boolean reports)
       throws Exception {
     var result = new Result();
     HttpServletRequest req =
@@ -316,13 +357,24 @@ class AppealAuthorizationTest {
                       case "isCommitted" -> false;
                       default -> null;
                     });
-    new Exposed(plugin).get(req, resp);
+    if (reports) new ExposedReports(plugin).get(req, resp);
+    else new Exposed(plugin).get(req, resp);
     return result;
   }
 
   static class Result {
     int status = 200;
     StringWriter body = new StringWriter();
+  }
+
+  static class ExposedReports extends ApiReportsHandler {
+    ExposedReports(LoveWebAdmin plugin) {
+      super(plugin);
+    }
+
+    void get(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+      super.doGet(req, resp);
+    }
   }
 
   static class Exposed extends ApiAppealsHandler {

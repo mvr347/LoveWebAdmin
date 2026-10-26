@@ -320,14 +320,18 @@ public class ApiAppealsHandler extends ApiHandlerSupport {
     }
 
     int msgId =
-        plugin.getDatabaseManager().addAppealMessage(appealId, authorName, isStaff, message.trim());
+        plugin
+            .getDatabaseManager()
+            .addOpenAppealMessage(appealId, authorName, isStaff, message.trim());
     if (msgId <= 0) {
-      sendError(resp, 500, "Не удалось сохранить сообщение");
+      sendError(resp, 409, "Апелляция закрыта или сообщение не сохранено. Обновите переписку");
       return;
     }
 
     // Пересылаем в Discord канал тикета
-    plugin.getDiscordBridge().sendTicketReply(appeal, authorName, isStaff, message.trim());
+    plugin
+        .getDiscordBridge()
+        .sendTicketReply(appeal, authorName, isStaff, message.trim(), String.valueOf(msgId));
 
     sendSuccess(
         resp,

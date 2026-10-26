@@ -7827,7 +7827,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
 
         function formatDeltaBadge(delta, prevLabel) {
             if (delta === null || delta === undefined || isNaN(delta)) {
-                return `<span class="trend-badge neutral">0%</span>`;
+                return `<span class="trend-badge neutral">Нет сравнения</span>`;
             }
             const num = Math.round(delta * 10) / 10;
             const labelStr = prevLabel ? ` <span style="font-weight:400; opacity:0.75;">${esc(prevLabel)}</span>` : '';
