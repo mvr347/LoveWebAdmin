@@ -1,8 +1,9 @@
 (() => {
   'use strict';
+  const browserStorage=window.LovePreview?.storage || window.localStorage;
   const $=id=>document.getElementById(id), q=new URLSearchParams(location.search), kind=q.get('kind'), id=q.get('id');
   let data;
-  const key=localStorage.getItem('wa_token')||localStorage.getItem('lwa_token');
+  const key=browserStorage.getItem('wa_token')||browserStorage.getItem('lwa_token');
   async function api(method, path, body){
     const r=await fetch(path, {
       method, headers:{

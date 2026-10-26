@@ -33,6 +33,17 @@ jobs:
       - name: Build with Maven
         run: mvn -B verify
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Test preview model and browser isolation
+        run: |
+          npm ci --ignore-scripts
+          npm test
+          npx playwright install --with-deps chromium
+          npm run test:browser
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:

@@ -74,7 +74,12 @@ public final class TotpUtils {
         long currentStep = (now / 1000L) / TIME_STEP_SECONDS;
         for (int i = -1; i <= 1; i++) {
             if (generateCodeForStep(key, currentStep + i) == expectedCode) {
-                USED_CODES.put(replayKey, now);
+                var accepted = new java.util.concurrent.atomic.AtomicBoolean();
+                USED_CODES.compute(replayKey,(ignored,previous)->{
+                    if(previous==null||now-previous>=90_000L){accepted.set(true);return now;}
+                    return previous;
+                });
+                if(!accepted.get())return false;
                 if (USED_CODES.size() > 200) {
                     USED_CODES.entrySet().removeIf(entry -> (now - entry.getValue()) > 120_000L);
                 }

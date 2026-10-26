@@ -1,6 +1,7 @@
 (() => {
   'use strict';
-  const $=id=>document.getElementById(id), name=new URLSearchParams(location.search).get('player'), key=localStorage.getItem('wa_token')||localStorage.getItem('lwa_token');
+  const browserStorage=window.LovePreview?.storage || window.localStorage;
+  const $=id=>document.getElementById(id), name=new URLSearchParams(location.search).get('player'), key=browserStorage.getItem('wa_token')||browserStorage.getItem('lwa_token');
   async function api(method, path, body){
     const r=await fetch(path, {
       method, headers:{

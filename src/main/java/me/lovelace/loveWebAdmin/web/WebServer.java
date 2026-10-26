@@ -133,6 +133,8 @@ public class WebServer {
             context.addServlet(authHolder, "/api/staff/shifts");
 
             context.addServlet(new ServletHolder(new me.lovelace.loveWebAdmin.web.handlers.ApiCasesHandler(plugin)), "/api/cases/*");
+            var preview=new ServletHolder(new me.lovelace.loveWebAdmin.web.handlers.PreviewHandler(plugin::isPreviewEnabled));
+            context.addServlet(preview,"/preview");context.addServlet(preview,"/preview/*");
             context.addServlet(new ServletHolder(new StaticHandler()), "/*");
 
             server.setHandler(context);
