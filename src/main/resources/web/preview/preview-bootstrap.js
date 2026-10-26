@@ -130,6 +130,11 @@
       (tools.hidden = !tools.hidden);
     document.getElementById("preview-reset").onclick = () => {
       if (confirm("Сбросить только тестовые данные превью?")) {
+        const keys = Array.from({ length: backing.length }, (_, i) =>
+          backing.key(i),
+        );
+        for (const key of keys)
+          if (key?.startsWith(prefix + "ui:")) backing.removeItem(key);
         model.scenario("reset");
         syncIdentity();
         location.href = "/preview/";

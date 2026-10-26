@@ -63,6 +63,21 @@ test("real screens use synthetic state and leave production storage and network 
   expect(await page.evaluate(() => localStorage.getItem("wa_token"))).toBe(
     "REAL-SESSION-SENTINEL",
   );
+  await page.evaluate(() =>
+    LovePreview.storage.setItem("wa_quick_actions", "test-before-reset"),
+  );
+  page.once("dialog", (d) => d.accept());
+  await page.locator("#preview-reset").click();
+  await expect(page.locator("#app")).toContainText("PreviewOwner");
+  expect(
+    await page.evaluate(() => LovePreview.model.snapshot().bans.length),
+  ).toBe(0);
+  expect(
+    await page.evaluate(() => LovePreview.storage.getItem("wa_quick_actions")),
+  ).not.toBe("test-before-reset");
+  expect(await page.evaluate(() => localStorage.getItem("wa_token"))).toBe(
+    "REAL-SESSION-SENTINEL",
+  );
   expect(liveRequests).toEqual([]);
   expect(errors).toEqual([]);
 });
