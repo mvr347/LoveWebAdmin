@@ -3467,6 +3467,7 @@
                     switch (r.status) {
                         case 'ACCEPTED': statusBadge = '<span class="badge green">ПРИНЯТ</span>'; break;
                         case 'REJECTED': statusBadge = '<span class="badge gray">ЛОЖНЫЙ</span>'; break;
+                        case 'MERGED': statusBadge = '<span class="badge gray">ОБЪЕДИНЕНА</span>'; break;
                         case 'EXPIRED': statusBadge = '<span class="badge gray">ИСТЁК</span>'; break;
                         default: statusBadge = '<span class="badge yellow">ОЖИДАЕТ</span>'; break;
                     }
@@ -4661,6 +4662,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 switch (r.status) {
                     case 'ACCEPTED': statusBadge = '<span class="badge green">ПРИНЯТ (НАКАЗАН)</span>'; break;
                     case 'REJECTED': statusBadge = '<span class="badge gray">ЛОЖНЫЙ (ОТКЛОНЕН)</span>'; break;
+                    case 'MERGED': statusBadge = '<span class="badge gray">ОБЪЕДИНЕНА</span>'; break;
                     case 'EXPIRED': statusBadge = '<span class="badge gray">ИСТЁК</span>'; break;
                     default: statusBadge = '<span class="badge yellow">ОЖИДАЕТ РАССМОТРЕНИЯ</span>'; break;
                 }

@@ -241,6 +241,50 @@ class AppealAuthorizationTest {
     assertEquals(5.0, db.onlineSamples(now - 10, now).get("average"));
   }
 
+  @Test
+  void failedReductionDoesNotPublishADecision() {
+    var db = plugin.getDatabaseManager();
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> plugin.appeals().reduce(appeal, "Staff", 0, "Неправильный срок"));
+    assertEquals("PENDING", db.getAppealById(appeal).orElseThrow().status());
+    assertTrue(
+        db.getAppealMessages(appeal).stream()
+            .noneMatch(m -> m.message().contains("Срок сокращён")));
+  }
+
+  @Test
+  void rejectedAppealKeepsTheBanAndCannotBeDecidedTwice() {
+    var db = plugin.getDatabaseManager();
+    int banId = db.getAppealById(appeal).orElseThrow().banId();
+    plugin.appeals().decide(appeal, "Reviewer", false, "Решение остаётся в силе");
+    assertEquals("ACTIVE", db.getBanById(banId).orElseThrow().status());
+    assertEquals("REJECTED", db.getAppealById(appeal).orElseThrow().status());
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> plugin.appeals().decide(appeal, "Other", true, "Повторное решение"));
+  }
+
+  @Test
+  void cancellationOfBanEventPreventsAnySavedPunishment() {
+    var listener = new org.bukkit.event.Listener() {};
+    plugin
+        .getServer()
+        .getPluginManager()
+        .registerEvent(
+            me.lovelace.loveWebAdmin.api.events.WebAdminBanEvent.class,
+            listener,
+            org.bukkit.event.EventPriority.NORMAL,
+            (l, e) -> ((me.lovelace.loveWebAdmin.api.events.WebAdminBanEvent) e).setCancelled(true),
+            plugin);
+    int before = plugin.getDatabaseManager().getAllBans(null).size();
+    assertFalse(
+        plugin
+            .getBanManager()
+            .finalizeBan(0, "Staff", "Other", "Причина", "Описание", List.of(), false, 3600));
+    assertEquals(before, plugin.getDatabaseManager().getAllBans(null).size());
+  }
+
   private Result get(String path, Map<String, String> params, Map<String, String> headers)
       throws Exception {
     var result = new Result();

@@ -137,10 +137,7 @@ public abstract class ApiHandlerSupport extends HttpServlet {
 
     protected Optional<WebSession> requirePermission(HttpServletRequest req, HttpServletResponse resp, Permission permission) throws IOException {
         Optional<WebSession> sessionOpt = requireSession(req, resp);
-        if (sessionOpt.isEmpty()) {
-            sendError(resp, 401, "Требуется авторизация");
-            return Optional.empty();
-        }
+        if (sessionOpt.isEmpty()) return Optional.empty();
         if (!hasPermission(sessionOpt.get(), permission)) {
             sendError(resp, 403, "Недостаточно прав");
             return Optional.empty();
