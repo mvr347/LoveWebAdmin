@@ -49,7 +49,7 @@ public class LogManager {
                     dropped.incrementAndGet();
                     return;
                 }
-                pendingMessages.add(getFormatter() != null ? getFormatter().formatMessage(record) : record.getMessage());
+                pendingMessages.add(me.lovelace.loveWebAdmin.utils.CommandRedactor.redactLog(getFormatter() != null ? getFormatter().formatMessage(record) : record.getMessage()));
                 pendingCount.incrementAndGet();
             }
 

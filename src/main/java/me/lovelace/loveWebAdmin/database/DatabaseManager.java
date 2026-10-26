@@ -37,6 +37,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import org.bukkit.Bukkit;
@@ -65,8 +66,7 @@ public class DatabaseManager {
             try {
                 Class.forName("org.sqlite.JDBC");
             } catch (ClassNotFoundException e) {
-                plugin.getLogger().severe("Драйвер SQLite не найден: " + e.getMessage());
-                return;
+                throw new IllegalStateException("Драйвер SQLite не найден",e);
             }
             connection = DriverManager.getConnection("jdbc:sqlite:" + dbFile.getAbsolutePath());
             File backup = new File(plugin.getDataFolder(),"database-before-moderation-v2.db");
@@ -355,6 +355,9 @@ public class DatabaseManager {
                     )
                     """);
                 statement.execute("CREATE INDEX IF NOT EXISTS idx_appeal_messages_appeal ON appeal_messages(appeal_id)");
+                statement.execute("CREATE TABLE IF NOT EXISTS server_online_samples(at INTEGER PRIMARY KEY,online INTEGER NOT NULL)");
+                statement.execute("CREATE TABLE IF NOT EXISTS report_merges(source_id INTEGER PRIMARY KEY,target_id INTEGER NOT NULL,actor TEXT NOT NULL,created_at INTEGER NOT NULL)");
+                statement.execute("CREATE TABLE IF NOT EXISTS report_discussion(id INTEGER PRIMARY KEY,report_id INTEGER NOT NULL,author TEXT NOT NULL,is_staff INTEGER NOT NULL,body TEXT NOT NULL,event_id TEXT UNIQUE,created_at INTEGER NOT NULL)");
                 statement.execute("CREATE TABLE IF NOT EXISTS discord_appeal_messages(message_id TEXT PRIMARY KEY, appeal_id INTEGER NOT NULL)");
                 statement.execute("""
                     CREATE TABLE IF NOT EXISTS staff_panel_notifications (
@@ -411,7 +414,7 @@ public class DatabaseManager {
             bootstrapDefaultAdminIfEmpty();
 
         } catch (SQLException e) {
-            plugin.getLogger().severe("Не удалось инициализировать базу данных: " + e.getMessage());
+            throw new IllegalStateException("Не удалось инициализировать базу данных",e);
         }
     }
 
@@ -1444,7 +1447,7 @@ public class DatabaseManager {
         } catch (SQLException e) {
             plugin.getLogger().warning("Ошибка сохранения бана: " + e.getMessage());
         }
-        return ban;
+        throw new IllegalStateException("Блокировка не сохранена в SQLite");
     }
 
     public synchronized Optional<WebBan> getBanById(int id) {
@@ -1532,8 +1535,13 @@ public class DatabaseManager {
         return getActiveBan(playerName).isPresent();
     }
 
+    public synchronized void failBanApplication(int id) {
+        try(var q=connection.prepareStatement("UPDATE web_bans SET status='APPLY_FAILED' WHERE id=? AND status='ACTIVE'")){q.setInt(1,id);q.executeUpdate();}
+        catch(SQLException e){throw new IllegalStateException("Не удалось отметить ошибку применения бана",e);}
+    }
+
     public synchronized boolean unban(int banId) {
-        String sql = "UPDATE web_bans SET status = 'UNBANNED' WHERE id = ?";
+        String sql = "UPDATE web_bans SET status = 'UNBANNED' WHERE id = ? AND status='ACTIVE'";
         try (PreparedStatement ps = connection.prepareStatement(sql)) {
             ps.setInt(1, banId);
             return ps.executeUpdate() > 0;
@@ -1544,7 +1552,7 @@ public class DatabaseManager {
     }
 
     public synchronized void deleteBan(int id) {
-        String sql = "DELETE FROM web_bans WHERE id = ?";
+        String sql = "DELETE FROM web_bans WHERE id = ? AND status <> 'ACTIVE' AND linked_report_id IS NULL AND NOT EXISTS (SELECT 1 FROM ban_appeals a WHERE a.ban_id=web_bans.id)";
         try (PreparedStatement ps = connection.prepareStatement(sql)) {
             ps.setInt(1, id);
             ps.executeUpdate();
@@ -1554,7 +1562,7 @@ public class DatabaseManager {
     }
 
     public synchronized void purgeOldBans(long olderThanSeconds) {
-        String sql = "DELETE FROM web_bans WHERE created_at < ?";
+        String sql = "DELETE FROM web_bans WHERE created_at < ? AND status IN ('UNBANNED','EXPIRED','DRAFT') AND linked_report_id IS NULL AND NOT EXISTS (SELECT 1 FROM ban_appeals a WHERE a.ban_id=web_bans.id)";
         try (PreparedStatement ps = connection.prepareStatement(sql)) {
             ps.setLong(1, olderThanSeconds);
             int count = ps.executeUpdate();
@@ -1848,7 +1856,7 @@ public class DatabaseManager {
                         long playtime = rs.getLong("total_playtime_seconds");
                         boolean isOnline = false;
                         try {
-                            isOnline = Bukkit.getPlayer(UUID.fromString(altUuid)) != null;
+                            isOnline = plugin.isPlayerOnline(UUID.fromString(altUuid));
                         } catch (Exception ignored) {}
                         boolean isBanned = isPlayerBanned(altName);
 
@@ -1871,7 +1879,7 @@ public class DatabaseManager {
                             m.put("lastSeenAt", lastSeen);
                             m.put("lastSeen", lastSeen);
                             m.put("playtimeSeconds", playtime);
-                            m.put("isOnline", Bukkit.getPlayer(UUID.fromString(altUuid)) != null);
+                            m.put("isOnline", plugin.isPlayerOnline(UUID.fromString(altUuid)));
                             m.put("isBanned", isPlayerBanned(altName));
                             m.put("sharedIps", new ArrayList<String>());
                             return m;
@@ -2683,16 +2691,15 @@ public class DatabaseManager {
         data.put("totalPlaytimeHours", Math.round(totalPlaytime / 3600.0));
         data.put("avgPlaytimeMinutes", Math.round(avgPlaytime / 60.0));
 
-        // 6. Оценка среднего и пикового онлайна
-        int onlineNow = Bukkit.getOnlinePlayers().size();
-        int curPeak = Math.max(onlineNow, Math.max(1, (int) Math.ceil(curUnique * 0.45)));
-        int prevPeak = Math.max(1, (int) Math.ceil(prevUnique * 0.45));
-        double curAvg = Math.max(onlineNow > 0 ? (double) onlineNow : 1.0, Math.round(curUnique * 0.22 * 10.0) / 10.0);
-        double prevAvg = Math.max(1.0, Math.round(prevUnique * 0.22 * 10.0) / 10.0);
-        data.put("peakOnline", curPeak);
-        data.put("peakOnlineDelta", calcDeltaPct(curPeak, prevPeak));
-        data.put("avgOnline", curAvg);
-        data.put("avgOnlineDelta", calcDeltaPct(curAvg, prevAvg));
+        // Measured samples only; null means the selected period has no measurements.
+        var currentSamples=onlineSamples(curFrom,curTo);var previousSamples=onlineSamples(prevFrom,prevTo);
+        data.put("peakOnline",currentSamples.get("peak"));data.put("avgOnline",currentSamples.get("average"));
+        data.put("peakOnlineDelta",null);data.put("avgOnlineDelta",null);
+        if(currentSamples.get("peak")!=null && previousSamples.get("peak")!=null)
+            data.put("peakOnlineDelta",calcDeltaPct(((Number)currentSamples.get("peak")).intValue(),((Number)previousSamples.get("peak")).intValue()));
+        if(currentSamples.get("average")!=null && previousSamples.get("average")!=null)
+            data.put("avgOnlineDelta",calcDeltaPct(((Number)currentSamples.get("average")).doubleValue(),((Number)previousSamples.get("average")).doubleValue()));
+        data.put("onlineSamples",currentSamples.get("count"));
 
         // 7. Retention Rate (удержание)
         int retained = 0;
@@ -2702,8 +2709,7 @@ public class DatabaseManager {
         } catch (SQLException ignored) {}
         double retentionRate = totalPlayers > 0 ? (retained * 100.0 / totalPlayers) : 0.0;
         data.put("retentionRate", Math.round(retentionRate * 10.0) / 10.0);
-        double prevRetention = Math.max(0.0, retentionRate * 0.95);
-        data.put("retentionDelta", calcDeltaPct(retentionRate, prevRetention));
+        data.put("retentionDelta", null); // No historical retention snapshot exists.
         // 8. Почасовая активность (текущий vs предыдущий период)
         int[] curHourly = getHourlyDistribution(curFrom, curTo);
         int[] prevHourly = getHourlyDistribution(prevFrom, prevTo);
@@ -2715,6 +2721,22 @@ public class DatabaseManager {
         data.put("prevHourlyActivity", prevList);
 
         return data;
+    }
+
+    public synchronized void recordOnlineSample(long epoch,int online) {
+        if(online<0)throw new IllegalArgumentException("Отрицательный онлайн");
+        try(var q=connection.prepareStatement("INSERT OR REPLACE INTO server_online_samples(at,online) VALUES(?,?)")){
+            q.setLong(1,epoch);q.setInt(2,online);q.executeUpdate();
+        }catch(SQLException e){throw new IllegalStateException("Измерение онлайна не сохранено",e);}
+        try(var q=connection.prepareStatement("DELETE FROM server_online_samples WHERE at<?")){q.setLong(1,epoch-90L*86400);q.executeUpdate();}
+        catch(SQLException e){throw new IllegalStateException(e);}
+    }
+
+    public synchronized Map<String,Object> onlineSamples(long from,long to) {
+        var result=new LinkedHashMap<String,Object>();result.put("count",0);result.put("peak",null);result.put("average",null);
+        try(var q=connection.prepareStatement("SELECT COUNT(*),MAX(online),AVG(online) FROM server_online_samples WHERE at>=? AND at<=?")) {
+            q.setLong(1,from);q.setLong(2,to);try(var rows=q.executeQuery()){if(rows.next()&&rows.getInt(1)>0){result.put("count",rows.getInt(1));result.put("peak",rows.getInt(2));result.put("average",Math.round(rows.getDouble(3)*10)/10.0);}}
+        }catch(SQLException e){throw new IllegalStateException(e);}return result;
     }
 
     private int countPlayersSeen(long from, long to) {
@@ -3452,10 +3474,73 @@ public class DatabaseManager {
         return list;
     }
 
+    /** Reports are joined only for the same accused player; evidence stays in its original case. */
+    public synchronized boolean mergeReports(int sourceId,int targetId,String actor) {
+        if(sourceId==targetId)throw new IllegalArgumentException("Нельзя объединить жалобу с собой");
+        try {
+            connection.setAutoCommit(false);
+            var source=getReportById(sourceId).orElseThrow(()->new IllegalArgumentException("Исходная жалоба не найдена"));
+            var target=getReportById(targetId).orElseThrow(()->new IllegalArgumentException("Основная жалоба не найдена"));
+            if(!Objects.equals(source.targetUuid(),target.targetUuid()) || source.targetUuid()==null || source.reputationDeducted()>0 || !source.status().equals("PENDING") || !target.status().equals("PENDING")) throw new IllegalArgumentException("Можно объединять только открытые жалобы на одного игрока");
+            try(var q=connection.prepareStatement("UPDATE player_reports SET status='MERGED',resolved_by=?,resolved_at=strftime('%s','now') WHERE id=? AND status='PENDING'")) {
+                q.setString(1,actor);q.setInt(2,sourceId);if(q.executeUpdate()!=1){connection.rollback();return false;}
+            }
+            try(var q=connection.prepareStatement("INSERT INTO report_merges(source_id,target_id,actor,created_at) VALUES(?,?,?,strftime('%s','now'))")) {
+                q.setInt(1,sourceId);q.setInt(2,targetId);q.setString(3,actor);q.executeUpdate();
+            }
+            connection.commit();return true;
+        }catch(SQLException|RuntimeException e){try{connection.rollback();}catch(SQLException rollback){e.addSuppressed(rollback);}throw new IllegalStateException("Жалобы не объединены",e);}
+        finally{try{connection.setAutoCommit(true);}catch(SQLException e){throw new IllegalStateException(e);}}
+    }
+
+    public synchronized java.util.List<java.util.Map<String,Object>> relatedReports(int id) {
+        var list=new java.util.ArrayList<java.util.Map<String,Object>>();
+        try(var q=connection.prepareStatement("SELECT source_id,target_id,actor FROM report_merges WHERE source_id=? OR target_id=? ORDER BY created_at DESC LIMIT 200")) {
+            q.setInt(1,id);q.setInt(2,id);try(var rows=q.executeQuery()){while(rows.next())list.add(java.util.Map.of("source",rows.getInt(1),"target",rows.getInt(2),"actor",rows.getString(3)));}
+        }catch(SQLException e){throw new IllegalStateException(e);}return list;
+    }
+
+    public synchronized int addReportDiscussion(int id,String author,boolean staff,String text,String eventId) {
+        if(text==null || text.trim().length()<5 || text.length()>2000)throw new IllegalArgumentException("Сообщение: от 5 до 2000 символов");
+        if(getReportById(id).filter(r->r.status().equals("PENDING")).isEmpty())throw new IllegalArgumentException("Жалоба закрыта или не найдена");
+        try(var q=connection.prepareStatement("INSERT OR IGNORE INTO report_discussion(report_id,author,is_staff,body,event_id,created_at) VALUES(?,?,?,?,?,strftime('%s','now'))",Statement.RETURN_GENERATED_KEYS)) {
+            q.setInt(1,id);q.setString(2,author);q.setInt(3,staff?1:0);q.setString(4,text.trim());q.setString(5,eventId);if(q.executeUpdate()==0)return -1;
+            try(var keys=q.getGeneratedKeys()){if(keys.next())return keys.getInt(1);}return -1;
+        }catch(SQLException e){throw new IllegalStateException("Ответ не сохранён",e);}
+    }
+
+    public synchronized java.util.List<java.util.Map<String,Object>> reportDiscussion(int id) {
+        var list=new java.util.ArrayList<java.util.Map<String,Object>>();
+        try(var q=connection.prepareStatement("SELECT author,is_staff,body,created_at FROM report_discussion WHERE report_id=? ORDER BY id DESC LIMIT 200")) {
+            q.setInt(1,id);try(var rows=q.executeQuery()){while(rows.next())list.add(java.util.Map.of("author",rows.getString(1),"isStaff",rows.getInt(2)==1,"body",rows.getString(3),"createdAt",rows.getLong(4)));}
+        }catch(SQLException e){throw new IllegalStateException(e);}java.util.Collections.reverse(list);return list;
+    }
+
     public synchronized boolean reserveAppealDecision(int id) {
         try (var q = connection.prepareStatement("UPDATE ban_appeals SET status='DECIDING' WHERE id=? AND status='PENDING'")) {
             q.setInt(1,id); return q.executeUpdate()==1;
         } catch (SQLException e) { throw new IllegalStateException(e); }
+    }
+
+    /** Compare and save expiry; callers must update the native ban on the main thread. */
+    public synchronized boolean shortenBan(int id, long oldExpiry, long newExpiry) {
+        try (var q=connection.prepareStatement("UPDATE web_bans SET expires_at=?,duration_seconds=?-created_at WHERE id=? AND status='ACTIVE' AND expires_at=?")) {
+            q.setLong(1,newExpiry);q.setLong(2,newExpiry);q.setInt(3,id);q.setLong(4,oldExpiry);return q.executeUpdate()==1;
+        } catch(SQLException e) { throw new IllegalStateException("Срок блокировки не сохранён",e); }
+    }
+
+    /** Decision and its public explanation are committed together. */
+    public synchronized boolean finishAppealDecision(int id,String status,String actor,String message) {
+        if (!java.util.Set.of("APPROVED","REJECTED","REDUCED").contains(status)) throw new IllegalArgumentException("Некорректное решение");
+        try {
+            connection.setAutoCommit(false);
+            try (var q=connection.prepareStatement("UPDATE ban_appeals SET status=?,updated_at=strftime('%s','now') WHERE id=? AND status='DECIDING'")) {
+                q.setString(1,status);q.setInt(2,id);if(q.executeUpdate()!=1){connection.rollback();return false;}
+            }
+            if(addAppealMessage(id,actor,true,message)<=0)throw new SQLException("Объяснение не сохранено");
+            connection.commit();return true;
+        } catch(SQLException e){try{connection.rollback();}catch(SQLException rollback){e.addSuppressed(rollback);}throw new IllegalStateException("Решение не сохранено",e);}
+        finally{try{connection.setAutoCommit(true);}catch(SQLException e){throw new IllegalStateException(e);}}
     }
 
     public synchronized boolean updateAppealStatus(int id, String status) {

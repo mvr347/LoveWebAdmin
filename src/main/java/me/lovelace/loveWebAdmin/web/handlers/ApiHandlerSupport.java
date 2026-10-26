@@ -41,6 +41,8 @@ public abstract class ApiHandlerSupport extends HttpServlet {
             if (!resp.isCommitted()) {
                 sendError(resp, 413, "Тело запроса слишком большое");
             }
+        } catch (me.lovelace.loveWebAdmin.utils.ActionRejectedException e) {
+            if(!resp.isCommitted())sendError(resp,409,e.getMessage());
         } catch (IllegalArgumentException e) {
             if (!resp.isCommitted()) {
                 sendError(resp, 400, "Некорректный запрос");

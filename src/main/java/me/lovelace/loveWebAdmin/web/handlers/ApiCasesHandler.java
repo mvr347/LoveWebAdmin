@@ -22,6 +22,17 @@ public final class ApiCasesHandler extends ApiHandlerSupport {
 
   @Override
   protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+    if ("/templates".equals(req.getPathInfo())) {
+      if (requirePermission(req, resp, Permission.MANAGE_API).isEmpty()) return;
+      sendSuccess(
+          resp,
+          Map.of(
+              "templates",
+              plugin.discordTemplates().templates(),
+              "tokens",
+              plugin.discordTemplates().tokens()));
+      return;
+    }
     if ("/deliveries".equals(req.getPathInfo())) {
       if (requirePermission(req, resp, Permission.MANAGE_API).isEmpty()) return;
       try {
@@ -52,7 +63,13 @@ public final class ApiCasesHandler extends ApiHandlerSupport {
               "work",
               plugin.moderation().work(p[1], id),
               "notes",
-              plugin.moderation().notes(p[1], id)));
+              plugin.moderation().notes(p[1], id),
+              "related",
+              p[1].equals("report") ? plugin.getDatabaseManager().relatedReports(id) : List.of(),
+              "discussion",
+              p[1].equals("report")
+                  ? plugin.getDatabaseManager().reportDiscussion(id)
+                  : List.of()));
     } catch (SQLException e) {
       throw new IllegalStateException(e);
     }
@@ -60,6 +77,58 @@ public final class ApiCasesHandler extends ApiHandlerSupport {
 
   @Override
   protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+    if (Set.of("/templates/preview", "/templates/save")
+        .contains(Objects.toString(req.getPathInfo(), ""))) {
+      var auth = requirePermission(req, resp, Permission.MANAGE_API);
+      if (auth.isEmpty()) return;
+      var body = readJsonBody(req);
+      String kind = Objects.toString(body.get("kind"), ""),
+          text = Objects.toString(body.get("text"), "");
+      String preview =
+          me.lovelace.loveWebAdmin.integration.DiscordTemplates.preview(
+              kind,
+              text,
+              Map.ofEntries(
+                  Map.entry("id", "12"),
+                  Map.entry("ban", "42"),
+                  Map.entry("player", "Ada123"),
+                  Map.entry("reporter", "Игрок"),
+                  Map.entry("reason", "Пример причины"),
+                  Map.entry("source", "Сотрудник: Moderator"),
+                  Map.entry("duration", "1 час"),
+                  Map.entry("expiry", "27.10.2026 12:00"),
+                  Map.entry("status", "На рассмотрении"),
+                  Map.entry("assignee", "Moderator"),
+                  Map.entry("actor", "Moderator"),
+                  Map.entry("text", "Расскажите подробнее")));
+      if (req.getPathInfo().endsWith("/save")) {
+        plugin.discordTemplates().save(kind, text);
+        plugin
+            .getLogManager()
+            .logWebAction(auth.get().adminUsername(), "Изменил шаблон Discord: " + kind);
+      }
+      sendSuccess(resp, Map.of("preview", preview));
+      return;
+    }
+    if (Objects.toString(req.getPathInfo(), "").matches("/deliveries/[0-9]+/retry")) {
+      var auth = requirePermission(req, resp, Permission.MANAGE_API);
+      if (auth.isEmpty()) return;
+      int id = Integer.parseInt(req.getPathInfo().split("/")[2]);
+      try {
+        if (!plugin.moderation().retryDelivery(id)) {
+          sendError(resp, 409, "Повторить можно только неудачную доставку");
+          return;
+        }
+      } catch (SQLException e) {
+        throw new IllegalStateException(e);
+      }
+      plugin
+          .getLogManager()
+          .logWebAction(auth.get().adminUsername(), "Повторил доставку Discord №" + id);
+      sendSuccess(resp, Map.of("message", "Доставка поставлена в очередь"));
+      return;
+    }
+
     String[] p = path(req);
     int id = Integer.parseInt(p[2]);
     if (p.length != 4) throw new IllegalArgumentException("Укажите действие");
@@ -91,6 +160,29 @@ public final class ApiCasesHandler extends ApiHandlerSupport {
     try {
       switch (p[3]) {
         case "claim" -> ok = plugin.moderation().claim(p[1], id, actor);
+        case "merge" -> {
+          if (!p[1].equals("report"))
+            throw new IllegalArgumentException("Объединяются только жалобы");
+          int target =
+              Integer.parseInt(
+                  Objects.toString(body.get("targetId"), "").replaceFirst("\\.0$", ""));
+          ok = plugin.getDatabaseManager().mergeReports(id, target, actor);
+          plugin
+              .getDatabaseManager()
+              .getReportById(target)
+              .ifPresent(plugin.getDiscordBridge()::notifyReportCreated);
+        }
+        case "clarify" -> {
+          if (!p[1].equals("report"))
+            throw new IllegalArgumentException(
+                "Уточнения по апелляциям отправляются в их переписку");
+          var report = plugin.getDatabaseManager().getReportById(id).orElseThrow();
+          String text = stringOrNull(body.get("text"));
+          int messageId =
+              plugin.getDatabaseManager().addReportDiscussion(id, actor, true, text, null);
+          plugin.getDiscordBridge().requestReportClarification(report, messageId, actor, text);
+          ok = true;
+        }
         case "note" -> {
           plugin.moderation().note(p[1], id, actor, stringOrNull(body.get("text")));
           ok = true;
@@ -126,7 +218,11 @@ public final class ApiCasesHandler extends ApiHandlerSupport {
       sendError(resp, 409, "Дело уже занято другим сотрудником");
       return;
     }
-    if(p[1].equals("report"))plugin.getDatabaseManager().getReportById(id).ifPresent(plugin.getDiscordBridge()::notifyReportCreated);
+    if (p[1].equals("report"))
+      plugin
+          .getDatabaseManager()
+          .getReportById(id)
+          .ifPresent(plugin.getDiscordBridge()::notifyReportCreated);
     plugin.getLogManager().logWebAction(actor, "Дело " + p[1] + " №" + id + ": " + p[3]);
     sendSuccess(resp, Map.of("message", "Изменения сохранены"));
   }

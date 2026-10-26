@@ -10,46 +10,77 @@ public final class AppealService {
   }
 
   public String decide(int id, String actor, boolean approve, String reason) {
-    if (reason == null || reason.trim().length() < 5)
-      throw new IllegalArgumentException("Укажите обоснование решения");
+    return resolve(id, actor, approve ? "APPROVED" : "REJECTED", reason, 0);
+  }
+
+  public String reduce(int id, String actor, long remainingSeconds, String reason) {
+    return resolve(id, actor, "REDUCED", reason, remainingSeconds);
+  }
+
+  private String resolve(
+      int id, String actor, String status, String reason, long remainingSeconds) {
+    boolean approve = status.equals("APPROVED");
+    if (reason == null || reason.trim().length() < 5 || reason.length() > 2000)
+      throw new me.lovelace.loveWebAdmin.utils.ActionRejectedException(
+          "Укажите обоснование решения");
     var appeal =
         plugin
             .getDatabaseManager()
             .getAppealById(id)
-            .orElseThrow(() -> new IllegalArgumentException("Апелляция не найдена"));
+            .orElseThrow(
+                () ->
+                    new me.lovelace.loveWebAdmin.utils.ActionRejectedException(
+                        "Апелляция не найдена"));
     try {
-      if (approve && "SECURITY".equals(plugin.moderation().source(appeal.banId()).get("kind")))
-        throw new IllegalArgumentException(
+      if (!status.equals("REJECTED")
+          && "SECURITY".equals(plugin.moderation().source(appeal.banId()).get("kind")))
+        throw new me.lovelace.loveWebAdmin.utils.ActionRejectedException(
             "Снимите ограничение через раздел безопасности LoveAuth; обычный разбан к нему"
                 + " неприменим");
     } catch (java.sql.SQLException e) {
       throw new IllegalStateException(e);
     }
     if (!plugin.getDatabaseManager().reserveAppealDecision(id))
-      throw new IllegalArgumentException("Апелляция уже закрыта или рассматривается");
+      throw new me.lovelace.loveWebAdmin.utils.ActionRejectedException(
+          "Апелляция уже закрыта или рассматривается");
     boolean completed = false;
+    boolean nativeChanged = false;
     try {
       if (approve && !plugin.getBanManager().unban(appeal.banId(), actor))
         throw new IllegalStateException("Не удалось снять блокировку");
-      String status = approve ? "APPROVED" : "REJECTED";
-      if (!plugin.getDatabaseManager().updateAppealStatus(id, status))
-        throw new IllegalStateException("Не удалось сохранить решение");
-      completed = true;
+      if (status.equals("REDUCED"))
+        plugin.getBanManager().reduceDuration(appeal.banId(), actor, remainingSeconds);
+      nativeChanged = approve || status.equals("REDUCED");
       String message =
-          (approve ? "Апелляция одобрена" : "Апелляция отклонена")
+          (approve
+                  ? "Апелляция одобрена"
+                  : status.equals("REDUCED")
+                      ? "Срок сокращён. Осталось: " + remainingSeconds + " сек."
+                      : "Апелляция отклонена")
               + ". Сотрудник: "
               + actor
               + ".\n"
               + reason.trim();
-      plugin.getDatabaseManager().addAppealMessage(id, actor, true, message);
-      plugin.getDiscordBridge().finishAppeal(appeal,message);
+      if (!plugin.getDatabaseManager().finishAppealDecision(id, status, actor, message))
+        throw new IllegalStateException("Не удалось сохранить решение");
+      completed = true;
+      plugin.getDiscordBridge().finishAppeal(appeal, message);
       plugin
           .getLogManager()
           .logWebAction(
               actor, "Решение по апелляции №" + id + ": " + status + "; " + reason.trim());
       return message;
     } finally {
-      if (!completed) plugin.getDatabaseManager().updateAppealStatus(id, "PENDING");
+      if (!completed && !nativeChanged)
+        plugin.getDatabaseManager().updateAppealStatus(id, "PENDING");
+      else if (!completed)
+        plugin
+            .getLogger()
+            .severe(
+                "Апелляция №"
+                    + id
+                    + ": наказание изменено, но решение не сохранено. Состояние DECIDING оставлено"
+                    + " для ручной проверки.");
     }
   }
 }

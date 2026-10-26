@@ -52,6 +52,26 @@ class MainDispatcherTest {
   }
 
   @Test
+  void queuedDeadlineDoesNotReportFailureAfterMutationHasStarted() {
+    main.close();
+    main =
+        new MainDispatcher(
+            MockBukkit.createMockPlugin("SlowMutation"), java.time.Duration.ofMillis(20));
+    assertEquals(
+        42,
+        main.call(
+                () -> {
+                  try {
+                    Thread.sleep(80);
+                  } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                  }
+                  return 42;
+                })
+            .join());
+  }
+
+  @Test
   void overflowIsRejectedWithoutExecutingMoreTasks() {
     var queued = new java.util.ArrayList<CompletableFuture<Integer>>();
     CompletableFuture.runAsync(

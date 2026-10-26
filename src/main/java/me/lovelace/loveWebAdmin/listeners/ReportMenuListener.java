@@ -149,7 +149,7 @@ public class ReportMenuListener implements Listener {
         OfflinePlayer target = Bukkit.getOfflinePlayer(session.getTargetUuid());
         plugin.main().call(() -> {
             plugin.getReportManager().renderAndOpenGui(player, target, session);
-        
+
                 return null;
             });
     }

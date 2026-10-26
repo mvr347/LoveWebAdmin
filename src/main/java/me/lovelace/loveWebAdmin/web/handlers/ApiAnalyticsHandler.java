@@ -38,8 +38,7 @@ public class ApiAnalyticsHandler extends ApiHandlerSupport {
 
             Map<String, Object> data = plugin.getDatabaseManager().getMonthlyAnalytics();
             data.putAll(plugin.getDatabaseManager().getPeriodDatabaseStats(period != null ? period : "today", from, to));
-            data.put("currentOnline", plugin.getServer().getOnlinePlayers().size());
-            data.put("maxPlayers", plugin.getServer().getMaxPlayers());
+            data.putAll(plugin.main().call(()->Map.of("currentOnline",plugin.getServer().getOnlinePlayers().size(),"maxPlayers",plugin.getServer().getMaxPlayers())).join());
             data.put("uptime", plugin.getUptimeSeconds());
             sendSuccess(resp, data);
             return;

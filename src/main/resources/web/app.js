@@ -28,69 +28,69 @@
 
     // ---------- Navigation Sections ----------
     const SECTIONS = [
-        { 
-            id: 'dashboard', 
-            label: 'Дашборд', 
-            icon: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>`, 
-            num: 1, 
-            perm: 'VIEW_STATS', 
-            modAllowed: true 
+        {
+            id: 'dashboard',
+            label: 'Дашборд',
+            icon: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>`,
+            num: 1,
+            perm: 'VIEW_STATS',
+            modAllowed: true
         },
-        { 
-            id: 'journal', 
-            label: 'Журнал', 
-            icon: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`, 
-            num: 2, 
-            perm: 'VIEW_SERVER_LOGS', 
-            modAllowed: true 
+        {
+            id: 'journal',
+            label: 'Журнал',
+            icon: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`,
+            num: 2,
+            perm: 'VIEW_SERVER_LOGS',
+            modAllowed: true
         },
-        { 
-            id: 'punishments', 
-            label: 'Наказания', 
-            icon: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`, 
-            num: 3, 
-            perm: 'VIEW_BANS', 
-            modAllowed: true 
+        {
+            id: 'punishments',
+            label: 'Наказания',
+            icon: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`,
+            num: 3,
+            perm: 'VIEW_BANS',
+            modAllowed: true
         },
-        { 
-            id: 'anticheat', 
-            label: 'Античит', 
-            icon: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`, 
-            num: 4, 
-            perm: 'VIEW_VESUVIO', 
-            modAllowed: true 
+        {
+            id: 'anticheat',
+            label: 'Античит',
+            icon: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`,
+            num: 4,
+            perm: 'VIEW_VESUVIO',
+            modAllowed: true
         },
-        { 
-            id: 'server', 
-            label: 'Сервер', 
-            icon: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8"/><rect x="2" y="14" width="20" height="8"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>`, 
-            num: 5, 
-            perm: 'VIEW_PLAYERS', 
-            modAllowed: true 
+        {
+            id: 'server',
+            label: 'Сервер',
+            icon: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8"/><rect x="2" y="14" width="20" height="8"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>`,
+            num: 5,
+            perm: 'VIEW_PLAYERS',
+            modAllowed: true
         },
-        { 
-            id: 'auth', 
-            label: 'Авторизация', 
-            icon: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`, 
-            num: 6, 
-            perm: 'MANAGE_LOVEAUTH', 
-            modAllowed: false 
+        {
+            id: 'auth',
+            label: 'Авторизация',
+            icon: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`,
+            num: 6,
+            perm: 'MANAGE_LOVEAUTH',
+            modAllowed: false
         },
-        { 
+        {
             id: 'staff',
-            label: 'Персонал', 
-            icon: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`, 
-            num: 7, 
-            perm: 'MANAGE_ADMINS', 
-            modAllowed: false 
+            label: 'Персонал',
+            icon: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
+            num: 7,
+            perm: 'MANAGE_ADMINS',
+            modAllowed: false
         },
-        { 
-            id: 'database', 
-            label: 'База данных', 
-            icon: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>`, 
-            num: 8, 
-            perm: 'VIEW_ANALYTICS', 
-            modAllowed: true 
+        {
+            id: 'database',
+            label: 'База данных',
+            icon: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>`,
+            num: 8,
+            perm: 'VIEW_ANALYTICS',
+            modAllowed: true
         }
     ];
 
@@ -399,7 +399,7 @@
         overlay.className = 'modal-overlay';
         overlay.id = 'modal-overlay';
         overlay.innerHTML = `<div class="modal ${customClass}">${html}</div>`;
-        
+
         // Надёжное закрытие: по клику на затемнённый фон, на любой .close-btn или [data-modal-close]
         overlay.addEventListener('click', (e) => {
             if (e.target === overlay || e.target.closest('.close-btn') || e.target.closest('[data-modal-close]')) {
@@ -589,7 +589,7 @@
                 const q = (searchInput?.value || '').trim().toLowerCase();
                 let filtered = allReports;
                 if (q) {
-                    filtered = filtered.filter(r => 
+                    filtered = filtered.filter(r =>
                         (r.targetName && r.targetName.toLowerCase().includes(q)) ||
                         (r.reporterName && r.reporterName.toLowerCase().includes(q)) ||
                         (r.description && r.description.toLowerCase().includes(q))
@@ -790,7 +790,7 @@
                             api('GET', `/api/bans/all`).catch(() => [])
                         ]);
 
-                        const matchingBans = bans.filter(b => 
+                        const matchingBans = bans.filter(b =>
                             (b.targetName && b.targetName.toLowerCase().includes(q.toLowerCase())) ||
                             (b.ruleReason && b.ruleReason.toLowerCase().includes(q.toLowerCase()))
                         ).slice(0, 5);
@@ -1970,7 +1970,7 @@
 
         // Update active class in sidebar
         document.querySelectorAll('#sidebar-nav .nav-item').forEach(el => {
-            const isMatch = el.dataset.nav === sectionId || 
+            const isMatch = el.dataset.nav === sectionId ||
                 (el.dataset.nav === 'punishments' && (sectionId === 'bans' || sectionId === 'reports')) ||
                 (el.dataset.nav === 'staff' && sectionId === 'admins');
             el.classList.toggle('active', isMatch);
@@ -3029,7 +3029,7 @@
             // Search query filter
             if (searchQuery) {
                 const q = searchQuery.toLowerCase();
-                source = source.filter(e => 
+                source = source.filter(e =>
                     (e.actor && e.actor.toLowerCase().includes(q)) ||
                     (e.action && e.action.toLowerCase().includes(q)) ||
                     (e.type && e.type.toLowerCase().includes(q))
@@ -3633,7 +3633,7 @@
 
                 let list = lastLoadedBans;
                 if (q) {
-                    list = list.filter(b => 
+                    list = list.filter(b =>
                         (b.targetName && b.targetName.toLowerCase().includes(q)) ||
                         (b.creatorName && b.creatorName.toLowerCase().includes(q))
                     );
@@ -3719,7 +3719,7 @@
                                 <span class="badge green" style="font-size:10.5px; display:inline-flex; align-items:center; gap:4px;">${renderSvgIcon('check', 'green', 11)} РАБОЧИЙ ШЛЮЗ</span>
                             </div>
                             <p style="font-size:13px; color:var(--text-secondary); margin:6px 0 0 0; line-height:1.5;">
-                                На сервере приём апелляций осуществляется через Discord-бота в канале <b>#тикеты-апелляций</b>. 
+                                На сервере приём апелляций осуществляется через Discord-бота в канале <b>#тикеты-апелляций</b>.
                                 Ниже представлена очередь апелляций и тикетов с поддержкой двусторонней переписки и принятия решений.
                             </p>
                         </div>
@@ -3774,7 +3774,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                                 <option value="ALL">Все статусы</option>
                                 <option value="PENDING" selected>Ожидают решения (PENDING)</option>
                                 <option value="APPROVED">Одобренные</option>
-                                <option value="REJECTED">Отклонённые</option>
+                                <option value="REJECTED">Отклонённые</option><option value="REDUCED">Сокращён срок</option>
                             </select>
                         </div>
                     </div>
@@ -3816,7 +3816,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                         <div style="display:flex; flex-direction:column; gap:10px;">
                             ${appeals.map(a => {
                                 const stBadge = a.status === 'APPROVED' ? '<span class="badge green">ОДОБРЕНО</span>' :
-                                                (a.status === 'REJECTED' ? '<span class="badge red">ОТКЛОНЕНО</span>' : '<span class="badge yellow">НА РАССМОТРЕНИИ</span>');
+                                                (a.status === 'REJECTED' ? '<span class="badge red">ОТКЛОНЕНО</span>' : a.status === 'REDUCED' ? '<span class="badge green">СРОК СОКРАЩЁН</span>' : a.status === 'DECIDING' ? '<span class="badge yellow">ТРЕБУЕТ ПРОВЕРКИ</span>' : '<span class="badge yellow">НА РАССМОТРЕНИИ</span>');
                                 return `
                                     <div style="background:rgba(255, 255, 255, 0.02); border:1px solid var(--border); border-radius:var(--radius-sm); padding:12px 14px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
                                         <div style="display:flex; align-items:center; gap:12px;">
@@ -3856,7 +3856,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 try {
                     const appeal = await api('GET', `/api/appeals/${appealId}`);
                     const statusBadge = appeal.status === 'APPROVED' ? '<span class="badge green">ОДОБРЕНО</span>' :
-                                        (appeal.status === 'REJECTED' ? '<span class="badge red">ОТКЛОНЕНО</span>' : '<span class="badge yellow">НА РАССМОТРЕНИИ</span>');
+                                        (appeal.status === 'REJECTED' ? '<span class="badge red">ОТКЛОНЕНО</span>' : appeal.status === 'REDUCED' ? '<span class="badge green">СРОК СОКРАЩЁН</span>' : appeal.status === 'DECIDING' ? '<span class="badge yellow">ТРЕБУЕТ ПРОВЕРКИ</span>' : '<span class="badge yellow">НА РАССМОТРЕНИИ</span>');
 
                     openModal(`
                         <div class="modal-header">
@@ -4049,7 +4049,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 <div class="form-group">
                     <label>Скриншот нарушения / Доказательство</label>
                     <input type="text" id="ban-screenshot-url" placeholder="Вставьте URL скриншота (Imgur, Yapx, Discord...) или загрузите файл ниже">
-                    
+
                     <div class="screenshot-dropzone" id="ban-screenshot-dropzone">
                         <span style="color:var(--accent-light); font-weight:600; display:inline-flex; align-items:center; gap:6px;">${renderSvgIcon('download', 'violet', 14)} Загрузить файл скриншота</span>
                         <span style="font-size:11.5px; color:var(--text-muted); display:block; margin-top:3px;">Кликните для выбора, перетащите изображение или нажмите Ctrl+V</span>
@@ -4852,7 +4852,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                         const header = formatText(tmpl.form.header || '');
                         const fields = (tmpl.form.fields || []).map(f => formatText(f)).join('\n');
                         const footerText = formatText(tmpl.form.footer || '');
-                        
+
                         let combined = (header ? header + '\n\n' : '') + fields + (footerText ? '\n\n' + footerText : '');
                         if (formatMode === 'discord') {
                             combined = '```markdown\n' + combined + '\n```';
@@ -6663,12 +6663,12 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                             <div class="stat-card" style="padding:12px;">
                                 <div class="stat-label">СВЯЗАННЫЕ АККАУНТЫ ПО IP</div>
                                 <div style="margin-top:6px; display:flex; gap:4px; flex-wrap:wrap;">
-                                    ${(alts.length > 1) 
+                                    ${(alts.length > 1)
                                         ? alts.filter(a => a.toLowerCase() !== info.username.toLowerCase()).map(a => `
                                             <button type="button" class="secondary btn-sm" style="font-size:11px; padding:2px 7px;" onclick="window.inspectLoveAuthPlayer('${esc(a)}')">
                                                 ${esc(a)}
                                             </button>
-                                        `).join('') 
+                                        `).join('')
                                         : '<span style="font-size:12px; color:var(--text-dim);">Других аккаунтов не найдено</span>'}
                                 </div>
                             </div>
@@ -7191,7 +7191,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                                             const assignedAdmins = admins.filter(a => a.roleId === r.id);
                                             const hasAdmins = assignedAdmins.length > 0;
                                             const canDelete = !r.isOwner && !hasAdmins;
-                                            
+
                                             // Description rule: if empty or equals name, don't show duplicate; if empty show "Без описания"
                                             let descText = (r.description || '').trim();
                                             let isBlank = false;
@@ -7251,7 +7251,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
         // ---------------- Invite Creation Wizard ----------------
         function openInviteWizardModal() {
             const availableRoles = rolesCache.filter(r => !r.isOwner).sort((a, b) => (a.sortOrder || 99) - (b.sortOrder || 99));
-            
+
             openModal(`
                 <div class="modal-header">
                     <h3>ПРИГЛАШЕНИЕ СОТРУДНИКА</h3>
@@ -7869,12 +7869,12 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                         </div>
                         <div class="stat-card">
                             <div class="stat-label">ПИКОВЫЙ ОНЛАЙН</div>
-                            <div class="stat-value" style="color:var(--accent-light);">${data.peakOnline || 0}</div>
+                            <div class="stat-value" style="color:var(--accent-light);">${data.peakOnline ?? "Нет измерений"}</div>
                             <div>${formatDeltaBadge(data.peakOnlineDelta, data.prevPeriodLabel)}</div>
                         </div>
                         <div class="stat-card">
                             <div class="stat-label">СРЕДНИЙ ОНЛАЙН</div>
-                            <div class="stat-value" style="color:#60a5fa;">${data.avgOnline || 0}</div>
+                            <div class="stat-value" style="color:#60a5fa;">${data.avgOnline ?? "Нет измерений"}</div>
                             <div>${formatDeltaBadge(data.avgOnlineDelta, data.prevPeriodLabel)}</div>
                         </div>
                         <div class="stat-card">
@@ -8789,7 +8789,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                     renderBlacklistUI();
                 } else if (tabId === 'webhooks') {
                     // TAB 5: ВЕБХУКИ И СВЯЗЬ (DISCORD + TELEGRAM)
-                    const discordId = me.discordVerified ? me.discordId : ''; 
+                    const discordId = me.discordVerified ? me.discordId : '';
                     const notifyReports = userPrefs.discordNotifyReports === true;
                     const notifyTickets = userPrefs.discordNotifyTickets === true;
 
@@ -8838,7 +8838,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                             </div>
 
                             <div class="form-group">
-                                <label>Подтверждённый Discord-аккаунт</label>
+                                ${hasPerm('MANAGE_API') ? '<a href="/deliveries.html">Состояние доставки Discord</a> · <a href="/templates.html">Шаблоны сообщений</a>' : ''}<label>Подтверждённый Discord-аккаунт</label>
                                 <input type="text" id="pref-discord-id" value="${esc(discordId)}" readonly placeholder="Привяжите Minecraft-аккаунт через LoveCore или LoveAuth">
                             </div>
 

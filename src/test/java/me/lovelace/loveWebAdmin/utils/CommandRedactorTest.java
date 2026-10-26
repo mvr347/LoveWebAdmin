@@ -16,4 +16,14 @@ class CommandRedactorTest {
   void keepsModerationArguments() {
     assertEquals("ban Ada123 reason", CommandRedactor.redact("ban Ada123 reason"));
   }
+
+  @Test
+  void nestedAuthCommandsAndServerLogLinesDoNotLeakPasswords() {
+    assertEquals(
+        "loveauthadmin [параметры скрыты]",
+        CommandRedactor.redact("loveauthadmin setpassword Ada123 secretValue"));
+    assertEquals(
+        "Ada123 issued server command: /login [параметры скрыты]",
+        CommandRedactor.redactLog("Ada123 issued server command: /login secretValue"));
+  }
 }

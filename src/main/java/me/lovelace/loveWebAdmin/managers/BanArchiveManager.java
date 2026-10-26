@@ -58,7 +58,7 @@ public class BanArchiveManager {
         long threshold = now - ARCHIVE_AFTER_SEC;
         List<WebBan> bans = plugin.getDatabaseManager().getAllBans("UNBANNED");
         for (WebBan ban : bans) {
-            if (ban.createdAt() > threshold) continue;
+            if (ban.createdAt() > threshold || ban.linkedReportId()!=null || plugin.getDatabaseManager().getAppealByBanId(ban.id()).isPresent()) continue;
             try {
                 Path single = archiveDir.resolve("ban-" + ban.id() + "-" +
                     (ban.targetName() != null ? ban.targetName().replaceAll("[^a-zA-Z0-9_-]", "_") : "x") + ".zip");

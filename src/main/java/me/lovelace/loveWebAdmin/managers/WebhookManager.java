@@ -46,6 +46,11 @@ public class WebhookManager {
             long now = System.currentTimeMillis() / 1000L;
             for (WebhookRecord hook : hooks) {
                 if (!hook.subscribesTo(event)) continue;
+                if(hook.isDiscord() && (event.equals("REPORT")||event.equals("REPORT_RESOLVED"))) {
+                    String mode=plugin.getConfig().getString("discord.reports-transport","auto");
+                    boolean bot=plugin.getDiscordBridge()!=null&&plugin.getDiscordBridge().isAvailable()&&!plugin.getConfig().getString("discord.reports-channel-id","").isBlank();
+                    if(mode.equalsIgnoreCase("bot")||mode.equalsIgnoreCase("auto")&&bot)continue;
+                }
 
                 try {
                     sendToHook(hook, event, data, now);
