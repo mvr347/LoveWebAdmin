@@ -22,7 +22,7 @@ public class WebAdminBanEvent extends Event implements Cancellable {
     private boolean cancelled;
 
     public WebAdminBanEvent(String targetName, String reason, String creatorName, boolean isIpBan, Integer linkedReportId) {
-        super(true); // асинхронное событие
+        super(!org.bukkit.Bukkit.isPrimaryThread()); // асинхронное событие
         this.targetName = targetName;
         this.reason = reason;
         this.creatorName = creatorName;

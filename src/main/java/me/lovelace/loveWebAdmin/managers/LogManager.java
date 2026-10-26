@@ -34,6 +34,7 @@ public class LogManager {
     private final Deque<LogEntry> ringBuffer = new ArrayDeque<>(RING_BUFFER_SIZE);
     private Handler logHandler;
     private ScheduledTask flushTask;
+    private final me.lovelace.loveWebAdmin.utils.RunGuard flushGuard=new me.lovelace.loveWebAdmin.utils.RunGuard();
 
     public LogManager(LoveWebAdmin plugin) {
         this.plugin = plugin;
@@ -64,17 +65,23 @@ public class LogManager {
     }
 
     public void stopCapture() {
-        if (flushTask != null) {
-            flushTask.cancel();
-            flushTask = null;
+        try {
+            if(flushTask!=null)flushTask.cancel();
+        } finally {
+            flushTask=null;
+            detachAndDrain();
         }
+    }
+
+    private void detachAndDrain() {
         if (logHandler != null) {
             java.util.logging.Logger.getLogger("").removeHandler(logHandler);
             logHandler = null;
         }
+        flushGuard.stopAndAwait(3,TimeUnit.SECONDS);
         // Each flush is capped, so drain in rounds (bounded, in case the database keeps failing).
         for (int round = 0; round < 10 && pendingCount.get() > 0; round++) {
-            flushToDatabase();
+            flushBatch();
         }
     }
 
@@ -85,6 +92,11 @@ public class LogManager {
      * outran the per-line inserts and grew the queue without a bound).
      */
     private void flushToDatabase() {
+        if(!flushGuard.enter())return;
+        try{flushBatch();}finally{flushGuard.exit();}
+    }
+
+    private void flushBatch() {
         List<String> batch = new ArrayList<>(Math.min(Math.max(pendingCount.get(), 1), MAX_PER_FLUSH));
         String message;
         while (batch.size() < MAX_PER_FLUSH && (message = pendingMessages.poll()) != null) {
@@ -127,7 +139,7 @@ public class LogManager {
     }
 
     public void logWebAction(String actor, String action) {
-        plugin.getServer().getAsyncScheduler().runNow(plugin, task ->
+        plugin.io().run(() ->
             plugin.getDatabaseManager().saveWebLog(actor, action));
     }
 }

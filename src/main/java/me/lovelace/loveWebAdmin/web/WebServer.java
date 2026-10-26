@@ -27,6 +27,7 @@ public class WebServer {
     private final int port;
     private final String host;
     private Server server;
+    private boolean stopped;
 
     public WebServer(LoveWebAdmin plugin, int port, String host) {
         this.plugin = plugin;
@@ -34,7 +35,8 @@ public class WebServer {
         this.host = host;
     }
 
-    public void start() {
+    public synchronized void start() {
+        if(stopped)return;
         ServletContextHandler context = null;
         try {
             server = new Server();
@@ -130,34 +132,14 @@ public class WebServer {
 
             context.addServlet(authHolder, "/api/staff/shifts");
 
+            context.addServlet(new ServletHolder(new me.lovelace.loveWebAdmin.web.handlers.ApiCasesHandler(plugin)), "/api/cases/*");
             context.addServlet(new ServletHolder(new StaticHandler()), "/*");
 
             server.setHandler(context);
             server.start();
             plugin.getLogger().info("Веб-сервер запущен на " + host + ":" + port);
         } catch (Exception e) {
-            if (!"0.0.0.0".equals(host)) {
-                plugin.getLogger().warning("[LoveWebAdmin] Не удалось забиндить веб-сервер на " + host + ":" + port + " (" + e.getMessage() + ").");
-                plugin.getLogger().warning("[LoveWebAdmin] Если сервер на хостинге/VPS (Docker, Pterodactyl, NAT), ОС не позволяет биндить сокет на внешний IP напрямую.");
-                plugin.getLogger().warning("[LoveWebAdmin] Автоматическая попытка запуска на 0.0.0.0:" + port + "...");
-                try {
-                    if (server != null) {
-                        try { server.stop(); } catch (Exception ignored) {}
-                    }
-                    server = new Server();
-                    server.setStopTimeout(5000);
-                    ServerConnector fallbackConnector = new ServerConnector(server);
-                    fallbackConnector.setPort(port);
-                    fallbackConnector.setHost("0.0.0.0");
-                    server.addConnector(fallbackConnector);
-                    server.setHandler(context);
-                    server.start();
-                    plugin.getLogger().info("[LoveWebAdmin] Веб-сервер успешно запущен на 0.0.0.0:" + port + " (снаружи доступен по " + host + ":" + port + ")!");
-                    return;
-                } catch (Exception fallbackEx) {
-                    plugin.getLogger().severe("[LoveWebAdmin] Ошибка запуска и на 0.0.0.0: " + fallbackEx.getMessage());
-                }
-            }
+
             plugin.getLogger().severe("Не удалось запустить веб-сервер: " + e.getMessage());
             if (e.getMessage() != null && e.getMessage().contains("Failed to bind")) {
                 plugin.getLogger().severe("[LoveWebAdmin] РЕШЕНИЕ: Укажите web.host: \"0.0.0.0\" в plugins/LoveWebAdmin/config.yml и проверьте, не занят ли порт " + port + ".");
@@ -165,7 +147,8 @@ public class WebServer {
         }
     }
 
-    public void stop() {
+    public synchronized void stop() {
+        stopped=true;
         try {
             if (server != null) {
                 server.stop();

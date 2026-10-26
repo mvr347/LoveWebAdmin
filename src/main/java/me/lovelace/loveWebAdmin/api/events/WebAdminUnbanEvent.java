@@ -18,7 +18,7 @@ public class WebAdminUnbanEvent extends Event implements Cancellable {
     private boolean cancelled;
 
     public WebAdminUnbanEvent(int banId, String targetName, String adminName) {
-        super(true);
+        super(!org.bukkit.Bukkit.isPrimaryThread());
         this.banId = banId;
         this.targetName = targetName;
         this.adminName = adminName;

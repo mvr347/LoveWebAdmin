@@ -17,7 +17,7 @@ public class PlayerReportCreatedEvent extends Event implements Cancellable {
     private boolean cancelled;
 
     public PlayerReportCreatedEvent(PlayerReport report) {
-        super(true);
+        super(!org.bukkit.Bukkit.isPrimaryThread());
         this.report = report;
     }
 

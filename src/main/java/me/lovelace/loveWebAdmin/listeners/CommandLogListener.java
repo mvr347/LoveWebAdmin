@@ -25,7 +25,7 @@ public class CommandLogListener implements Listener {
     }
 
     public void refreshCache() {
-        plugin.getServer().getAsyncScheduler().runNow(plugin, task -> {
+        plugin.io().run(() -> {
             Set<String> usernames = plugin.getDatabaseManager().getAllAdmins().stream()
                 .map(WebAdmin::username)
                 .map(String::toLowerCase)
@@ -40,18 +40,18 @@ public class CommandLogListener implements Listener {
         String playerName = event.getPlayer().getName();
         String message = event.getMessage();
         if (message != null && message.startsWith("/")) {
-            String cmdOnly = message.substring(1);
-            plugin.getServer().getAsyncScheduler().runNow(plugin, task -> {
+            String cmdOnly = message.substring(1).split("\\s+",2)[0];
+            plugin.io().run(() -> {
                 plugin.getDatabaseManager().recordCommandExecution(cmdOnly);
             });
         }
 
         if (!adminUsernamesCache.contains(playerName.toLowerCase())) return;
 
-        String command = event.getMessage().substring(1);
+        String command = me.lovelace.loveWebAdmin.utils.CommandRedactor.redact(event.getMessage().substring(1));
         plugin.getLogManager().logWebAction(playerName, "Выполнил команду в игре: /" + command);
         if (plugin.getStaffAuditManager() != null) {
-            plugin.getServer().getAsyncScheduler().runNow(plugin, task -> {
+            plugin.io().run(() -> {
                 plugin.getStaffAuditManager().processStaffCommand(playerName, command);
             });
         }

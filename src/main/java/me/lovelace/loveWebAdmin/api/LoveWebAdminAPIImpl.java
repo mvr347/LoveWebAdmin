@@ -47,6 +47,12 @@ public class LoveWebAdminAPIImpl implements LoveWebAdminAPI {
         );
     }
 
+    @Override public WebBan banPlayer(String target,String reason,String description,long durationSeconds,
+            me.lovelace.loveWebAdmin.models.BanOrigin origin) {
+        boolean ok=plugin.getBanManager().finalizeBan(0,origin.actor(),target,reason,description,List.of(),false,durationSeconds,null,origin);
+        return ok ? plugin.getDatabaseManager().getActiveBan(target).orElse(null) : null;
+    }
+
     @Override
     public boolean unbanPlayer(String target, String adminName) {
         Optional<WebBan> banOpt = plugin.getDatabaseManager().getActiveBan(target);

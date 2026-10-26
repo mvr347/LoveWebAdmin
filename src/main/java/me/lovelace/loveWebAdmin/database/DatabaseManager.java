@@ -69,6 +69,13 @@ public class DatabaseManager {
                 return;
             }
             connection = DriverManager.getConnection("jdbc:sqlite:" + dbFile.getAbsolutePath());
+            File backup = new File(plugin.getDataFolder(),"database-before-moderation-v2.db");
+            if(dbFile.length()>0 && !backup.exists()) try(var snapshot=connection.createStatement()) {
+                snapshot.execute("VACUUM INTO '"+backup.getAbsolutePath().replace("'","''")+"'");
+            }
+            try(var settings=connection.createStatement()) {
+                settings.execute("PRAGMA journal_mode=WAL");settings.execute("PRAGMA busy_timeout=3000");
+            }
 
             try (Statement statement = connection.createStatement()) {
                 statement.execute("""
@@ -348,6 +355,7 @@ public class DatabaseManager {
                     )
                     """);
                 statement.execute("CREATE INDEX IF NOT EXISTS idx_appeal_messages_appeal ON appeal_messages(appeal_id)");
+                statement.execute("CREATE TABLE IF NOT EXISTS discord_appeal_messages(message_id TEXT PRIMARY KEY, appeal_id INTEGER NOT NULL)");
                 statement.execute("""
                     CREATE TABLE IF NOT EXISTS staff_panel_notifications (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -579,6 +587,15 @@ public class DatabaseManager {
             Permission.MANAGE_BANS,
             Permission.VIEW_PLAYERS,
             Permission.MANAGE_PLAYERS,
+            Permission.VIEW_PLAYER_IP,
+            Permission.VIEW_PLAYER_INVENTORY,
+            Permission.CONFISCATE_ITEMS,
+            Permission.RESTORE_ITEMS,
+            Permission.FREEZE_PLAYERS,
+            Permission.TELEPORT_PLAYERS,
+            Permission.CHANGE_GAMEMODE,
+            Permission.KICK_PLAYERS,
+            Permission.KILL_PLAYERS,
             Permission.MANAGE_LOVEAUTH,
             Permission.VIEW_VESUVIO,
             Permission.VIEW_VESUVIO_ADVANCED,
@@ -597,12 +614,6 @@ public class DatabaseManager {
         );
         if (getRoleByName("Администратор").isEmpty()) {
             saveRole(new WebRole(0, "Администратор", adminDesc, "ADMIN", 20, "admin", adminPerms, false, "#38bdf8"));
-        } else {
-            getRoleByName("Администратор").ifPresent(adminRole -> {
-                Set<Permission> perms = new HashSet<>(adminRole.permissions());
-                perms.addAll(adminPerms);
-                saveRole(new WebRole(adminRole.id(), adminRole.name(), adminDesc, "ADMIN", 20, adminRole.lpGroup(), perms, false, "#38bdf8"));
-            });
         }
 
         // 3. Модератор (MOD, 30)
@@ -615,6 +626,9 @@ public class DatabaseManager {
             Permission.VIEW_APPEALS,
             Permission.MANAGE_APPEALS,
             Permission.VIEW_PLAYERS,
+            Permission.VIEW_PLAYER_INVENTORY,
+            Permission.FREEZE_PLAYERS,
+            Permission.KICK_PLAYERS,
             Permission.VIEW_VESUVIO,
             Permission.VIEW_ECONOMY,
             Permission.VIEW_REPORTS,
@@ -622,12 +636,6 @@ public class DatabaseManager {
         );
         if (getRoleByName("Модератор").isEmpty()) {
             saveRole(new WebRole(0, "Модератор", modDesc, "MOD", 30, "mod", modPerms, false, "#22c55e"));
-        } else {
-            getRoleByName("Модератор").ifPresent(modRole -> {
-                Set<Permission> perms = new HashSet<>(modRole.permissions());
-                perms.addAll(modPerms);
-                saveRole(new WebRole(modRole.id(), modRole.name(), modDesc, "MOD", 30, modRole.lpGroup(), perms, false, "#22c55e"));
-            });
         }
 
         // 4. Испытательный срок (PROBATION, 40)
@@ -646,10 +654,6 @@ public class DatabaseManager {
         );
         if (getRoleByName("Испытательный срок").isEmpty()) {
             saveRole(new WebRole(0, "Испытательный срок", probationDesc, "PROBATION", 40, "probation", probationPerms, false, "#f59e0b"));
-        } else {
-            getRoleByName("Испытательный срок").ifPresent(probRole -> {
-                saveRole(new WebRole(probRole.id(), probRole.name(), probationDesc, "PROBATION", 40, probRole.lpGroup(), probationPerms, false, "#f59e0b"));
-            });
         }
     }
 
@@ -2923,7 +2927,7 @@ public class DatabaseManager {
 
     public synchronized boolean resolveReport(int id, String status, String resolvedBy, Integer linkedBanId) {
         long now = System.currentTimeMillis() / 1000L;
-        String sql = "UPDATE player_reports SET status = ?, resolved_by = ?, resolved_at = ?, linked_ban_id = ? WHERE id = ?";
+        String sql = "UPDATE player_reports SET status = ?, resolved_by = ?, resolved_at = ?, linked_ban_id = ? WHERE id = ? AND status = 'PENDING'";
         try (PreparedStatement ps = connection.prepareStatement(sql)) {
             ps.setString(1, status);
             ps.setString(2, resolvedBy != null ? resolvedBy : "ADMIN");
@@ -3339,6 +3343,7 @@ public class DatabaseManager {
     // ==========================================
 
     public synchronized int createAppeal(int banId, String playerUuid, String playerName, String reason) {
+        if (getAppealByBanId(banId).filter(a -> "PENDING".equals(a.status()) || "DECIDING".equals(a.status())).isPresent()) return -1;
         String sql = """
             INSERT INTO ban_appeals (ban_id, player_uuid, player_name, reason, status, created_at, updated_at)
             VALUES (?, ?, ?, ?, 'PENDING', strftime('%s', 'now'), strftime('%s', 'now'))
@@ -3447,6 +3452,12 @@ public class DatabaseManager {
         return list;
     }
 
+    public synchronized boolean reserveAppealDecision(int id) {
+        try (var q = connection.prepareStatement("UPDATE ban_appeals SET status='DECIDING' WHERE id=? AND status='PENDING'")) {
+            q.setInt(1,id); return q.executeUpdate()==1;
+        } catch (SQLException e) { throw new IllegalStateException(e); }
+    }
+
     public synchronized boolean updateAppealStatus(int id, String status) {
         String sql = "UPDATE ban_appeals SET status = ?, updated_at = strftime('%s', 'now') WHERE id = ?";
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
@@ -3472,6 +3483,7 @@ public class DatabaseManager {
     }
 
     public synchronized int addAppealMessage(int appealId, String authorName, boolean isStaff, String message) {
+        if (getAppealById(appealId).isEmpty()) return -1;
         String sql = """
             INSERT INTO appeal_messages (appeal_id, author_name, is_staff, message, created_at)
             VALUES (?, ?, ?, ?, strftime('%s', 'now'))
@@ -3497,6 +3509,20 @@ public class DatabaseManager {
             plugin.getLogger().warning("[DatabaseManager] Ошибка добавления сообщения в апелляцию: " + e.getMessage());
         }
         return -1;
+    }
+
+    public synchronized boolean addDiscordAppealMessage(int appealId,String messageId,String author,boolean staff,String body) {
+        try {
+            connection.setAutoCommit(false);
+            try(var q=connection.prepareStatement("INSERT OR IGNORE INTO discord_appeal_messages(message_id,appeal_id) VALUES(?,?)")) {
+                q.setString(1,messageId);q.setInt(2,appealId);
+                if(q.executeUpdate()==0){connection.rollback();return true;}
+            }
+            if(getAppealById(appealId).filter(a->a.status().equals("PENDING")).isEmpty()){connection.rollback();return true;}
+            if(addAppealMessage(appealId,author,staff,body)<=0)throw new SQLException("Сообщение не сохранено");
+            connection.commit();return true;
+        }catch(SQLException e){try{connection.rollback();}catch(SQLException rollback){e.addSuppressed(rollback);}throw new IllegalStateException(e);}
+        finally{try{connection.setAutoCommit(true);}catch(SQLException e){throw new IllegalStateException(e);}}
     }
 
     public synchronized List<AppealMessage> getAppealMessages(int appealId) {

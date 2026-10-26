@@ -28,6 +28,7 @@ import java.util.Optional;
  */
 public class ApiAppealsHandler extends ApiHandlerSupport {
 
+    private final me.lovelace.loveWebAdmin.utils.SubmissionLimiter submissions=new me.lovelace.loveWebAdmin.utils.SubmissionLimiter();
     public ApiAppealsHandler(LoveWebAdmin plugin) {
         super(plugin);
     }
@@ -39,6 +40,9 @@ public class ApiAppealsHandler extends ApiHandlerSupport {
         if (pathInfo == null || pathInfo.isEmpty() || "/".equals(pathInfo)) {
             String player = req.getParameter("player");
             if (player != null && !player.isBlank()) {
+                Optional<WebSession> staff = requireSession(req, resp);
+                if (staff.isEmpty()) return;
+                if (!hasViewPermission(staff.get())) { sendError(resp,403,"Требуется право просмотра апелляций"); return; }
                 handleGetPlayerAppeal(player.trim(), resp);
                 return;
             }
@@ -153,12 +157,12 @@ public class ApiAppealsHandler extends ApiHandlerSupport {
 
         // Проверка прав: персонал либо сам игрок
         Optional<WebSession> sessionOpt = authenticate(req);
-        String playerParam = req.getParameter("player");
+        String accessToken = req.getHeader("X-Appeal-Token");
         boolean isStaff = sessionOpt.isPresent() && hasViewPermission(sessionOpt.get());
-        boolean isAuthor = playerParam != null && playerParam.equalsIgnoreCase(appeal.playerName());
+        boolean isAuthor = isAuthor(appeal.id(), accessToken);
 
         if (!isStaff && !isAuthor) {
-            sendError(resp, 403, "Доступ ограничен. Укажите ник автора или войдите как персонал.");
+            sendError(resp, 403, "Доступ ограничен. Нужен ключ доступа автора или вход сотрудника.");
             return;
         }
 
@@ -166,12 +170,13 @@ public class ApiAppealsHandler extends ApiHandlerSupport {
     }
 
     private void handleCreateAppeal(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+        if(!submissions.take(req.getRemoteAddr())){sendError(resp,429,"Слишком много попыток. Повторите через 5 минут.");return;}
         Map<String, Object> body = readJsonBody(req);
         String playerName = stringOrNull(body.get("playerName"));
         String reason = stringOrNull(body.get("reason"));
         Object banIdObj = body.get("banId");
 
-        if (reason == null || reason.trim().length() < 5) {
+        if (reason == null || reason.trim().length() < 5 || reason.length()>2000) {
             sendError(resp, 400, "Опишите причину апелляции подробнее (минимум 5 символов)");
             return;
         }
@@ -215,6 +220,10 @@ public class ApiAppealsHandler extends ApiHandlerSupport {
             return;
         }
 
+        String accessToken;
+        try { accessToken = plugin.moderation().createAccess(appealId, null, false); }
+        catch (java.sql.SQLException e) { sendError(resp,500,"Не удалось сохранить доступ автора"); return; }
+
         // Добавляем первое сообщение в тред
         plugin.getDatabaseManager().addAppealMessage(appealId, activeBan.targetName(), false, reason.trim());
 
@@ -226,7 +235,10 @@ public class ApiAppealsHandler extends ApiHandlerSupport {
             plugin.getDiscordBridge().createAppealTicket(created);
 
             plugin.getLogManager().logWebAction(activeBan.targetName(), "Подал апелляцию бана #" + activeBan.id());
-            sendSuccess(resp, toAppealDetailMap(created));
+            Map<String,Object> data = toAppealDetailMap(created);
+            data.put("accessToken", accessToken);
+            data.put("accountVerified", false);
+            sendSuccess(resp, data);
         } else {
             sendSuccess(resp, Map.of("id", appealId, "status", "PENDING"));
         }
@@ -247,7 +259,7 @@ public class ApiAppealsHandler extends ApiHandlerSupport {
 
         Map<String, Object> body = readJsonBody(req);
         String message = stringOrNull(body.get("message"));
-        if (message == null || message.isBlank()) {
+        if (message == null || message.isBlank() || message.length()>4000) {
             sendError(resp, 400, "Сообщение не может быть пустым");
             return;
         }
@@ -260,7 +272,7 @@ public class ApiAppealsHandler extends ApiHandlerSupport {
             authorName = sessionOpt.get().adminUsername();
         } else {
             String authorParam = stringOrNull(body.get("authorName"));
-            if (authorParam == null || !authorParam.equalsIgnoreCase(appeal.playerName())) {
+            if (!isAuthor(appeal.id(), req.getHeader("X-Appeal-Token"))) {
                 sendError(resp, 403, "У вас нет доступа к отправке сообщений в данную апелляцию");
                 return;
             }
@@ -285,71 +297,13 @@ public class ApiAppealsHandler extends ApiHandlerSupport {
         ));
     }
 
-    private void handleApprove(int appealId, HttpServletRequest req, HttpServletResponse resp) throws IOException {
-        Optional<WebSession> sessionOpt = requireManagePermission(req, resp);
-        if (sessionOpt.isEmpty()) return;
-
-        Optional<WebBanAppeal> appealOpt = plugin.getDatabaseManager().getAppealById(appealId);
-        if (appealOpt.isEmpty()) {
-            sendError(resp, 404, "Апелляция не найдена");
-            return;
-        }
-
-        WebBanAppeal appeal = appealOpt.get();
-        Map<String, Object> body = readJsonBody(req);
-        String verdictMessage = stringOrNull(body.get("verdictMessage"));
-        String admin = sessionOpt.get().adminUsername();
-
-        // 1. Разбаниваем игрока
-        plugin.getBanManager().unban(appeal.banId(), admin);
-
-        // 2. Обновляем статус апелляции
-        plugin.getDatabaseManager().updateAppealStatus(appealId, "APPROVED");
-
-        // 3. Добавляем системное сообщение вердикта
-        String finalMsg = (verdictMessage != null && !verdictMessage.isBlank())
-            ? "✅ Апелляция ОДОБРЕНА администратором " + admin + ".\n" + verdictMessage.trim()
-            : "✅ Апелляция ОДОБРЕНА. Игрок разблокирован на сервере.";
-        plugin.getDatabaseManager().addAppealMessage(appealId, admin, true, finalMsg);
-
-        // 4. Синхронизируем с Discord
-        plugin.getDiscordBridge().sendTicketReply(appeal, admin, true, finalMsg);
-        plugin.getDiscordBridge().closeAppealTicket(appeal, "Апелляция одобрена " + admin);
-
-        plugin.getLogManager().logWebAction(admin, "Одобрил апелляцию #" + appealId + " для игрока " + appeal.playerName());
-        sendSuccess(resp, Map.of("status", "APPROVED", "message", "Апелляция одобрена, игрок разбанен"));
-    }
-
-    private void handleReject(int appealId, HttpServletRequest req, HttpServletResponse resp) throws IOException {
-        Optional<WebSession> sessionOpt = requireManagePermission(req, resp);
-        if (sessionOpt.isEmpty()) return;
-
-        Optional<WebBanAppeal> appealOpt = plugin.getDatabaseManager().getAppealById(appealId);
-        if (appealOpt.isEmpty()) {
-            sendError(resp, 404, "Апелляция не найдена");
-            return;
-        }
-
-        WebBanAppeal appeal = appealOpt.get();
-        Map<String, Object> body = readJsonBody(req);
-        String verdictMessage = stringOrNull(body.get("verdictMessage"));
-        String admin = sessionOpt.get().adminUsername();
-
-        // 1. Обновляем статус апелляции
-        plugin.getDatabaseManager().updateAppealStatus(appealId, "REJECTED");
-
-        // 2. Добавляем системное сообщение вердикта
-        String finalMsg = (verdictMessage != null && !verdictMessage.isBlank())
-            ? "❌ Апелляция ОТКЛОНЕНА администратором " + admin + ".\n" + verdictMessage.trim()
-            : "❌ Апелляция ОТКЛОНЕНА персоналом сервера. Наказание остаётся в силе.";
-        plugin.getDatabaseManager().addAppealMessage(appealId, admin, true, finalMsg);
-
-        // 3. Синхронизируем с Discord
-        plugin.getDiscordBridge().sendTicketReply(appeal, admin, true, finalMsg);
-        plugin.getDiscordBridge().closeAppealTicket(appeal, "Апелляция отклонена " + admin);
-
-        plugin.getLogManager().logWebAction(admin, "Отклонил апелляцию #" + appealId + " для игрока " + appeal.playerName());
-        sendSuccess(resp, Map.of("status", "REJECTED", "message", "Апелляция отклонена"));
+    private void handleApprove(int id,HttpServletRequest req,HttpServletResponse resp)throws IOException {decide(id,true,req,resp);}
+    private void handleReject(int id,HttpServletRequest req,HttpServletResponse resp)throws IOException {decide(id,false,req,resp);}
+    private void decide(int id,boolean approve,HttpServletRequest req,HttpServletResponse resp)throws IOException {
+        var auth=requireManagePermission(req,resp);if(auth.isEmpty())return;
+        var body=readJsonBody(req);
+        String result=plugin.appeals().decide(id,auth.get().adminUsername(),approve,stringOrNull(body.get("verdictMessage")));
+        sendSuccess(resp,Map.of("status",approve?"APPROVED":"REJECTED","message",result));
     }
 
     private boolean hasViewPermission(WebSession session) {
@@ -361,7 +315,7 @@ public class ApiAppealsHandler extends ApiHandlerSupport {
     }
 
     private Optional<WebSession> requireManagePermission(HttpServletRequest req, HttpServletResponse resp) throws IOException {
-        Optional<WebSession> sessionOpt = authenticate(req);
+        Optional<WebSession> sessionOpt = requireSession(req, resp);
         if (sessionOpt.isEmpty()) {
             sendError(resp, 401, "Необходима авторизация");
             return Optional.empty();
@@ -393,7 +347,13 @@ public class ApiAppealsHandler extends ApiHandlerSupport {
             map.put("banExpiresAt", ban.expiresAt());
         });
 
+        try{map.put("accountVerified",plugin.moderation().verified(appeal.id()));}catch(java.sql.SQLException e){throw new IllegalStateException(e);}
         return map;
+    }
+
+    private boolean isAuthor(int id, String token) {
+        try { return plugin.moderation().author(id,token); }
+        catch (java.sql.SQLException e) { return false; }
     }
 
     private Map<String, Object> toAppealDetailMap(WebBanAppeal appeal) {

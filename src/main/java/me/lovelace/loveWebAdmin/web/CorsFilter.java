@@ -33,14 +33,16 @@ public class CorsFilter implements Filter {
 
         String origin = httpRequest.getHeader("Origin");
         List<String> allowedOrigins = plugin.getConfig().getStringList("security.cors.allowed-origins");
-        boolean allowAll = allowedOrigins.contains("*");
-        boolean isAllowed = origin != null && (allowAll || allowedOrigins.isEmpty() || allowedOrigins.contains(origin));
+        int port=httpRequest.getServerPort();
+        String sameOrigin=httpRequest.getScheme()+"://"+httpRequest.getServerName()+
+            ((port==80&&httpRequest.getScheme().equals("http")||port==443&&httpRequest.getScheme().equals("https"))?"":":"+port);
+        boolean isAllowed = origin != null && (origin.equals(sameOrigin) || allowedOrigins.contains(origin));
 
         if (isAllowed) {
             httpResponse.setHeader("Access-Control-Allow-Origin", origin != null ? origin : "*");
             httpResponse.setHeader("Vary", "Origin");
             httpResponse.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-            httpResponse.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key, Accept, Origin, X-Requested-With");
+            httpResponse.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key, Accept, Origin, X-Requested-With, X-Appeal-Token");
         }
 
         // Security headers
@@ -53,7 +55,7 @@ public class CorsFilter implements Filter {
             "font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self'; frame-ancestors 'none'");
 
         if ("OPTIONS".equalsIgnoreCase(httpRequest.getMethod())) {
-            httpResponse.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key, Accept, Origin, X-Requested-With");
+            httpResponse.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key, Accept, Origin, X-Requested-With, X-Appeal-Token");
             httpResponse.setStatus(HttpServletResponse.SC_OK);
             return;
         }

@@ -19,8 +19,19 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
+      # Build the exact paired API revision rather than waiting for a JitPack cache.
+      - uses: actions/checkout@v4
+        with:
+          repository: mvr347/LoveCore
+          ref: 0d852bffb28599459857c26b1c3646c882bfa60e
+          path: .build/LoveCore
+      - name: Build paired LoveCore API
+        run: |
+          mvn -B -f .build/LoveCore/pom.xml -pl lovecore-api -am package -DskipTests
+          mvn -B org.apache.maven.plugins:maven-install-plugin:3.1.4:install-file -Dfile=.build/LoveCore/lovecore-api/target/lovecore-api-1.0.0.jar -DgroupId=com.github.mvr347.LoveCore -DartifactId=lovecore-api -Dversion=0d852bffb28599459857c26b1c3646c882bfa60e -Dpackaging=jar -DgeneratePom=true
+
       - name: Build with Maven
-        run: mvn -B -DskipTests package
+        run: mvn -B verify
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -30,3 +41,10 @@ jobs:
             target/*.jar
             !target/original-*.jar
           if-no-files-found: error
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: LoveWebAdmin-test-reports
+          path: target/surefire-reports/

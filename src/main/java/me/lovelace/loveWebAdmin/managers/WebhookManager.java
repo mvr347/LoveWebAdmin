@@ -39,7 +39,7 @@ public class WebhookManager {
      * Асинхронно отправляет событие во все подписанные активные вебхуки.
      */
     public void dispatch(String event, Map<String, Object> data) {
-        plugin.getServer().getAsyncScheduler().runNow(plugin, task -> {
+        plugin.io().run(() -> {
             List<WebhookRecord> hooks = plugin.getDatabaseManager().getActiveWebhooks();
             if (hooks.isEmpty()) return;
 
@@ -110,7 +110,7 @@ public class WebhookManager {
                 return status;
             })
             .exceptionally(ex -> {
-                plugin.getLogger().warning("[WebhookManager] Сбой доставки в " + hook.url() + ": " + ex.getMessage());
+                plugin.getLogger().warning("[WebhookManager] Сбой доставки вебхука №" + hook.id());
                 return 500;
             });
     }

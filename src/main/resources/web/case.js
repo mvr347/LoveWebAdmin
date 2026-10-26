@@ -1,0 +1,15 @@
+(() => {
+'use strict';const $=id=>document.getElementById(id),q=new URLSearchParams(location.search),kind=q.get('kind'),id=q.get('id');let data;
+const key=localStorage.getItem('wa_token')||localStorage.getItem('lwa_token');
+async function api(method,path,body){const r=await fetch(path,{method,headers:{Authorization:'Bearer '+(key||''),'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});const j=await r.json();if(!r.ok||!j.success)throw Error(j.error||'Запрос не выполнен');return j.data;}
+function fail(e){$('status').textContent=e.message;$('status').className='error';}
+function messages(target,items){$(target).replaceChildren();for(const m of items){const el=document.createElement('p');el.className='message';el.textContent=(m.authorName||m.author)+' · '+new Date(m.createdAt*1000).toLocaleString('ru-RU')+'\n'+(m.message||m.body);$(target).append(el);}}
+async function load(){if(!['report','appeal'].includes(kind)||!/^\d+$/.test(id))throw Error('Некорректная ссылка на дело');const workspace=await api('GET','/api/cases/'+kind+'/'+id);data=await api('GET','/api/'+(kind==='report'?'reports':'appeals')+'/'+id);const d=kind==='report'?data.report:data;$('heading').textContent=(kind==='report'?'Жалоба':'Апелляция')+' №'+id;$('summary').textContent=(d.targetName||d.playerName)+' — '+(d.description||d.reason||'')+' · '+({PENDING:'На рассмотрении',DECIDING:'Принимается решение',APPROVED:'Одобрена',REJECTED:'Отклонена',ACCEPTED:'Подтверждена',EXPIRED:'Истекла'})[d.status];$('details').textContent=kind==='report'?(data.chatLogs||[]).map(m=>(m.playerName||m.player_name||'')+': '+(m.message||'')).join('\n'):'';$('owner').textContent='Ответственный: '+(workspace.work.assignee||'Не назначен');$('assignee').value=workspace.work.assignee;$('priority').value=workspace.work.priority;$('work-state').value=['IN_PROGRESS','WAITING'].includes(workspace.work.state)?workspace.work.state:'IN_PROGRESS';messages('notes',workspace.notes);$('appeal').hidden=kind!=='appeal';if(kind==='appeal')messages('messages',data.messages||[]);$('status').textContent='Обновлено: '+new Date().toLocaleTimeString('ru-RU');}
+async function post(action,body){await api('POST','/api/cases/'+kind+'/'+id+'/'+action,body);await load();}
+$('claim').onclick=()=>post('claim',{}).catch(fail);
+$('work').onsubmit=e=>{e.preventDefault();post('work',{assignee:$('assignee').value,priority:$('priority').value,state:$('work-state').value}).catch(fail);};
+$('note').onsubmit=e=>{e.preventDefault();post('note',{text:$('note-text').value}).then(()=>$('note-text').value='').catch(fail);};
+$('reply-form').onsubmit=e=>{e.preventDefault();api('POST','/api/appeals/'+id+'/reply',{message:$('reply').value}).then(load).then(()=>$('reply').value='').catch(fail);};
+for(const action of ['approve','reject'])$(action).onclick=async()=>{if($('verdict').value.trim().length<5){fail(Error('Укажите причину решения'));return;}if(!confirm('Применить решение по апелляции №'+id+'?'))return;try{await api('POST','/api/appeals/'+id+'/'+action,{verdictMessage:$('verdict').value});await load();}catch(e){fail(e);}};
+load().catch(fail);
+})();

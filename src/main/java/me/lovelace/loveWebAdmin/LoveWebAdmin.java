@@ -30,8 +30,16 @@ import org.bukkit.Bukkit;
 import org.bukkit.event.HandlerList;
 import org.bukkit.plugin.java.JavaPlugin;
 
-public final class LoveWebAdmin extends JavaPlugin {
+public class LoveWebAdmin extends JavaPlugin {
 
+    private me.lovelace.loveWebAdmin.concurrent.MainDispatcher main;
+    private me.lovelace.loveWebAdmin.concurrent.VirtualIoExecutor io;
+    public me.lovelace.loveWebAdmin.concurrent.MainDispatcher main() { return main; }
+    public me.lovelace.loveWebAdmin.concurrent.VirtualIoExecutor io() { return io; }
+    private me.lovelace.loveWebAdmin.database.ModerationStore moderation;
+    public me.lovelace.loveWebAdmin.database.ModerationStore moderation() { return moderation; }
+    private final me.lovelace.loveWebAdmin.managers.AppealService appeals = new me.lovelace.loveWebAdmin.managers.AppealService(this);
+    public me.lovelace.loveWebAdmin.managers.AppealService appeals(){return appeals;}
     private DatabaseManager databaseManager;
     private LogManager logManager;
     private RoleManager roleManager;
@@ -67,11 +75,15 @@ public final class LoveWebAdmin extends JavaPlugin {
 
     @Override
     public void onEnable() {
+        main=new me.lovelace.loveWebAdmin.concurrent.MainDispatcher(this);
+        io=new me.lovelace.loveWebAdmin.concurrent.VirtualIoExecutor("lwa-io-",8,256);
         startTimeMillis = System.currentTimeMillis();
         saveDefaultConfig();
 
         this.databaseManager = new DatabaseManager(this);
         this.databaseManager.initialize();
+        try { this.moderation = new me.lovelace.loveWebAdmin.database.ModerationStore(getDataFolder().toPath().resolve("moderation.db")); }
+        catch (java.sql.SQLException e) { throw new IllegalStateException("Не удалось открыть хранилище дел", e); }
 
         this.logManager = new LogManager(this);
         this.logManager.startCapture();
@@ -203,25 +215,32 @@ public final class LoveWebAdmin extends JavaPlugin {
             getLogger().warning("=============================================================================");
         }
         this.webServer = new WebServer(this, port, host);
-        Bukkit.getAsyncScheduler().runNow(this, task -> webServer.start());
+        if(getConfig().getBoolean("web.enabled",true))io.run(webServer::start);
 
         getLogger().info("LoveWebAdmin запущен на " + host + ":" + port);
     }
 
-    @Override
-    public void onDisable() {
-        if (banArchiveManager != null) banArchiveManager.stop();
-        if (banManager != null) banManager.stopCleanupTask();
+    private void safely(String component,Runnable close) {
+        try{close.run();}catch(Throwable e){getLogger().log(java.util.logging.Level.SEVERE,"Ошибка остановки "+component,e);}
+    }
+    @Override public void onDisable() {
+        if(main!=null)main.close();
+        if(discordBridge!=null)safely("Discord",discordBridge::close);
+        if(webServer!=null)safely("HTTP",webServer::stop);
+        if(banArchiveManager!=null)safely("архив",banArchiveManager::stop);
+        if(banManager!=null)safely("наказания",banManager::stopCleanupTask);
+        if(loveEconomyTracker!=null)safely("экономика",loveEconomyTracker::stop);
+        if(sessionManager!=null)safely("сессии",sessionManager::stopCleanupTask);
+        if(loginAttemptTracker!=null)safely("вход",loginAttemptTracker::stopCleanupTask);
+        if(logManager!=null)safely("журнал",logManager::stopCapture);
+        if(freezeManager!=null)safely("заморозка",freezeManager::clearAll);
         me.lovelace.loveWebAdmin.api.LoveWebAdminAPIProvider.unregister();
         HandlerList.unregisterAll(this);
-        if (loveEconomyTracker != null) loveEconomyTracker.stop();
-        if (freezeManager != null) freezeManager.clearAll();
-        if (webServer != null) webServer.stop();
-        if (sessionManager != null) sessionManager.stopCleanupTask();
-        if (loginAttemptTracker != null) loginAttemptTracker.stopCleanupTask();
-        if (logManager != null) logManager.stopCapture();
-        if (databaseManager != null) databaseManager.close();
-        getLogger().info("LoveWebAdmin остановлен.");
+        safely("Bukkit scheduler",()->getServer().getScheduler().cancelTasks(this));
+        safely("Async scheduler",()->getServer().getAsyncScheduler().cancelTasks(this));
+        if(io!=null)io.stop(java.time.Duration.ofSeconds(3));
+        if(moderation!=null)safely("дела",()->{try{moderation.close();}catch(java.sql.SQLException e){throw new IllegalStateException(e);}});
+        if(databaseManager!=null)safely("SQLite",databaseManager::close);
     }
 
     public long getUptimeSeconds() {

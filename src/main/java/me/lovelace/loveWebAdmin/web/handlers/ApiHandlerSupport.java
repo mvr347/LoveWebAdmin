@@ -77,7 +77,9 @@ public abstract class ApiHandlerSupport extends HttpServlet {
                     return Optional.of(createApiKeySession(opt.get(), req));
                 }
             }
-            return plugin.getSessionManager().validate(token, req.getRemoteAddr());
+            return plugin.getSessionManager().validate(token, req.getRemoteAddr()).flatMap(session ->
+                plugin.getDatabaseManager().getAdminById(session.adminId()).filter(admin->"ACTIVE".equals(admin.status()))
+                    .map(admin->new WebSession(session.token(),admin.id(),admin.username(),admin.roleId(),session.expiresAt(),session.ip(),session.userAgent(),session.createdAt(),session.lastUsedAt())));
         }
         return Optional.empty();
     }
@@ -106,7 +108,9 @@ public abstract class ApiHandlerSupport extends HttpServlet {
             }
             return false;
         }
-        return plugin.getDatabaseManager().getRoleById(session.roleId())
+        return plugin.getDatabaseManager().getAdminById(session.adminId())
+            .filter(admin->"ACTIVE".equals(admin.status()))
+            .flatMap(admin->plugin.getDatabaseManager().getRoleById(admin.roleId()))
             .map(role -> role.isOwner() || role.permissions().contains(permission))
             .orElse(false);
     }
@@ -130,7 +134,7 @@ public abstract class ApiHandlerSupport extends HttpServlet {
     }
 
     protected Optional<WebSession> requirePermission(HttpServletRequest req, HttpServletResponse resp, Permission permission) throws IOException {
-        Optional<WebSession> sessionOpt = authenticate(req);
+        Optional<WebSession> sessionOpt = requireSession(req, resp);
         if (sessionOpt.isEmpty()) {
             sendError(resp, 401, "Требуется авторизация");
             return Optional.empty();

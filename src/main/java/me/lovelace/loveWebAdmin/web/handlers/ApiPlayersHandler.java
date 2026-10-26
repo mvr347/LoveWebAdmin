@@ -56,8 +56,9 @@ public class ApiPlayersHandler extends ApiHandlerSupport {
         }
 
         if (cleanPath.contains("/inventory")) {
+            if (!hasPermission(sessionOpt.get(),Permission.VIEW_PLAYER_INVENTORY)){sendError(resp,403,"Нет права просмотра инвентаря");return;}
             String playerName = cleanPath.substring(0, cleanPath.indexOf("/inventory"));
-            Player player = Bukkit.getPlayerExact(playerName);
+            Player player = plugin.main().call(() -> Bukkit.getPlayerExact(playerName)).join();
             if (player == null || !player.isOnline()) {
                 sendError(resp, 404, "Игрок не в сети или не найден");
                 return;
@@ -72,6 +73,7 @@ public class ApiPlayersHandler extends ApiHandlerSupport {
         }
 
         if (cleanPath.contains("/alts")) {
+            if(!hasPermission(sessionOpt.get(),Permission.VIEW_PLAYER_IP)){sendError(resp,403,"Нет права просмотра связей IP");return;}
             String playerName = cleanPath.substring(0, cleanPath.indexOf("/alts"));
             Map<String, Object> alts = plugin.getDatabaseManager().getAssociatedAccounts(playerName);
             sendSuccess(resp, alts);
@@ -85,6 +87,13 @@ public class ApiPlayersHandler extends ApiHandlerSupport {
             return;
         }
 
+        if(cleanPath.endsWith("/confiscated")) {
+            if(!hasPermission(sessionOpt.get(),Permission.RESTORE_ITEMS)){sendError(resp,403,"Нет права возврата вещей");return;}
+            String name=cleanPath.substring(0,cleanPath.indexOf("/confiscated"));
+            var record=plugin.getDatabaseManager().getPlayerStats(name);
+            if(record.isEmpty()){sendError(resp,404,"Игрок не найден");return;}
+            try{sendSuccess(resp,plugin.moderation().evidenceList(record.get().get("uuid").toString()));}catch(java.sql.SQLException e){throw new IllegalStateException(e);}return;
+        }
         // Запрос полного профиля
         String playerName = cleanPath;
         if (playerName.isBlank()) {
@@ -93,12 +102,13 @@ public class ApiPlayersHandler extends ApiHandlerSupport {
         }
 
         Map<String, Object> profile = plugin.getPlayerProfileManager().getFullProfile(playerName);
+        if(!hasPermission(sessionOpt.get(),Permission.VIEW_PLAYER_IP))profile.remove("ip");
         sendSuccess(resp, profile);
     }
 
     @Override
     protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws IOException {
-        Optional<WebSession> sessionOpt = requirePermission(req, resp, Permission.MANAGE_PLAYERS);
+        Optional<WebSession> sessionOpt = requireSession(req, resp);
         if (sessionOpt.isEmpty()) return;
         WebSession session = sessionOpt.get();
 
@@ -111,6 +121,7 @@ public class ApiPlayersHandler extends ApiHandlerSupport {
         String cleanPath = pathInfo.startsWith("/") ? pathInfo.substring(1) : pathInfo;
 
         if (cleanPath.contains("/notes")) {
+            if(!hasPermission(session,Permission.MANAGE_PLAYERS)){sendError(resp,403,"Нет права добавления заметок");return;}
             String playerName = cleanPath.substring(0, cleanPath.indexOf("/notes"));
             Map<String, Object> body = readJsonBody(req);
             String note = stringOrNull(body.get("note"));
@@ -130,7 +141,7 @@ public class ApiPlayersHandler extends ApiHandlerSupport {
         }
 
         String playerName = cleanPath.substring(0, cleanPath.indexOf("/action"));
-        Player player = Bukkit.getPlayerExact(playerName);
+        Player player = plugin.main().call(() -> Bukkit.getPlayerExact(playerName)).join();
         if (player == null || !player.isOnline()) {
             sendError(resp, 404, "Игрок не в сети или не найден");
             return;
@@ -143,10 +154,22 @@ public class ApiPlayersHandler extends ApiHandlerSupport {
             return;
         }
 
+        Permission needed = switch(action.toLowerCase(java.util.Locale.ROOT)) {
+            case "remove_item","clear_inventory" -> Permission.CONFISCATE_ITEMS;
+            case "restore_item" -> Permission.RESTORE_ITEMS;
+            case "freeze","unfreeze" -> Permission.FREEZE_PLAYERS;
+            case "gamemode" -> Permission.CHANGE_GAMEMODE;
+            case "teleport_spawn" -> Permission.TELEPORT_PLAYERS;
+            case "kick" -> Permission.KICK_PLAYERS;
+            case "kill" -> Permission.KILL_PLAYERS;
+            default -> Permission.MANAGE_PLAYERS;
+        };
+        if(!hasPermission(session,needed)){sendError(resp,403,"Недостаточно прав для этого действия");return;}
         try {
             switch (action.toLowerCase()) {
                 case "heal" -> {
-                    plugin.getServer().getScheduler().callSyncMethod(plugin, () -> {
+                    plugin.main().call( () -> {
+                        if(!player.isOnline())throw new IllegalArgumentException("Игрок вышел с сервера");
                         player.setHealth(player.getMaxHealth());
                         player.setFoodLevel(20);
                         player.sendMessage(Component.text("§a[WebAdmin] Ваше здоровье и сытость были восстановлены администратором."));
@@ -156,7 +179,8 @@ public class ApiPlayersHandler extends ApiHandlerSupport {
                     sendSuccess(resp, Map.of("message", "Здоровье игрока восстановлено"));
                 }
                 case "feed" -> {
-                    plugin.getServer().getScheduler().callSyncMethod(plugin, () -> {
+                    plugin.main().call( () -> {
+                        if(!player.isOnline())throw new IllegalArgumentException("Игрок вышел с сервера");
                         player.setFoodLevel(20);
                         player.setSaturation(20f);
                         player.sendMessage(Component.text("§a[WebAdmin] Ваша сытость была восстановлена администратором."));
@@ -178,7 +202,8 @@ public class ApiPlayersHandler extends ApiHandlerSupport {
                         sendError(resp, 400, "Недопустимый игровой режим: " + modeStr);
                         return;
                     }
-                    plugin.getServer().getScheduler().callSyncMethod(plugin, () -> {
+                    plugin.main().call( () -> {
+                        if(!player.isOnline())throw new IllegalArgumentException("Игрок вышел с сервера");
                         player.setGameMode(gm);
                         player.sendMessage(Component.text("§e[WebAdmin] Ваш игровой режим изменён на " + gm.name()));
                         return true;
@@ -187,7 +212,8 @@ public class ApiPlayersHandler extends ApiHandlerSupport {
                     sendSuccess(resp, Map.of("message", "Режим игры изменён на " + gm.name()));
                 }
                 case "teleport_spawn" -> {
-                    plugin.getServer().getScheduler().callSyncMethod(plugin, () -> {
+                    plugin.main().call( () -> {
+                        if(!player.isOnline())throw new IllegalArgumentException("Игрок вышел с сервера");
                         player.teleport(player.getWorld().getSpawnLocation());
                         player.sendMessage(Component.text("§e[WebAdmin] Вы были телепортированы на спавн администратором."));
                         return true;
@@ -196,18 +222,19 @@ public class ApiPlayersHandler extends ApiHandlerSupport {
                     sendSuccess(resp, Map.of("message", "Игрок телепортирован на спавн"));
                 }
                 case "freeze" -> {
-                    plugin.getFreezeManager().setFrozen(player, true, session.adminUsername());
+                    plugin.main().call(()->{plugin.getFreezeManager().setFrozen(player,true,session.adminUsername());return true;}).join();
                     sendSuccess(resp, Map.of("message", "Игрок заморожен для проверки", "isFrozen", true));
                 }
                 case "unfreeze" -> {
-                    plugin.getFreezeManager().setFrozen(player, false, session.adminUsername());
+                    plugin.main().call(()->{plugin.getFreezeManager().setFrozen(player,false,session.adminUsername());return true;}).join();
                     sendSuccess(resp, Map.of("message", "Игрок разморожен", "isFrozen", false));
                 }
                 case "kick" -> {
                     String reason = stringOrNull(body.get("reason"));
                     if (reason == null || reason.isBlank()) reason = "Кикнут администратором через веб-панель";
                     final String finalReason = reason;
-                    plugin.getServer().getScheduler().callSyncMethod(plugin, () -> {
+                    plugin.main().call( () -> {
+                        if(!player.isOnline())throw new IllegalArgumentException("Игрок вышел с сервера");
                         player.kick(Component.text("§c[WebAdmin] " + finalReason));
                         return true;
                     }).get();
@@ -215,18 +242,26 @@ public class ApiPlayersHandler extends ApiHandlerSupport {
                     sendSuccess(resp, Map.of("message", "Игрок кикнут с сервера"));
                 }
                 case "remove_item" -> {
+                    String reason=stringOrNull(body.get("reason"));
+                    if(reason==null||reason.trim().length()<5||reason.length()>2000){sendError(resp,400,"Укажите причину изъятия (от 5 до 2000 символов)");return;}
                     String container = stringOrNull(body.get("container"));
                     int slot = parseIntOrDefault(String.valueOf(body.get("slot")), -1);
                     if (container == null || slot < 0) {
                         sendError(resp, 400, "Укажите container и slot");
                         return;
                     }
-                    boolean removed = plugin.getPlayerInventoryManager().removeItem(player, container, slot, session.adminUsername()).get();
+                    boolean removed = plugin.getPlayerInventoryManager().removeItem(player, container, slot, session.adminUsername(), stringOrNull(body.get("fingerprint"))).get();
                     if (removed) {
+                        plugin.getLogManager().logWebAction(session.adminUsername(),"Причина изъятия у "+playerName+": "+reason.trim());
                         sendSuccess(resp, Map.of("message", "Предмет успешно изъят"));
                     } else {
                         sendError(resp, 400, "Не удалось изъять предмет (слот пуст или недействителен)");
                     }
+                }
+                case "restore_item" -> {
+                    boolean restored=plugin.getPlayerInventoryManager().restore(player,stringOrNull(body.get("id")),session.adminUsername()).join();
+                    if(!restored){sendError(resp,409,"Предмет недоступен, игрок вышел или нет свободного места");return;}
+                    sendSuccess(resp,Map.of("message","Предмет возвращён"));
                 }
                 case "clear_inventory" -> {
                     var roleOpt = plugin.getDatabaseManager().getRoleById(session.roleId());
@@ -243,7 +278,8 @@ public class ApiPlayersHandler extends ApiHandlerSupport {
                     }
                 }
                 case "kill" -> {
-                    plugin.getServer().getScheduler().callSyncMethod(plugin, () -> {
+                    plugin.main().call( () -> {
+                        if(!player.isOnline())throw new IllegalArgumentException("Игрок вышел с сервера");
                         player.setHealth(0.0);
                         return true;
                     }).get();
@@ -256,7 +292,8 @@ public class ApiPlayersHandler extends ApiHandlerSupport {
                         sendError(resp, 400, "Укажите текст сообщения");
                         return;
                     }
-                    plugin.getServer().getScheduler().callSyncMethod(plugin, () -> {
+                    plugin.main().call( () -> {
+                        if(!player.isOnline())throw new IllegalArgumentException("Игрок вышел с сервера");
                         player.sendMessage(Component.text("§d[Персонал " + session.adminUsername() + "] §f" + msg));
                         return true;
                     }).get();
@@ -267,7 +304,8 @@ public class ApiPlayersHandler extends ApiHandlerSupport {
                     String reason = stringOrNull(body.get("reason"));
                     if (reason == null || reason.isBlank()) reason = "Нарушение правил общения";
                     final String finalMuteReason = reason;
-                    boolean cmdDispatched = plugin.getServer().getScheduler().callSyncMethod(plugin, () -> {
+                    boolean cmdDispatched = plugin.main().call( () -> {
+                        if(!player.isOnline())throw new IllegalArgumentException("Игрок вышел с сервера");
                         try {
                             boolean ok = Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "mute " + player.getName() + " " + finalMuteReason);
                             player.sendMessage(Component.text("§c[WebAdmin] Вы получили блокировку чата. Причина: " + finalMuteReason));
@@ -284,7 +322,8 @@ public class ApiPlayersHandler extends ApiHandlerSupport {
                     sendSuccess(resp, Map.of("message", "Игрок замучен"));
                 }
                 case "vanish" -> {
-                    boolean cmdDispatched = plugin.getServer().getScheduler().callSyncMethod(plugin, () -> {
+                    boolean cmdDispatched = plugin.main().call( () -> {
+                        if(!player.isOnline())throw new IllegalArgumentException("Игрок вышел с сервера");
                         try {
                             return Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "v " + player.getName());
                         } catch (Exception ex) {

@@ -280,7 +280,7 @@ public class ApiServerOpsHandler extends ApiHandlerSupport {
         }
 
         try {
-            plugin.getServer().getScheduler().callSyncMethod(plugin, () -> {
+            plugin.main().call( () -> {
                 switch (action.toLowerCase()) {
                     case "enable" -> {
                         Bukkit.setWhitelist(true);
@@ -346,7 +346,7 @@ public class ApiServerOpsHandler extends ApiHandlerSupport {
         }
 
         try {
-            plugin.getServer().getScheduler().callSyncMethod(plugin, () -> {
+            plugin.main().call( () -> {
                 OfflinePlayer target = Bukkit.getOfflinePlayer(player.trim());
                 if ("add".equalsIgnoreCase(action)) {
                     target.setOp(true);

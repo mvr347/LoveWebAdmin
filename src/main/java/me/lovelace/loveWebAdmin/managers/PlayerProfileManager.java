@@ -39,40 +39,31 @@ public class PlayerProfileManager {
     public Map<String, Object> getFullProfile(String playerNameOrUuid) {
         Map<String, Object> profile = new LinkedHashMap<>();
 
-        // Базовый поиск игрока
-        String name = playerNameOrUuid.trim();
-        UUID uuid = null;
-        try {
-            uuid = UUID.fromString(name);
-        } catch (IllegalArgumentException ignored) {}
-
-        // Runs on a Jetty worker: Bukkit's player lookup must happen on the main thread.
-        var lookupBridge = plugin.getLoveEconomyBridge();
-        Player onlinePlayer = (uuid != null) ? lookupBridge.findOnline(uuid) : lookupBridge.findOnline(name);
-        OfflinePlayer offlinePlayer = null;
-
-        if (onlinePlayer != null) {
-            uuid = onlinePlayer.getUniqueId();
-            name = onlinePlayer.getName();
-        } else {
-            offlinePlayer = (uuid != null) ? Bukkit.getOfflinePlayer(uuid) : Bukkit.getOfflinePlayer(name);
-            if (offlinePlayer.getName() != null) {
-                name = offlinePlayer.getName();
-            }
-            if (uuid == null) {
-                uuid = offlinePlayer.getUniqueId();
-            }
-        }
-
+        String requested=playerNameOrUuid.trim();
+        var stored=plugin.getDatabaseManager().getPlayerStats(requested);
+        UUID known=null;
+        try{known=UUID.fromString(requested);}catch(IllegalArgumentException ignored){}
+        if(known==null&&stored.isPresent()&&stored.get().get("uuid")!=null)known=UUID.fromString(stored.get().get("uuid").toString());
+        final UUID lookupId=known;
+        Live live=plugin.main().call(()->{
+            Player player=lookupId==null?Bukkit.getPlayerExact(requested):Bukkit.getPlayer(lookupId);
+            if(player==null||!player.isOnline())return null;
+            var economy=plugin.getLoveEconomyBridge();
+            String address=player.getAddress()==null||player.getAddress().getAddress()==null?"—":player.getAddress().getAddress().getHostAddress();
+            return new Live(player.getUniqueId(),player.getName(),player.getPing(),address,economy.isAvailable()?economy.balance(player):null);
+        }).join();
+        if(live==null&&stored.isEmpty())throw new IllegalArgumentException("Игрок не найден в данных сервера");
+        UUID uuid=live!=null?live.uuid():known;
+        String name=live!=null?live.name():stored.get().get("name").toString();
         profile.put("name", name);
         profile.put("uuid", uuid.toString());
-        profile.put("isOnline", onlinePlayer != null && onlinePlayer.isOnline());
-        profile.put("ping", (onlinePlayer != null && onlinePlayer.isOnline()) ? onlinePlayer.getPing() : 0);
+        profile.put("isOnline", live != null);
+        profile.put("ping", live != null ? live.ping() : null);
 
         // IP адрес
         String ip = "—";
-        if (onlinePlayer != null && onlinePlayer.getAddress() != null && onlinePlayer.getAddress().getAddress() != null) {
-            ip = onlinePlayer.getAddress().getAddress().getHostAddress();
+        if (live != null) {
+            ip = live.ip();
         } else {
             var stats = plugin.getDatabaseManager().getPlayerStats(name);
             if (stats.isPresent() && stats.get().get("lastIp") != null) {
@@ -92,16 +83,13 @@ public class PlayerProfileManager {
             firstJoined = ((Number) s.getOrDefault("firstJoinedAt", 0)).longValue();
             lastSeen = ((Number) s.getOrDefault("lastSeenAt", 0)).longValue();
             playtimeSeconds = ((Number) s.getOrDefault("playtimeSeconds", 0)).longValue();
-        } else if (offlinePlayer != null) {
-            firstJoined = offlinePlayer.getFirstPlayed() / 1000L;
-            lastSeen = offlinePlayer.getLastSeen() / 1000L;
         }
         profile.put("firstJoinedAt", firstJoined);
         profile.put("lastSeenAt", lastSeen);
         profile.put("playtimeSeconds", playtimeSeconds);
 
         // 1. Поведение LoveBehavior
-        Map<String, Object> behaviorData = behaviorBridge.getPlayerBehavior(uuid);
+        Map<String, Object> behaviorData = plugin.main().call(()->behaviorBridge.getPlayerBehavior(uuid)).join();
         profile.put("behavior", behaviorData);
 
         // 2. Античит
@@ -115,7 +103,7 @@ public class PlayerProfileManager {
 
         if (isVesuvioAvail) {
             try {
-                Object detail = vb.call("getPlayerDetail", new Class<?>[]{UUID.class}, uuid);
+                Object detail = plugin.main().call(()->vb.call("getPlayerDetail", new Class<?>[]{UUID.class}, uuid)).join();
                 if (detail instanceof Map<?, ?> dMap) {
                     anticheatData.putAll((Map<String, Object>) dMap);
                     Object r = dMap.get("risk");
@@ -151,11 +139,11 @@ public class PlayerProfileManager {
         boolean isEcoAvail = ecoBridge != null && ecoBridge.isAvailable();
         ecoData.put("available", isEcoAvail);
         ecoData.put("currencyName", isEcoAvail ? ecoBridge.currencyName() : "монет");
-        if (onlinePlayer != null && onlinePlayer.isOnline() && isEcoAvail) {
-            ecoData.put("balance", ecoBridge.balance(onlinePlayer));
+        if (live != null && live.balance()!=null && isEcoAvail) {
+            ecoData.put("balance", live.balance());
             ecoData.put("isLive", true);
         } else {
-            ecoData.put("balance", 0);
+            ecoData.put("balance", null);
             ecoData.put("isLive", false);
         }
         profile.put("economy", ecoData);
@@ -177,6 +165,8 @@ public class PlayerProfileManager {
 
         return profile;
     }
+
+    private record Live(UUID uuid,String name,int ping,String ip,Long balance) {}
 
     private TrustScore computeTrustScore(
             Map<String, Object> behaviorData,

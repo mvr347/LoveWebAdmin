@@ -42,8 +42,7 @@ public class ApiCommandHandler extends ApiHandlerSupport {
         }
 
         try {
-            boolean dispatched = plugin.getServer().getScheduler()
-                .callSyncMethod(plugin, () ->
+            boolean dispatched = plugin.main().call( () ->
                     plugin.getServer().dispatchCommand(plugin.getServer().getConsoleSender(), command))
                 .get();
 

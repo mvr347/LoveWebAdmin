@@ -23,6 +23,15 @@ public enum Permission {
     // Профили игроков и аналитика
     VIEW_PLAYERS,
     MANAGE_PLAYERS,
+    VIEW_PLAYER_IP,
+    VIEW_PLAYER_INVENTORY,
+    CONFISCATE_ITEMS,
+    RESTORE_ITEMS,
+    FREEZE_PLAYERS,
+    TELEPORT_PLAYERS,
+    CHANGE_GAMEMODE,
+    KICK_PLAYERS,
+    KILL_PLAYERS,
     VIEW_ANALYTICS,
 
     // LoveAuth

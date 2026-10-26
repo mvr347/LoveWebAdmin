@@ -136,6 +136,8 @@ public class ReportMenuListener implements Listener {
     }
 
     private void handleChatInput(Player player, ReportGuiSession session, String text) {
+        if(!Bukkit.isPrimaryThread()){plugin.main().call(()->{handleChatInput(player,session,text);return null;});return;}
+        if(!player.isOnline()||plugin.getReportManager().getSession(player.getUniqueId())!=session)return;
         if ("отмена".equalsIgnoreCase(text) || "cancel".equalsIgnoreCase(text)) {
             player.sendMessage(Component.text("§cВвод описания отменен."));
         } else {
@@ -145,9 +147,11 @@ public class ReportMenuListener implements Listener {
 
         // Открываем GUI заново в потоке региона игрока
         OfflinePlayer target = Bukkit.getOfflinePlayer(session.getTargetUuid());
-        plugin.getServer().getRegionScheduler().run(plugin, player.getLocation(), task -> {
+        plugin.main().call(() -> {
             plugin.getReportManager().renderAndOpenGui(player, target, session);
-        });
+        
+                return null;
+            });
     }
 
     @EventHandler
