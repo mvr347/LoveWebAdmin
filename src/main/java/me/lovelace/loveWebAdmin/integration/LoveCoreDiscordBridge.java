@@ -39,6 +39,9 @@ public class LoveCoreDiscordBridge implements Listener {
   private boolean initialized = false;
   private dev.lovelace.lovecore.api.discord.TicketMessageListener ticketListener;
   private volatile DiscordService registeredService;
+  // Resolved while the service's plugin is alive: on shutdown that plugin may already be disabled
+  // and its jar closed, so reflecting on the service class then throws "zip file closed".
+  private java.lang.reflect.Method unregisterMethod;
   private DiscordActions actions;
   private org.bukkit.scheduler.BukkitTask maintenanceTask;
   private volatile boolean closed;
@@ -80,6 +83,7 @@ public class LoveCoreDiscordBridge implements Listener {
                                 actions = new DiscordActions(plugin, service);
                                 actions.register();
                                 registeredService = service;
+                                unregisterMethod = resolveUnregister(service);
                               }
                               for (var appeal : database.getAllAppeals("PENDING", 200, 0))
                                 if (appeal.discordChannelId() != null)
@@ -99,18 +103,31 @@ public class LoveCoreDiscordBridge implements Listener {
       actions = null;
     }
     if (registeredService != null && ticketListener != null) {
-      try {
-        registeredService
-            .getClass()
-            .getMethod(
-                "unregisterTicketMessageListener",
-                dev.lovelace.lovecore.api.discord.TicketMessageListener.class)
-            .invoke(registeredService, ticketListener);
-      } catch (ReflectiveOperationException e) {
+      if (unregisterMethod == null) {
         plugin.getLogger().warning("LoveCore требует обновления для снятия слушателя Discord");
+      } else {
+        try {
+          unregisterMethod.invoke(registeredService, ticketListener);
+        } catch (Throwable e) {
+          // The service's plugin can be gone already while the server stops; nothing left to detach from.
+          plugin.getLogger().fine("Слушатель Discord не снят: " + e);
+        }
       }
     }
+    unregisterMethod = null;
     registeredService = null;
+  }
+
+  private static java.lang.reflect.Method resolveUnregister(DiscordService service) {
+    try {
+      return service
+          .getClass()
+          .getMethod(
+              "unregisterTicketMessageListener",
+              dev.lovelace.lovecore.api.discord.TicketMessageListener.class);
+    } catch (ReflectiveOperationException | LinkageError e) {
+      return null;
+    }
   }
 
   public synchronized void close() {
