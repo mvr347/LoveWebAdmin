@@ -136,6 +136,10 @@ public class LoveWebAdmin extends JavaPlugin {
 
     startTimeMillis = System.currentTimeMillis();
     saveDefaultConfig();
+    if(getConfig().contains("debug-mode")||getConfig().contains("security.debug-mode")) {
+      getConfig().set("debug-mode",null);getConfig().set("security.debug-mode",null);saveConfig();
+    }
+
 
     this.databaseManager = new DatabaseManager(this);
     this.databaseManager.initialize();
@@ -306,24 +310,6 @@ public class LoveWebAdmin extends JavaPlugin {
           .warning("=============================================================================");
     }
 
-    if (isDebugMode()) {
-      getLogger()
-          .warning("=============================================================================");
-      getLogger().warning("[LoveWebAdmin] ВНИМАНИЕ: debug-mode = true АКТИВИРОВАН!");
-      getLogger()
-          .warning(
-              "[LoveWebAdmin] Двухфакторная аутентификация (2FA / Google Authenticator)"
-                  + " ОТКЛЮЧЕНА.");
-      getLogger()
-          .warning(
-              "[LoveWebAdmin] Этот режим предназначен ИСКЛЮЧИТЕЛЬНО для локальной разработки.");
-      getLogger()
-          .warning(
-              "[LoveWebAdmin] На боевом сервере ОБЯЗАТЕЛЬНО установите debug-mode: false в"
-                  + " config.yml!");
-      getLogger()
-          .warning("=============================================================================");
-    }
     this.webServer = new WebServer(this, port, host);
     if (getConfig().getBoolean("web.enabled", true)) io.run(webServer::start);
 
@@ -373,10 +359,10 @@ public class LoveWebAdmin extends JavaPlugin {
     return (System.currentTimeMillis() - startTimeMillis) / 1000;
   }
 
-  public boolean isDebugMode() {
-    return getConfig().getBoolean("debug-mode", false)
-        || getConfig().getBoolean("security.debug-mode", false);
-  }
+  /** Retained for binary compatibility; authentication bypass has been removed. */
+  @Deprecated public boolean isDebugMode() {return false;}
+
+  public boolean isPreviewEnabled() {return getConfig().getBoolean("preview.enabled",false);}
 
   public DatabaseManager getDatabaseManager() {
     return databaseManager;

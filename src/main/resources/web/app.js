@@ -1,13 +1,14 @@
 (() => {
     'use strict';
+    const browserStorage=window.LovePreview?.storage || window.localStorage;
 
     const app = document.getElementById('app');
-    let token = localStorage.getItem('wa_token') || localStorage.getItem('lwa_token');
+    let token = browserStorage.getItem('wa_token') || browserStorage.getItem('lwa_token');
     let me = null;
     const pollers = {};
     let activeNavSection = 'dashboard';
     let banReasonsCache = null;
-    let sidebarCollapsed = localStorage.getItem('wa_sidebar_collapsed') === 'true';
+    let sidebarCollapsed = browserStorage.getItem('wa_sidebar_collapsed') === 'true';
     let serverStatus = null;
 
     // Session shift metrics
@@ -316,11 +317,11 @@
     function setToken(newToken) {
         token = newToken;
         if (token) {
-            localStorage.setItem('wa_token', token);
-            localStorage.setItem('lwa_token', token);
+            browserStorage.setItem('wa_token', token);
+            browserStorage.setItem('lwa_token', token);
         } else {
-            localStorage.removeItem('wa_token');
-            localStorage.removeItem('lwa_token');
+            browserStorage.removeItem('wa_token');
+            browserStorage.removeItem('lwa_token');
         }
     }
 
@@ -880,7 +881,7 @@
     }
 
     async function renderAuthGate() {
-        let status = { ownerExists: false, initialSetupNeeded: false, debugMode: false };
+        let status = { ownerExists: false, initialSetupNeeded: false, previewEnabled: false };
         try {
             status = await api('GET', '/api/auth/status');
             serverStatus = status;
@@ -1166,13 +1167,12 @@
     }
 
     function renderLogin() {
-        const isDebug = serverStatus && serverStatus.debugMode;
         app.innerHTML = `
             <div class="auth-screen">
                 <div class="auth-card">
                     <div class="logo"><span style="color:var(--accent);">◈</span> WebAdmin</div>
                     <div class="sub">Панель управления Minecraft-сервером</div>
-                    ${isDebug ? `<div class="auth-debug-badge" style="display:inline-flex; align-items:center; gap:6px;">${renderSvgIcon('zap', 'violet', 13)} Режим отладки: 2FA / QR не требуется</div>` : ''}
+                    ${serverStatus?.previewEnabled ? '<a class="secondary" href="/preview/">Открыть превью · тестовые данные</a>' : ''}
                     <form id="login-form">
                         <div class="form-group">
                             <label>Никнейм сотрудника</label>
@@ -1209,7 +1209,7 @@
             try {
                 const res = await api('POST', '/api/auth/login', { username: u, password: p });
                 if (res.status === 'NEED_2FA') {
-                    render2faVerification(res.username || u);
+                    render2faVerification(res.username || u, res.challenge);
                     return;
                 }
                 setToken(res.token);
@@ -1441,14 +1441,12 @@
         });
     }
 
-    function render2faVerification(username) {
-        const isDebug = serverStatus && serverStatus.debugMode;
+    function render2faVerification(username, challenge) {
         app.innerHTML = `
             <div class="auth-screen">
                 <div class="auth-card">
                     <div class="logo"><span style="color:var(--accent);">◈</span> 2FA Подтверждение</div>
                     <div class="sub">Вход для аккаунта <b>${esc(username)}</b>. Код из Google Authenticator (000-000) или резервный код (XXXX-XXXX) — в это же поле.</div>
-                    ${isDebug ? `<div class="auth-debug-badge" style="display:inline-flex; align-items:center; gap:6px;">${renderSvgIcon('zap', 'violet', 13)} Режим отладки: можно войти без ввода кода из приложения</div>` : ''}
                     <form id="form-2fa">
                         <div class="form-group">
                             <label>Код подтверждения</label>
@@ -1457,39 +1455,22 @@
                         </div>
                         <div id="err-2fa" class="error" style="display:none;"></div>
                         <button type="submit" class="primary" style="width:100%; margin-top:10px;">ПОДТВЕРДИТЬ</button>
-                        ${isDebug ? `<button type="button" class="btn-debug-bypass" id="btn-debug-bypass-2fa" style="width:100%; margin-top:8px; display:inline-flex; align-items:center; justify-content:center; gap:6px;">${renderSvgIcon('zap', 'violet', 13)} ВОЙТИ БЕЗ 2FA / QR (РЕЖИМ ОТЛАДКИ)</button>` : ''}
                         <button type="button" class="secondary" onclick="location.reload()" style="width:100%; margin-top:8px;">ОТМЕНА</button>
                     </form>
                 </div>
             </div>`;
-
-        if (isDebug) {
-            document.getElementById('btn-debug-bypass-2fa')?.addEventListener('click', async () => {
-                const err = document.getElementById('err-2fa');
-                err.style.display = 'none';
-                try {
-                    const res = await api('POST', '/api/auth/verify-2fa', { username, code: 'debug' });
-                    setToken(res.token);
-                    me = await api('GET', '/api/me');
-                    renderAppLayout();
-                } catch (ex) {
-                    err.textContent = ex.message;
-                    err.style.display = 'block';
-                }
-            });
-        }
 
         bindLogin2faInput(document.getElementById('code-2fa'));
 
         document.getElementById('form-2fa')?.addEventListener('submit', async (e) => {
             e.preventDefault();
             const raw2fa = document.getElementById('code-2fa')?.value || '';
-            const code = (typeof normalizeAuthCode === 'function' ? normalizeAuthCode(raw2fa) : raw2fa.replace(/\D/g, '')) || (isDebug ? 'debug' : '');
+            const code = (typeof normalizeAuthCode === 'function' ? normalizeAuthCode(raw2fa) : raw2fa.replace(/\D/g, ''));
             const err = document.getElementById('err-2fa');
             err.style.display = 'none';
 
             try {
-                const res = await api('POST', '/api/auth/verify-2fa', { username, code });
+                const res = await api('POST', '/api/auth/verify-2fa', { username, code, challenge });
                 setToken(res.token);
                 me = await api('GET', '/api/me');
                 renderAppLayout();
@@ -1501,13 +1482,11 @@
     }
 
     function renderMasterOnboarding() {
-        const isDebug = serverStatus && serverStatus.debugMode;
         app.innerHTML = `
             <div class="auth-screen">
                 <div class="auth-card" style="max-width:480px;">
                     <div class="logo">Первичная настройка</div>
                     <div class="sub">Создание учётной записи Управляющего</div>
-                    ${isDebug ? `<div class="auth-debug-badge">Режим отладки</div>` : ''}
                     <div class="stepper">
                         <div class="step-item active"><span class="step-badge">1</span> Токен</div>
                         <div class="step-connector"></div>
@@ -1538,7 +1517,6 @@
     }
 
     function renderMasterOnboardingPassword(setupToken) {
-        const isDebug = serverStatus && serverStatus.debugMode;
         app.innerHTML = `
             <div class="auth-screen">
                 <div class="auth-card" style="max-width:480px;">
@@ -1571,7 +1549,6 @@
                         </div>
                         <div id="ob-step2-err" class="error" style="display:none;"></div>
                         <button type="submit" class="primary" style="width:100%;">ДАЛЕЕ — 2FA</button>
-                        ${isDebug ? `<button type="button" class="btn-debug-bypass" id="btn-ob-debug" style="width:100%;margin-top:8px;">БЕЗ 2FA (ОТЛАДКА)</button>` : ''}
                         <button type="button" class="secondary" id="btn-ob-back1" style="width:100%;margin-top:8px;">НАЗАД</button>
                     </form>
                 </div>
@@ -1579,21 +1556,6 @@
         const passInput = document.getElementById('ob-pass');
         passInput?.addEventListener('input', () => updatePasswordMeter(passInput.value, document.getElementById('ob-pass-fill'), document.getElementById('ob-pass-hints')));
         document.getElementById('btn-ob-back1')?.addEventListener('click', () => renderMasterOnboarding());
-        if (isDebug) {
-            document.getElementById('btn-ob-debug')?.addEventListener('click', async () => {
-                const username = document.getElementById('ob-user').value.trim();
-                const password = document.getElementById('ob-pass').value;
-                const err = document.getElementById('ob-step2-err');
-                const pe = validatePasswordClient(password);
-                if (pe) { err.textContent = pe; err.style.display = 'block'; return; }
-                try {
-                    const res = await api('POST', '/api/auth/setup-owner', { setupToken, username, password, totpSecret: 'debug', totpCode: 'debug' });
-                    setToken(res.token);
-                    me = await api('GET', '/api/me');
-                    renderBackupCodesScreen(username, res.backupCodes || [], () => renderAppLayout());
-                } catch (ex) { err.textContent = ex.message; err.style.display = 'block'; }
-            });
-        }
         document.getElementById('ob-step2-form')?.addEventListener('submit', async (e) => {
             e.preventDefault();
             const username = document.getElementById('ob-user').value.trim();
@@ -1619,7 +1581,6 @@
     }
 
     function renderMasterOnboarding2fa(username, password, setupToken, totpSecret, otpUrl) {
-        const isDebug = serverStatus && serverStatus.debugMode;
         app.innerHTML = `
             <div class="auth-screen">
                 <div class="auth-card" style="max-width:500px;">
@@ -1683,15 +1644,15 @@
         document.getElementById('ob-2fa-form')?.addEventListener('submit', async (e) => {
             e.preventDefault();
             const rawCode = document.getElementById('ob-code')?.value || '';
-            const code = (typeof normalizeAuthCode === 'function' ? normalizeAuthCode(rawCode) : rawCode.replace(/\D/g, '')) || (isDebug ? 'debug' : '');
+            const code = (typeof normalizeAuthCode === 'function' ? normalizeAuthCode(rawCode) : rawCode.replace(/\D/g, ''));
             const err = document.getElementById('ob-2fa-err');
             const btn = document.getElementById('btn-ob-finish');
             err.style.display = 'none';
-            if (code.length !== 6 && !isDebug) {
+            if (code.length !== 6) {
                 if (err) { err.textContent = 'Введите 6 цифр из приложения (формат 000-000)'; err.style.display = 'block'; }
                 return;
             }
-            if (!totpSecret && !isDebug) {
+            if (!totpSecret) {
                 if (err) { err.textContent = 'Секрет 2FA не готов. Обновите QR или откройте вкладку «Секретный код».'; err.style.display = 'block'; }
                 return;
             }
@@ -1840,7 +1801,7 @@
         `;
 
         // Apply theme from preferences
-        const savedTheme = userPrefs.theme || localStorage.getItem('wa_theme') || 'dark';
+        const savedTheme = userPrefs.theme || browserStorage.getItem('wa_theme') || 'dark';
         applyUserTheme(savedTheme);
 
         // Mobile drawer handlers
@@ -1892,7 +1853,7 @@
         // Sidebar collapse toggle
         document.getElementById('sidebar-toggle-btn')?.addEventListener('click', () => {
             sidebarCollapsed = !sidebarCollapsed;
-            localStorage.setItem('wa_sidebar_collapsed', sidebarCollapsed ? 'true' : 'false');
+            browserStorage.setItem('wa_sidebar_collapsed', sidebarCollapsed ? 'true' : 'false');
             const sidebar = document.getElementById('app-sidebar');
             const btn = document.getElementById('sidebar-toggle-btn');
             if (sidebar) sidebar.classList.toggle('collapsed', sidebarCollapsed);
@@ -2076,7 +2037,7 @@
 
     function getActiveQuickActions() {
         try {
-            const saved = localStorage.getItem('wa_quick_actions');
+            const saved = browserStorage.getItem('wa_quick_actions');
             if (saved) {
                 const parsed = JSON.parse(saved);
                 const valid = parsed.filter(k => ALL_QUICK_ACTIONS[k]);
@@ -2087,7 +2048,7 @@
     }
 
     function saveActiveQuickActions(keys) {
-        localStorage.setItem('wa_quick_actions', JSON.stringify(keys));
+        browserStorage.setItem('wa_quick_actions', JSON.stringify(keys));
     }
 
     window.openQuickActionsConfigModal = () => {
@@ -2191,14 +2152,14 @@
             return prefs.dashboardTiles;
         }
         try {
-            const saved = localStorage.getItem('wa_dashboard_tiles');
+            const saved = browserStorage.getItem('wa_dashboard_tiles');
             if (saved) return JSON.parse(saved);
         } catch (e) {}
         return DEFAULT_DASHBOARD_TILES;
     }
 
     async function saveDashboardTiles(tiles) {
-        localStorage.setItem('wa_dashboard_tiles', JSON.stringify(tiles));
+        browserStorage.setItem('wa_dashboard_tiles', JSON.stringify(tiles));
         let prefs = {};
         try {
             prefs = typeof me?.uiPreferences === 'string' ? JSON.parse(me.uiPreferences) : (me?.uiPreferences || {});
@@ -3930,7 +3891,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                         document.getElementById('btn-approve-appeal-modal')?.addEventListener('click', async () => {
                             confirmAction('ОДОБРЕНИЕ АПЕЛЛЯЦИИ', `Разблокировать игрока ${appeal.playerName} и закрыть тикет Discord?`, async () => {
                                 try {
-                                    await api('POST', `/api/appeals/${appealId}/approve`, {});
+                                    await api('POST', `/api/appeals/${appealId}/approve`, {verdictMessage:prompt('Обоснование решения (минимум 5 символов)')||''});
                                     showToast('Апелляция одобрена', `Игрок ${appeal.playerName} разбанен на сервере`, 'success');
                                     closeModal();
                                     renderLiveAppealsList();
@@ -3943,7 +3904,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                         document.getElementById('btn-reject-appeal-modal')?.addEventListener('click', async () => {
                             confirmAction('ОТКЛОНЕНИЕ АПЕЛЛЯЦИИ', `Отклонить апелляцию игрока ${appeal.playerName} и закрыть тикет Discord?`, async () => {
                                 try {
-                                    await api('POST', `/api/appeals/${appealId}/reject`, {});
+                                    await api('POST', `/api/appeals/${appealId}/reject`, {verdictMessage:prompt('Обоснование решения (минимум 5 символов)')||''});
                                     showToast('Апелляция отклонена', 'Статус обновлен, тикет закрыт', 'info');
                                     closeModal();
                                     renderLiveAppealsList();
@@ -4574,8 +4535,8 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
             `Вы подтверждаете, что нарушение игрока ${targetName} доказано?\nНарушитель будет помечен как наказанный, а заявителю начислится репутация.`,
             async () => {
                 try {
-                    await api('POST', `/api/reports/me.lovelace:LoveWebAdmin:jar:1.1.0/accept`);
-                    recordShiftAction(`Принял жалобу #me.lovelace:LoveWebAdmin:jar:1.1.0 на игрока ${targetName}`);
+                    await api('POST', `/api/reports/${id}/accept`);
+                    recordShiftAction(`Принял жалобу #${id} на игрока ${targetName}`);
                     showToast('Жалоба принята', `Наказание подтверждено. Заявитель уведомлен.`, 'success');
                     if (window.refreshPunishmentsView) window.refreshPunishmentsView();
                     updateReportsBadge();
@@ -4594,8 +4555,8 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
             `Пометить жалобу как ложную?\nИгроку ${targetName} будет возвращена снятая репутация (+25), а заявитель уведомлен в игре.`,
             async () => {
                 try {
-                    await api('POST', `/api/reports/me.lovelace:LoveWebAdmin:jar:1.1.0/reject`);
-                    recordShiftAction(`Отклонил жалобу #me.lovelace:LoveWebAdmin:jar:1.1.0 на игрока ${targetName} как ложную`);
+                    await api('POST', `/api/reports/${id}/reject`);
+                    recordShiftAction(`Отклонил жалобу #${id} на игрока ${targetName} как ложную`);
                     showToast('Жалоба отклонена', 'Помечена как ложная. Репутация возвращена цели.', 'info');
                     if (window.refreshPunishmentsView) window.refreshPunishmentsView();
                     updateReportsBadge();
@@ -4614,9 +4575,9 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
             'Вы действительно хотите удалить запись этой жалобы из базы данных?',
             async () => {
                 try {
-                    await api('DELETE', `/api/reports/me.lovelace:LoveWebAdmin:jar:1.1.0`);
-                    recordShiftAction(`Удалил запись жалобы #me.lovelace:LoveWebAdmin:jar:1.1.0`);
-                    showToast('Удалено', `Жалоба #me.lovelace:LoveWebAdmin:jar:1.1.0 успешно удалена`, 'info');
+                    await api('DELETE', `/api/reports/${id}`);
+                    recordShiftAction(`Удалил запись жалобы #${id}`);
+                    showToast('Удалено', `Жалоба #${id} успешно удалена`, 'info');
                     if (window.refreshPunishmentsView) window.refreshPunishmentsView();
                     updateReportsBadge();
                 } catch (e) {
@@ -8051,7 +8012,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
         document.body.classList.toggle('theme-light', isLight);
         const icon = document.getElementById('theme-btn-icon');
         if (icon) icon.innerHTML = renderSvgIcon(isLight ? 'sun' : 'moon', isLight ? 'yellow' : 'violet', 15);
-        localStorage.setItem('wa_theme', theme);
+        browserStorage.setItem('wa_theme', theme);
     }
 
     // ==========================================================================
@@ -8227,7 +8188,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
 
             window.markNotifRead = async (id) => {
                 try {
-                    await api('POST', `/api/notifications/me.lovelace:LoveWebAdmin:jar:1.1.0/read`);
+                    await api('POST', `/api/notifications/${id}/read`);
                     updateNotificationsBadge();
                     loadList();
                 } catch (_) {}
@@ -8315,7 +8276,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                     </div>
                     <div style="display:flex; gap:10px; justify-content:center;">
                         <button type="button" class="primary" onclick="location.reload()" style="display:inline-flex; align-items:center; gap:6px;">${renderSvgIcon('refresh', 'white', 14)} ПРОВЕРИТЬ СНОВА</button>
-                        <button type="button" class="secondary" onclick="localStorage.removeItem('wa_token'); location.reload();">ВЫЙТИ В ВХОД</button>
+                        <button type="button" class="secondary" onclick="browserStorage.removeItem('wa_token'); location.reload();">ВЫЙТИ В ВХОД</button>
                     </div>
                 </div>
             </div>
@@ -8343,7 +8304,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
             loginMaxAttempts: 5,
             loginLockoutMinutes: 15,
             minPasswordLength: 8,
-            debugMode: false,
+            previewEnabled: false,
             commandBlacklist: ['stop', 'restart', 'op', 'deop', 'sudo', 'pex', 'lp'],
             webhooksEnabled: false,
             discordWebhookUrl: '',
@@ -8522,8 +8483,9 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
 
                             <div class="form-group" style="margin-bottom:0;">
                                 <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:var(--text-heading);">
-                                    <input type="checkbox" id="cfg-debug-mode" ${serverConfig.debugMode ? 'checked' : ''}>
-                                    <span>Включить подробный режим отладки в консоли сервера (debug-mode)</span>
+                                    <input type="checkbox" id="cfg-preview-enabled" ${serverConfig.previewEnabled ? 'checked' : ''}>
+                                    <span>Включить отдельное превью интерфейса на тестовых данных</span>
+                                    ${serverConfig.previewEnabled ? '<a href="/preview/">Открыть превью</a>' : ''}
                                 </label>
                             </div>
                         </div>
@@ -8538,7 +8500,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                         const host = document.getElementById('cfg-web-host').value.trim() || '0.0.0.0';
                         const sessionLifetime = parseInt(document.getElementById('cfg-session-lifetime').value, 10) || 1440;
                         const keepLogs = parseInt(document.getElementById('cfg-keep-logs').value, 10) || 2000;
-                        const debugMode = document.getElementById('cfg-debug-mode').checked;
+                        const previewEnabled = document.getElementById('cfg-preview-enabled').checked;
 
                         try {
                             const res = await api('POST', '/api/server/config', {
@@ -8546,7 +8508,7 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                                 webHost: host,
                                 sessionLifetimeMinutes: sessionLifetime,
                                 keepLogCount: keepLogs,
-                                debugMode: debugMode
+                                previewEnabled: previewEnabled
                             });
                             serverConfig = { ...serverConfig, ...res.config };
                             showToast('Сохранено', 'Конфигурация сервера успешно обновлена в config.yml', 'success');

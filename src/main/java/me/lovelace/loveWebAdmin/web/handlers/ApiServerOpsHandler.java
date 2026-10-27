@@ -143,7 +143,7 @@ public class ApiServerOpsHandler extends ApiHandlerSupport {
         data.put("sessionLifetimeMinutes", cfg.getLong("web.session-lifetime-minutes", 60));
 
         // System
-        data.put("debugMode", plugin.isDebugMode());
+        data.put("previewEnabled", plugin.isPreviewEnabled());
         data.put("keepLogCount", cfg.getInt("logs.keep-count", 5000));
 
         // Security
@@ -178,6 +178,7 @@ public class ApiServerOpsHandler extends ApiHandlerSupport {
 
         Map<String, Object> body = readJsonBody(req);
         var cfg = plugin.getConfig();
+        if(body.containsKey("debugMode")){sendError(resp,400,"Обход 2FA удалён. Используйте отдельное превью");return;}
 
         if (body.containsKey("webPort") && body.get("webPort") instanceof Number n) {
             int port = n.intValue();
@@ -194,10 +195,7 @@ public class ApiServerOpsHandler extends ApiHandlerSupport {
             int count = Math.max(500, Math.min(50000, n.intValue()));
             cfg.set("logs.keep-count", count);
         }
-        if (body.containsKey("debugMode")) {
-            boolean dbg = Boolean.TRUE.equals(body.get("debugMode"));
-            cfg.set("debug-mode", dbg);
-        }
+        if (body.containsKey("previewEnabled")) cfg.set("preview.enabled",Boolean.TRUE.equals(body.get("previewEnabled")));
         if (body.containsKey("strictIp")) {
             boolean strict = Boolean.TRUE.equals(body.get("strictIp"));
             cfg.set("security.strict-ip", strict);

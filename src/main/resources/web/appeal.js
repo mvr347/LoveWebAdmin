@@ -1,5 +1,6 @@
 (() => {
   'use strict';
+  const browserStorage=window.LovePreview?.storage || window.localStorage;
   const $=id=>document.getElementById(id),  status=$('status');
   let id, access;
   const fragment=location.hash.slice(1).split(':');
