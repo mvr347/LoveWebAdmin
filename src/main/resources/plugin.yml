@@ -7,7 +7,7 @@ load: POSTWORLD
 description: Веб-панель администрирования для Love* серверов
 authors: [ Lovelace ]
 depend: [LoveCore, LoveEssential]
-softdepend: [LuckPerms, Vesuvio]
+softdepend: [LuckPerms, Vesuvio, LoveAuth]
 
 commands:
   lovewebadmin:
