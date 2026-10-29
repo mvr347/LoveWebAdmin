@@ -7,6 +7,15 @@ import java.util.concurrent.*;
 public final class CoreDiscordExtensions {
   private CoreDiscordExtensions() {}
 
+  /** Tells LoveCore that ids with this prefix are ours; older Core builds simply do not need it. */
+  public static void claimPrefix(DiscordService service, String prefix) {
+    try {
+      service.getClass().getMethod("claimInteractionPrefix", String.class).invoke(service, prefix);
+    } catch (ReflectiveOperationException unavailable) {
+      // Pre-ownership Core answers every unclaimed interaction itself; nothing to declare.
+    }
+  }
+
   @SuppressWarnings("unchecked")
   public static CompletableFuture<Boolean> unregister(DiscordService service, String name) {
     try {
