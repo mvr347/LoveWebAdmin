@@ -30,6 +30,7 @@ public class ApiDeveloperHandler extends ApiHandlerSupport {
         Optional<WebSession> sessionOpt = requireSession(req, resp);
         if (sessionOpt.isEmpty()) return;
 
+    req.setAttribute("lwa.permission", Permission.MANAGE_API.name());
         String path = req.getPathInfo();
         if (path == null || path.equals("/") || path.equals("/docs")) {
             sendSuccess(resp, getApiDocumentation());
@@ -37,7 +38,7 @@ public class ApiDeveloperHandler extends ApiHandlerSupport {
         }
 
         if (path.equals("/keys")) {
-            if (!hasPermission(sessionOpt.get(), Permission.MANAGE_ADMINS) && !hasPermission(sessionOpt.get(), Permission.MANAGE_API)) {
+      if (!hasPermission(sessionOpt.get(), Permission.MANAGE_API)) {
                 sendError(resp, 403, "Управление API ключами доступно только руководству");
                 return;
             }
@@ -59,12 +60,12 @@ public class ApiDeveloperHandler extends ApiHandlerSupport {
         }
 
         if (path.equals("/webhooks")) {
-            if (!hasPermission(sessionOpt.get(), Permission.MANAGE_ADMINS) && !hasPermission(sessionOpt.get(), Permission.MANAGE_API)) {
+      if (!hasPermission(sessionOpt.get(), Permission.MANAGE_API)) {
                 sendError(resp, 403, "Управление вебхуками доступно только руководству");
                 return;
             }
             List<WebhookRecord> hooks = plugin.getDatabaseManager().getAllWebhooks();
-            sendSuccess(resp, hooks);
+      sendSuccess(resp, hooks.stream().map(this::publicHook).toList());
             return;
         }
 
@@ -76,11 +77,12 @@ public class ApiDeveloperHandler extends ApiHandlerSupport {
         Optional<WebSession> sessionOpt = requireSession(req, resp);
         if (sessionOpt.isEmpty()) return;
 
-        if (!hasPermission(sessionOpt.get(), Permission.MANAGE_ADMINS) && !hasPermission(sessionOpt.get(), Permission.MANAGE_API)) {
+    if (!hasPermission(sessionOpt.get(), Permission.MANAGE_API)) {
             sendError(resp, 403, "Действия с API и вебхуками доступны только руководству");
             return;
         }
 
+    req.setAttribute("lwa.permission", Permission.MANAGE_API.name());
         String path = req.getPathInfo();
         if (path == null) path = "";
 
@@ -98,8 +100,27 @@ public class ApiDeveloperHandler extends ApiHandlerSupport {
                     if (o != null) perms.add(String.valueOf(o));
                 }
             }
-            if (perms.isEmpty()) {
-                perms.add("*"); // Полный доступ по умолчанию
+      if (perms.isEmpty()) {
+        sendError(resp, 400, "Выберите права API ключа явно");
+        return;
+      }
+      boolean owner =
+          sessionOpt.get().adminId() > 0
+              && plugin
+                  .getDatabaseManager()
+                  .getRoleById(sessionOpt.get().roleId())
+                  .map(role -> role.isOwner())
+                  .orElse(false);
+      for (String permission : perms) {
+        if (permission.equals("*") || permission.equals("ALL")) {
+          if (!owner) {
+            sendError(resp, 403, "Полный ключ может создать только управляющий");
+            return;
+          }
+        } else if (!hasPermission(sessionOpt.get(), Permission.valueOf(permission))) {
+          sendError(resp, 403, "Нельзя выдать ключу отсутствующее у вас право");
+          return;
+        }
             }
 
             var gen = plugin.getApiKeyManager().createKey(name.trim(), perms, sessionOpt.get().adminUsername());
@@ -110,7 +131,8 @@ public class ApiDeveloperHandler extends ApiHandlerSupport {
             res.put("token", gen.secretToken());
             res.put("secretToken", gen.secretToken());
             res.put("prefix", gen.record().prefix());
-            res.put("record", gen.record());
+      res.put("id", gen.record().id());
+      res.put("permissions", gen.record().permissions());
             sendSuccess(resp, res);
             return;
         }
@@ -136,9 +158,18 @@ public class ApiDeveloperHandler extends ApiHandlerSupport {
                 events.add("*");
             }
 
+      var uri = java.net.URI.create(url);
+      if (!java.util.Set.of("http", "https").contains(uri.getScheme())
+          || uri.getHost() == null
+          || uri.getUserInfo() != null) {
+        sendError(resp, 400, "Некорректный URL вебхука");
+        return;
+      }
             WebhookRecord hook = plugin.getDatabaseManager().saveWebhook(name.trim(), url.trim(), events, secret);
-            plugin.getStaffAuditManager().recordAction(sessionOpt.get().adminUsername(), "Создал вебхук '" + name + "' (" + url + ")");
-            sendSuccess(resp, hook);
+      plugin
+          .getStaffAuditManager()
+          .recordAction(sessionOpt.get().adminUsername(), "Создал вебхук '" + name + "'");
+      sendSuccess(resp, publicHook(hook));
             return;
         }
 
@@ -170,11 +201,12 @@ public class ApiDeveloperHandler extends ApiHandlerSupport {
         Optional<WebSession> sessionOpt = requireSession(req, resp);
         if (sessionOpt.isEmpty()) return;
 
-        if (!hasPermission(sessionOpt.get(), Permission.MANAGE_ADMINS) && !hasPermission(sessionOpt.get(), Permission.MANAGE_API)) {
+    if (!hasPermission(sessionOpt.get(), Permission.MANAGE_API)) {
             sendError(resp, 403, "Удаление доступно только руководству");
             return;
         }
 
+    req.setAttribute("lwa.permission", Permission.MANAGE_API.name());
         String path = req.getPathInfo();
         if (path == null) path = "";
 
@@ -207,6 +239,26 @@ public class ApiDeveloperHandler extends ApiHandlerSupport {
         sendError(resp, 404, "Эндпоинт не найден");
     }
 
+  private Map<String, Object> publicHook(WebhookRecord hook) {
+    String host;
+    try {
+      host = java.net.URI.create(hook.url()).getHost();
+    } catch (IllegalArgumentException error) {
+      host = "Некорректный адрес";
+    }
+    var value = new LinkedHashMap<String, Object>();
+    value.put("id", hook.id());
+    value.put("name", hook.name());
+    value.put("host", host);
+    value.put("urlConfigured", hook.url() != null && !hook.url().isBlank());
+    value.put("secretConfigured", hook.secret() != null && !hook.secret().isBlank());
+    value.put("events", hook.events());
+    value.put("isActive", hook.isActive());
+    value.put("createdAt", hook.createdAt());
+    value.put("lastTriggerAt", hook.lastTriggerAt());
+    return value;
+  }
+
     private Map<String, Object> getApiDocumentation() {
         Map<String, Object> docs = new LinkedHashMap<>();
         docs.put("name", "LoveWebAdmin REST API");
@@ -228,9 +280,30 @@ public class ApiDeveloperHandler extends ApiHandlerSupport {
         endpoints.add(createEndpointDoc("GET", "/api/server/ops", "Оперативные метрики сервера (TPS, CPU, Heap RAM, Whitelist)", "VIEW_STATS", null, "{}"));
         endpoints.add(createEndpointDoc("GET", "/api/economy/overview", "Экономическая сводка: общая масса монет, топ богачей", "VIEW_STATS", null, "{}"));
         endpoints.add(createEndpointDoc("GET", "/api/loveauth/status", "Статус сервиса авторизации, безопасность и защита", "VIEW_SECURITY", null, "{}"));
-        endpoints.add(createEndpointDoc("GET", "/api/developer/keys", "Список активных API ключей разработчиков", "MANAGE_ADMINS", null, "[]"));
-        endpoints.add(createEndpointDoc("POST", "/api/developer/keys", "Создание нового API ключа", "MANAGE_ADMINS", null, "{\"name\":\"Discord Bot\",\"permissions\":[\"*\"]}"));
-        endpoints.add(createEndpointDoc("GET", "/api/developer/webhooks", "Список исходящих вебхуков Discord / HTTP", "MANAGE_ADMINS", null, "[]"));
+    endpoints.add(
+        createEndpointDoc(
+            "GET",
+            "/api/developer/keys",
+            "Список активных API ключей разработчиков",
+            "MANAGE_API",
+            null,
+            "[]"));
+    endpoints.add(
+        createEndpointDoc(
+            "POST",
+            "/api/developer/keys",
+            "Создание нового API ключа",
+            "MANAGE_API",
+            null,
+            "{\"name\":\"Discord Bot\",\"permissions\":[\"*\"]}"));
+    endpoints.add(
+        createEndpointDoc(
+            "GET",
+            "/api/developer/webhooks",
+            "Список исходящих вебхуков Discord / HTTP",
+            "MANAGE_API",
+            null,
+            "[]"));
 
         docs.put("endpoints", endpoints);
         return docs;

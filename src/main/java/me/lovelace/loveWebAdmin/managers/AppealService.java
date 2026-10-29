@@ -3,10 +3,59 @@ package me.lovelace.loveWebAdmin.managers;
 import me.lovelace.loveWebAdmin.LoveWebAdmin;
 
 public final class AppealService {
-  private final LoveWebAdmin plugin;
+  public interface Context {
+    me.lovelace.loveWebAdmin.database.DatabaseManager database();
+
+    me.lovelace.loveWebAdmin.database.ModerationStore moderation();
+
+    boolean unban(int ban, String actor);
+
+    void reduce(int ban, String actor, long seconds);
+
+    void finish(me.lovelace.loveWebAdmin.models.WebBanAppeal appeal, String message);
+
+    void audit(String actor, String message);
+
+    void failure(String message);
+  }
+
+  private final Context context;
+
+  public AppealService(Context context) {
+    this.context = java.util.Objects.requireNonNull(context);
+  }
 
   public AppealService(LoveWebAdmin plugin) {
-    this.plugin = plugin;
+    this(
+        new Context() {
+          public me.lovelace.loveWebAdmin.database.DatabaseManager database() {
+            return plugin.getDatabaseManager();
+          }
+
+          public me.lovelace.loveWebAdmin.database.ModerationStore moderation() {
+            return plugin.moderation();
+          }
+
+          public boolean unban(int id, String actor) {
+            return plugin.getBanManager().unban(id, actor);
+          }
+
+          public void reduce(int id, String actor, long seconds) {
+            plugin.getBanManager().reduceDuration(id, actor, seconds);
+          }
+
+          public void finish(me.lovelace.loveWebAdmin.models.WebBanAppeal appeal, String message) {
+            plugin.getDiscordBridge().finishAppeal(appeal, message);
+          }
+
+          public void audit(String actor, String message) {
+            plugin.getLogManager().logWebAction(actor, message);
+          }
+
+          public void failure(String message) {
+            plugin.getLogger().severe(message);
+          }
+        });
   }
 
   public String decide(int id, String actor, boolean approve, String reason) {
@@ -24,8 +73,8 @@ public final class AppealService {
       throw new me.lovelace.loveWebAdmin.utils.ActionRejectedException(
           "Укажите обоснование решения");
     var appeal =
-        plugin
-            .getDatabaseManager()
+        context
+            .database()
             .getAppealById(id)
             .orElseThrow(
                 () ->
@@ -33,23 +82,22 @@ public final class AppealService {
                         "Апелляция не найдена"));
     try {
       if (!status.equals("REJECTED")
-          && "SECURITY".equals(plugin.moderation().source(appeal.banId()).get("kind")))
+          && "SECURITY".equals(context.moderation().source(appeal.banId()).get("kind")))
         throw new me.lovelace.loveWebAdmin.utils.ActionRejectedException(
             "Снимите ограничение через раздел безопасности LoveAuth; обычный разбан к нему"
                 + " неприменим");
     } catch (java.sql.SQLException e) {
       throw new IllegalStateException(e);
     }
-    if (!plugin.getDatabaseManager().reserveAppealDecision(id))
+    if (!context.database().reserveAppealDecision(id))
       throw new me.lovelace.loveWebAdmin.utils.ActionRejectedException(
           "Апелляция уже закрыта или рассматривается");
     boolean completed = false;
     boolean nativeChanged = false;
     try {
-      if (approve && !plugin.getBanManager().unban(appeal.banId(), actor))
+      if (approve && !context.unban(appeal.banId(), actor))
         throw new IllegalStateException("Не удалось снять блокировку");
-      if (status.equals("REDUCED"))
-        plugin.getBanManager().reduceDuration(appeal.banId(), actor, remainingSeconds);
+      if (status.equals("REDUCED")) context.reduce(appeal.banId(), actor, remainingSeconds);
       nativeChanged = approve || status.equals("REDUCED");
       String message =
           (approve
@@ -61,26 +109,20 @@ public final class AppealService {
               + actor
               + ".\n"
               + reason.trim();
-      if (!plugin.getDatabaseManager().finishAppealDecision(id, status, actor, message))
+      if (!context.database().finishAppealDecision(id, status, actor, message))
         throw new IllegalStateException("Не удалось сохранить решение");
       completed = true;
-      plugin.getDiscordBridge().finishAppeal(appeal, message);
-      plugin
-          .getLogManager()
-          .logWebAction(
-              actor, "Решение по апелляции №" + id + ": " + status + "; " + reason.trim());
+      context.finish(appeal, message);
+      context.audit(actor, "Решение по апелляции №" + id + ": " + status + "; " + reason.trim());
       return message;
     } finally {
-      if (!completed && !nativeChanged)
-        plugin.getDatabaseManager().updateAppealStatus(id, "PENDING");
+      if (!completed && !nativeChanged) context.database().updateAppealStatus(id, "PENDING");
       else if (!completed)
-        plugin
-            .getLogger()
-            .severe(
-                "Апелляция №"
-                    + id
-                    + ": наказание изменено, но решение не сохранено. Состояние DECIDING оставлено"
-                    + " для ручной проверки.");
+        context.failure(
+            "Апелляция №"
+                + id
+                + ": наказание изменено, но решение не сохранено. Состояние DECIDING оставлено"
+                + " для ручной проверки.");
     }
   }
 }

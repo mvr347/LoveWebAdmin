@@ -44,6 +44,17 @@
     "VIEW_REPORTS",
     "MANAGE_REPORTS",
     "MANAGE_API",
+    "VIEW_SERVER_SETTINGS",
+    "MANAGE_PANEL_SETTINGS",
+    "MANAGE_SERVER_SETTINGS",
+    "MANAGE_SECURITY_SETTINGS",
+    "MANAGE_INTEGRATIONS",
+    "MANAGE_MAINTENANCE",
+    "MANAGE_WHITELIST",
+    "MANAGE_OPERATORS",
+    "MANAGE_PREVIEW",
+    "REVIEW_VESUVIO_SAMPLES",
+    "MANAGE_VESUVIO_MODELS",
     "VIEW_SERVER_INTERNALS",
     "BYPASS_MAINTENANCE",
   ];
@@ -104,7 +115,6 @@
           discordNotifyReports: true,
           discordNotifyTickets: true,
         },
-        onShift: false,
       }),
     );
     const players = ["Ada123", "Lovelace69", "Traveller"].map((name, i) => ({
@@ -473,7 +483,6 @@
           status: "ACTIVE",
           totpEnabled: true,
           uiPreferences: {},
-          onShift: false,
         };
         state.admins.push(a);
         state.viewer = a.id;
@@ -483,6 +492,56 @@
           status: "ACTIVE",
           backupCodes: ["PREV-0001", "PREV-0002"],
         };
+      }
+      if (parts[1] === "portal") {
+        state.portalSessions ||= {};
+        if (n === "exchange" && method === "POST") {
+          if (!body.code || body.code !== state.portalOneTimeCode)
+            fail(401, "Ссылка использована или истекла");
+          state.portalOneTimeCode = null;
+          const token = "preview-player-" + id();
+          state.portalSessions[token] = true;
+          return { token };
+        }
+        const token =
+          headers["x-player-session"] || headers["X-Player-Session"];
+        if (!state.portalSessions[token])
+          fail(401, "Откройте тестовую одноразовую ссылку");
+        if (n === "logout") {
+          delete state.portalSessions[token];
+          return {};
+        }
+        if (n === "cases")
+          return state.appeals.map((a) => ({
+            kind: "appeal",
+            id: a.id,
+            player: a.playerName,
+            status: a.status,
+            reason: a.reason,
+            verified: a.accountVerified,
+          }));
+        if (!["appeal", "report"].includes(n))
+          fail(404, "Обращение не найдено");
+        const c = n === "appeal" ? getAppeal(action) : getReport(action),
+          key = n + ":" + c.id;
+        if (method === "GET")
+          return {
+            messages: n === "appeal" ? c.messages : state.discussion[key] || [],
+            evidence: (state.caseEvidence?.[key] || [])
+              .filter((e) => e.visibility === "AUTHOR")
+              .map(({ base64, ...e }) => e),
+          };
+        if (c.status !== "PENDING") fail(409, "Обращение закрыто");
+        const message = {
+          id: id(),
+          authorName: c.playerName || c.reporterName,
+          isStaff: false,
+          message: reason(body.text),
+          createdAt: clock(),
+        };
+        if (n === "appeal") c.messages.push(message);
+        else (state.discussion[key] ||= []).push(message);
+        return {};
       }
       if (p === "/api/appeals" && method === "POST") return createAppeal(body);
       if (parts[1] === "appeals" && n) {
@@ -548,22 +607,8 @@
             : body.uiPreferences;
         return {};
       }
-      if (p === "/api/me/shift") {
-        if (method !== "GET") {
-          viewer().onShift = !!body.onShift;
-          audit(viewer().onShift ? "Начало смены" : "Завершение смены");
-        }
-        return { onShift: viewer().onShift };
-      }
-      if (p === "/api/staff/shifts")
-        return state.admins
-          .filter((a) => a.onShift)
-          .map((a) => ({
-            ...clone(a),
-            roleName: state.roles.find((r) => r.id === a.roleId)?.name,
-            durationMinutes: 5,
-            shiftStartedAt: clock() - 300,
-          }));
+      if (p === "/api/me/shift" || p === "/api/staff/shifts")
+        fail(410, "Механика смен удалена");
       if (p === "/api/me/sessions")
         return [
           {
@@ -800,7 +845,45 @@
         if (!n || n === "all")
           return method === "GET" ? clone(state.bans) : createBan(body);
         const b = getBan(n);
-        if (method === "GET") return clone(b);
+        if (method === "GET")
+          return {
+            ...clone(b),
+            revision: b.revision || 0,
+            history: b.history || [],
+          };
+        if (action === "correct") {
+          if (b.status !== "ACTIVE") fail(409, "Блокировка уже закрыта");
+          if (Number(body.revision) !== (b.revision || 0))
+            fail(409, "Блокировка изменена; черновик сохранён");
+          const why = reason(body.explanation),
+            before = JSON.stringify({
+              ruleReason: b.ruleReason,
+              expiresAt: b.expiresAt,
+              description: b.description,
+            });
+          b.ruleReason = reason(body.ruleReason);
+          b.description = body.description || "";
+          const seconds = Number(body.remainingSeconds);
+          if (seconds !== -1 && (!Number.isInteger(seconds) || seconds < 60))
+            fail(400, "Неверный срок");
+          b.expiresAt = seconds < 0 ? -1 : clock() + seconds;
+          b.durationSeconds = seconds;
+          b.revision = (b.revision || 0) + 1;
+          (b.history ||= []).push({
+            id: id(),
+            actor: viewer().username,
+            explanation: why,
+            before,
+            after: JSON.stringify({
+              ruleReason: b.ruleReason,
+              expiresAt: b.expiresAt,
+              description: b.description,
+            }),
+            state: "APPLIED",
+            createdAt: clock(),
+          });
+          return clone(b);
+        }
         if (action === "unban") {
           if (b.status !== "ACTIVE") fail(409, "Блокировка уже снята");
           b.status = "UNBANNED";
@@ -934,16 +1017,53 @@
         );
         const c = kind === "report" ? getReport(caseId) : getAppeal(caseId),
           key = kind + ":" + caseId;
+        state.caseEvidence ||= {};
+        state.caseVersions ||= {};
+        if (method === "GET" && act === "evidence") {
+          const evidence = (state.caseEvidence[key] || []).find(
+            (e) => e.id === Number(parts[5]),
+          );
+          if (!evidence || evidence.type !== "IMAGE")
+            fail(404, "Доказательство не найдено");
+          return { mime: evidence.mime, base64: evidence.base64 };
+        }
         if (method === "GET")
           return {
+            revision: state.caseVersions[key] || 0,
+            evidence: (state.caseEvidence[key] || []).map(
+              ({ base64, ...e }) => e,
+            ),
             work: clone(currentWork(kind, caseId)),
             notes: clone(state.notes[key] || []),
             discussion: clone(state.discussion[key] || []),
             related: clone(c.related || []),
           };
         if (c.status !== "PENDING") fail(409, "Дело закрыто");
+        if (body.revision !== undefined) {
+          if (Number(body.revision) !== (state.caseVersions[key] || 0))
+            fail(409, "Дело изменилось; черновик сохранён");
+          state.caseVersions[key] = (state.caseVersions[key] || 0) + 1;
+        }
         const w = currentWork(kind, caseId);
-        if (act === "claim") {
+        if (act === "evidence") {
+          if (
+            !["TEXT", "CHAT", "LINK", "IMAGE"].includes(body.type) ||
+            !["STAFF", "AUTHOR"].includes(body.visibility)
+          )
+            fail(400, "Неверный тип доказательства");
+          if (body.type === "LINK" && !/^https?:\/\//.test(body.value))
+            fail(400, "Нужна http/https-ссылка");
+          (state.caseEvidence[key] ||= []).push({
+            id: id(),
+            author: viewer().username,
+            type: body.type,
+            value: reason(body.value),
+            visibility: body.visibility,
+            createdAt: clock(),
+            base64: body.base64,
+            mime: body.type === "IMAGE" ? "image/png" : null,
+          });
+        } else if (act === "claim") {
           if (w.assignee) fail(409, "Дело уже занято");
           state.work[key] = {
             ...w,
@@ -1059,7 +1179,17 @@
         return {};
       }
       if (parts[1] === "server") {
-        requirePermission("MANAGE_ADMINS");
+        requirePermission(
+          n === "config"
+            ? method === "GET"
+              ? "VIEW_SERVER_SETTINGS"
+              : "MANAGE_SERVER_SETTINGS"
+            : n === "maintenance"
+              ? "MANAGE_MAINTENANCE"
+              : n === "ops"
+                ? "MANAGE_OPERATORS"
+                : "MANAGE_WHITELIST",
+        );
         if (n === "config") {
           if (method === "POST") Object.assign(state.config, body);
           return clone(state.config);
@@ -1329,8 +1459,7 @@
         });
       } else if (name === "deliver") {
         for (const d of state.deliveries.filter((d) => d.state === "PENDING")) {
-          if (d.type === "staff" && (!viewer()?.onShift || state.discord.quiet))
-            continue;
+          if (d.type === "staff" && state.discord.quiet) continue;
           d.attempts++;
           d.state = state.discord.fail ? "FAILED" : "DELIVERED";
           d.error = state.discord.fail ? "Тестовая ошибка Discord" : "";
@@ -1342,7 +1471,11 @@
           p.online = p.isOnline = true;
           p.health = 20;
         }
-      else fail(400, "Сценарий не найден");
+      else if (name === "portal") {
+        state.portalOneTimeCode = "preview-portal-" + id();
+        save();
+        return { code: state.portalOneTimeCode };
+      } else fail(400, "Сценарий не найден");
       save();
     }
     function switchRole(n) {

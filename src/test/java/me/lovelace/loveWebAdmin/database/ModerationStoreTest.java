@@ -127,11 +127,19 @@ class ModerationStoreTest {
   }
 
   @Test
-  void interruptedDeliveryRecoveredAfterRestart() throws Exception {
+  void interruptedDeliveryRequiresManualConfirmationAfterRestart() throws Exception {
     store.enqueue("ban:1", "user", "a");
-    store.takeDelivery(((Number) store.due().getFirst().get("id")).intValue());
+    int id = ((Number) store.due().getFirst().get("id")).intValue();
+    store.takeDelivery(id);
     store.close();
     store = new ModerationStore(dir.resolve("moderation.db"));
+    assertTrue(store.due().isEmpty());
+    assertEquals("UNCERTAIN", store.deliveries().getFirst().get("state"));
+    assertFalse(store.retryDelivery(id));
+    assertTrue(
+        store.resolveDelivery(id, false, "Staff", "Проверил Discord: сообщение отсутствует"));
+    assertFalse(store.resolveDelivery(id, true, "Staff", "Повторное подтверждение невозможно"));
+    assertTrue(store.retryDelivery(id));
     assertEquals(1, store.due().size());
   }
 
@@ -273,5 +281,44 @@ class ModerationStoreTest {
     store.source(1, "ANTICHEAT", "Vesuvio", "unique-1");
     assertEquals("Vesuvio", store.source(1).get("actor"));
     assertThrows(SQLException.class, () -> store.source(2, "ANTICHEAT", "Vesuvio", "unique-1"));
+  }
+
+  @org.junit.jupiter.api.Test
+  void oneTimePortalAndEvidencePrivacy() throws Exception {
+    try (var store =
+        new ModerationStore(
+            java.nio.file.Files.createTempDirectory("portal-test").resolve("moderation.db"))) {
+      String code = store.portalLink("1234567890", null);
+      var session = store.exchangePortal(code).orElseThrow();
+      org.junit.jupiter.api.Assertions.assertTrue(store.exchangePortal(code).isEmpty());
+      org.junit.jupiter.api.Assertions.assertTrue(
+          store.portalSession(session.get("token")).isPresent());
+      store.portalLogout(session.get("token"));
+      org.junit.jupiter.api.Assertions.assertTrue(
+          store.portalSession(session.get("token")).isEmpty());
+      store.addEvidence(
+          "appeal", 1, "Moderator", "TEXT", "Внутренний контекст", "STAFF", null, null);
+      store.addEvidence(
+          "appeal", 1, "Moderator", "LINK", "https://example.com/evidence", "AUTHOR", null, null);
+      org.junit.jupiter.api.Assertions.assertEquals(2, store.evidence("appeal", 1, false).size());
+      org.junit.jupiter.api.Assertions.assertEquals(1, store.evidence("appeal", 1, true).size());
+      org.junit.jupiter.api.Assertions.assertTrue(store.evidence("appeal", 2, true).isEmpty());
+    }
+  }
+
+  @org.junit.jupiter.api.Test
+  void caseRevisionHasSingleWinner() throws Exception {
+    try (var store =
+            new ModerationStore(
+                java.nio.file.Files.createTempDirectory("revision-test").resolve("moderation.db"));
+        var pool = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
+      var tasks = new java.util.ArrayList<java.util.concurrent.Future<Boolean>>();
+      for (int i = 0; i < 40; i++)
+        tasks.add(pool.submit(() -> store.reserveRevision("report", 12, 0)));
+      int winners = 0;
+      for (var task : tasks) if (task.get()) winners++;
+      org.junit.jupiter.api.Assertions.assertEquals(1, winners);
+      org.junit.jupiter.api.Assertions.assertEquals(1, store.revision("report", 12));
+    }
   }
 }

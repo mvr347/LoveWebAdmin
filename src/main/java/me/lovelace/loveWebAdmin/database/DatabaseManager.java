@@ -40,7 +40,6 @@ import java.util.Optional;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
-import org.bukkit.Bukkit;
 
 /**
  * Менеджер базы данных SQLite.
@@ -50,18 +49,53 @@ public class DatabaseManager {
 
     private final LoveWebAdmin plugin;
     private Connection connection;
+  private final File folder;
+  private final java.util.logging.Logger logger;
+  private final String ownerGroup;
+
+  /** Isolated storage for server-side Preview and deterministic integration tests. */
+  public DatabaseManager(java.nio.file.Path folder) {
+    this.plugin = null;
+    this.folder = folder.toFile();
+    this.logger = java.util.logging.Logger.getLogger("LoveWebAdmin-Preview");
+    this.ownerGroup = "owner";
+  }
 
     public DatabaseManager(LoveWebAdmin plugin) {
-        this.plugin = plugin;
+    this.plugin = plugin;
+    this.folder = plugin.getDataFolder();
+    this.logger = plugin.getLogger();
+    this.ownerGroup = plugin.getConfig().getString("luckperms.owner-lp-group", "owner");
+  }
+
+  public synchronized String loadPreviewState() throws SQLException {
+    if (plugin != null) throw new IllegalStateException("Preview storage only");
+    try (var q = connection.createStatement()) {
+      q.execute(
+          "CREATE TABLE IF NOT EXISTS preview_document(id INTEGER PRIMARY KEY CHECK(id=1),body TEXT NOT NULL)");
+      try (var rs = q.executeQuery("SELECT body FROM preview_document WHERE id=1")) {
+        return rs.next() ? rs.getString(1) : null;
+      }
+    }
+  }
+
+  public synchronized void savePreviewState(String state) throws SQLException {
+    if (plugin != null) throw new IllegalStateException("Preview storage only");
+    try (var q =
+        connection.prepareStatement(
+            "INSERT INTO preview_document(id,body) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body")) {
+      q.setString(1, state);
+      q.executeUpdate();
+    }
     }
 
     public synchronized void initialize() {
         try {
-            File dataFolder = plugin.getDataFolder();
+      File dataFolder = folder;
             if (!dataFolder.exists()) {
                 dataFolder.mkdirs();
             }
-            File dbFile = new File(plugin.getDataFolder(), "database.db");
+      File dbFile = new File(folder, "database.db");
 
             try {
                 Class.forName("org.sqlite.JDBC");
@@ -69,7 +103,7 @@ public class DatabaseManager {
                 throw new IllegalStateException("Драйвер SQLite не найден",e);
             }
             connection = DriverManager.getConnection("jdbc:sqlite:" + dbFile.getAbsolutePath());
-            File backup = new File(plugin.getDataFolder(),"database-before-moderation-v2.db");
+      File backup = new File(folder, "database-before-panel-v3.db");
             if(dbFile.length()>0 && !backup.exists()) try(var snapshot=connection.createStatement()) {
                 snapshot.execute("VACUUM INTO '"+backup.getAbsolutePath().replace("'","''")+"'");
             }
@@ -401,7 +435,7 @@ public class DatabaseManager {
                     }
                 }
             } catch (SQLException e) {
-                plugin.getLogger().warning("migrate invites totp_secret: " + e.getMessage());
+        logger.warning("migrate invites totp_secret: " + e.getMessage());
             }
 
             migrateEconomySnapshots();
@@ -411,9 +445,10 @@ public class DatabaseManager {
             migrateWebBans();
             migratePlayerReports();
             initializePresetRoles();
-            bootstrapDefaultAdminIfEmpty();
+      if (plugin != null) bootstrapDefaultAdminIfEmpty();
 
-        } catch (SQLException e) {
+    } catch (SQLException | RuntimeException e) {
+      close();
             throw new IllegalStateException("Не удалось инициализировать базу данных",e);
         }
     }
@@ -435,7 +470,7 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("migrate economy_snapshots scale_version: " + e.getMessage());
+      logger.warning("migrate economy_snapshots scale_version: " + e.getMessage());
         }
     }
 
@@ -478,7 +513,7 @@ public class DatabaseManager {
                 statement.execute("ALTER TABLE web_admins ADD COLUMN shift_started_at INTEGER DEFAULT 0");
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка проверки/миграции колонок web_admins: " + e.getMessage());
+      logger.warning("Ошибка проверки/миграции колонок web_admins: " + e.getMessage());
         }
     }
 
@@ -502,7 +537,7 @@ public class DatabaseManager {
                 statement.execute("ALTER TABLE web_roles ADD COLUMN sort_order INTEGER DEFAULT 50");
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка проверки/миграции колонок web_roles: " + e.getMessage());
+      logger.warning("Ошибка проверки/миграции колонок web_roles: " + e.getMessage());
         }
     }
 
@@ -527,7 +562,7 @@ public class DatabaseManager {
                 statement.execute("ALTER TABLE web_sessions ADD COLUMN last_used_at INTEGER DEFAULT 0");
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка проверки/миграции колонок web_sessions: " + e.getMessage());
+      logger.warning("Ошибка проверки/миграции колонок web_sessions: " + e.getMessage());
         }
     }
 
@@ -541,10 +576,10 @@ public class DatabaseManager {
 
             if (!columns.contains("linked_report_id")) {
                 statement.execute("ALTER TABLE web_bans ADD COLUMN linked_report_id INTEGER DEFAULT NULL");
-                plugin.getLogger().info("[WebAdmin] Добавлена колонка linked_report_id в таблицу web_bans");
+        logger.info("[WebAdmin] Добавлена колонка linked_report_id в таблицу web_bans");
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка проверки/миграции колонок web_bans: " + e.getMessage());
+      logger.warning("Ошибка проверки/миграции колонок web_bans: " + e.getMessage());
         }
     }
 
@@ -558,10 +593,10 @@ public class DatabaseManager {
 
             if (!columns.contains("linked_ban_id")) {
                 statement.execute("ALTER TABLE player_reports ADD COLUMN linked_ban_id INTEGER DEFAULT NULL");
-                plugin.getLogger().info("[WebAdmin] Добавлена колонка linked_ban_id в таблицу player_reports");
+        logger.info("[WebAdmin] Добавлена колонка linked_ban_id в таблицу player_reports");
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка проверки/миграции колонок player_reports: " + e.getMessage());
+      logger.warning("Ошибка проверки/миграции колонок player_reports: " + e.getMessage());
         }
     }
 
@@ -569,7 +604,7 @@ public class DatabaseManager {
         // 1. Управляющий (OWNER, 10)
         String ownerDesc = "Полный доступ ко всей системе и управлению сервером";
         if (getRoleByName("Управляющий").isEmpty()) {
-            String ownerLpGroup = plugin.getConfig().getString("luckperms.owner-lp-group", "owner");
+      String ownerLpGroup = ownerGroup;
             saveRole(new WebRole(0, "Управляющий", ownerDesc, "OWNER", 10, ownerLpGroup, EnumSet.allOf(Permission.class), true, "#a855f7"));
         } else {
             getRoleByName("Управляющий").ifPresent(ownerRole -> {
@@ -683,11 +718,12 @@ public class DatabaseManager {
                         "{}"
                     );
                     saveAdmin(defaultAdmin);
-                    plugin.getLogger().info("[WebAdmin] Создан первоначальный мастер-аккаунт admin / admin со статусом NEED_ONBOARDING.");
+          logger.info(
+              "[WebAdmin] Создан первоначальный мастер-аккаунт admin / admin со статусом NEED_ONBOARDING.");
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка проверки администраторов: " + e.getMessage());
+      logger.warning("Ошибка проверки администраторов: " + e.getMessage());
         }
     }
 
@@ -696,7 +732,7 @@ public class DatabaseManager {
             try {
                 connection.close();
             } catch (SQLException e) {
-                plugin.getLogger().warning("Ошибка при закрытии базы данных: " + e.getMessage());
+        logger.warning("Ошибка при закрытии базы данных: " + e.getMessage());
             }
         }
     }
@@ -739,7 +775,7 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка сохранения роли: " + e.getMessage());
+      logger.warning("Ошибка сохранения роли: " + e.getMessage());
         }
     }
 
@@ -751,7 +787,7 @@ public class DatabaseManager {
                 if (rs.next()) return Optional.of(mapRole(rs));
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка получения роли: " + e.getMessage());
+      logger.warning("Ошибка получения роли: " + e.getMessage());
         }
         return Optional.empty();
     }
@@ -764,7 +800,7 @@ public class DatabaseManager {
                 if (rs.next()) return Optional.of(mapRole(rs));
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка получения роли: " + e.getMessage());
+      logger.warning("Ошибка получения роли: " + e.getMessage());
         }
         return Optional.empty();
     }
@@ -778,7 +814,7 @@ public class DatabaseManager {
                 roles.add(mapRole(rs));
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка получения списка ролей: " + e.getMessage());
+      logger.warning("Ошибка получения списка ролей: " + e.getMessage());
         }
         return roles;
     }
@@ -789,7 +825,7 @@ public class DatabaseManager {
             ps.setInt(1, id);
             ps.executeUpdate();
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка удаления роли: " + e.getMessage());
+      logger.warning("Ошибка удаления роли: " + e.getMessage());
         }
     }
 
@@ -844,7 +880,7 @@ public class DatabaseManager {
              ResultSet rs = statement.executeQuery(sql)) {
             if (rs.next()) return rs.getInt(1) > 0;
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка проверки владельца: " + e.getMessage());
+      logger.warning("Ошибка проверки владельца: " + e.getMessage());
         }
         return false;
     }
@@ -909,7 +945,7 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка сохранения администратора: " + e.getMessage());
+      logger.warning("Ошибка сохранения администратора: " + e.getMessage());
         }
     }
 
@@ -921,7 +957,7 @@ public class DatabaseManager {
                 if (rs.next()) return Optional.of(mapAdmin(rs));
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка получения администратора: " + e.getMessage());
+      logger.warning("Ошибка получения администратора: " + e.getMessage());
         }
         return Optional.empty();
     }
@@ -934,7 +970,7 @@ public class DatabaseManager {
                 if (rs.next()) return Optional.of(mapAdmin(rs));
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка получения администратора: " + e.getMessage());
+      logger.warning("Ошибка получения администратора: " + e.getMessage());
         }
         return Optional.empty();
     }
@@ -948,7 +984,7 @@ public class DatabaseManager {
                 admins.add(mapAdmin(rs));
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка получения списка администраторов: " + e.getMessage());
+      logger.warning("Ошибка получения списка администраторов: " + e.getMessage());
         }
         return admins;
     }
@@ -962,7 +998,7 @@ public class DatabaseManager {
                 admins.add(mapAdmin(rs));
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка получения заявок администраторов: " + e.getMessage());
+      logger.warning("Ошибка получения заявок администраторов: " + e.getMessage());
         }
         return admins;
     }
@@ -974,7 +1010,7 @@ public class DatabaseManager {
             ps.setInt(2, id);
             return ps.executeUpdate() > 0;
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка утверждения администратора: " + e.getMessage());
+      logger.warning("Ошибка утверждения администратора: " + e.getMessage());
             return false;
         }
     }
@@ -985,7 +1021,7 @@ public class DatabaseManager {
             ps.setInt(1, id);
             return ps.executeUpdate() > 0;
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка отклонения администратора: " + e.getMessage());
+      logger.warning("Ошибка отклонения администратора: " + e.getMessage());
             return false;
         }
     }
@@ -996,7 +1032,7 @@ public class DatabaseManager {
             ps.setInt(1, id);
             ps.executeUpdate();
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка удаления администратора: " + e.getMessage());
+      logger.warning("Ошибка удаления администратора: " + e.getMessage());
         }
     }
 
@@ -1007,7 +1043,7 @@ public class DatabaseManager {
             ps.setInt(2, id);
             ps.executeUpdate();
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка установки пароля: " + e.getMessage());
+      logger.warning("Ошибка установки пароля: " + e.getMessage());
         }
     }
 
@@ -1018,7 +1054,7 @@ public class DatabaseManager {
             ps.setInt(2, id);
             ps.executeUpdate();
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка обновления времени входа: " + e.getMessage());
+      logger.warning("Ошибка обновления времени входа: " + e.getMessage());
         }
     }
 
@@ -1031,7 +1067,7 @@ public class DatabaseManager {
             ps.setInt(4, id);
             ps.executeUpdate();
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка обновления 2FA данных: " + e.getMessage());
+      logger.warning("Ошибка обновления 2FA данных: " + e.getMessage());
         }
     }
 
@@ -1042,7 +1078,7 @@ public class DatabaseManager {
             ps.setInt(2, id);
             ps.executeUpdate();
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка обновления настроек интерфейса: " + e.getMessage());
+      logger.warning("Ошибка обновления настроек интерфейса: " + e.getMessage());
         }
     }
 
@@ -1058,7 +1094,7 @@ public class DatabaseManager {
             ps.setInt(3, id);
             ps.executeUpdate();
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка обновления роли администратора: " + e.getMessage());
+      logger.warning("Ошибка обновления роли администратора: " + e.getMessage());
         }
     }
 
@@ -1083,7 +1119,7 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка создания приглашения: " + e.getMessage());
+      logger.warning("Ошибка создания приглашения: " + e.getMessage());
         }
         return null;
     }
@@ -1097,7 +1133,7 @@ public class DatabaseManager {
                 list.add(mapInvite(rs));
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка получения приглашений: " + e.getMessage());
+      logger.warning("Ошибка получения приглашений: " + e.getMessage());
         }
         return list;
     }
@@ -1110,7 +1146,7 @@ public class DatabaseManager {
                 if (rs.next()) return Optional.of(mapInvite(rs));
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка поиска приглашения: " + e.getMessage());
+      logger.warning("Ошибка поиска приглашения: " + e.getMessage());
         }
         return Optional.empty();
     }
@@ -1121,7 +1157,7 @@ public class DatabaseManager {
             ps.setInt(1, id);
             return ps.executeUpdate() > 0;
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка отмены приглашения: " + e.getMessage());
+      logger.warning("Ошибка отмены приглашения: " + e.getMessage());
             return false;
         }
     }
@@ -1132,7 +1168,7 @@ public class DatabaseManager {
             ps.setInt(1, id);
             return ps.executeUpdate() > 0;
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка закрытия приглашения: " + e.getMessage());
+      logger.warning("Ошибка закрытия приглашения: " + e.getMessage());
             return false;
         }
     }
@@ -1162,7 +1198,7 @@ public class DatabaseManager {
             ps.setInt(2, inviteId);
             return ps.executeUpdate() > 0;
         } catch (SQLException e) {
-            plugin.getLogger().warning("bindInviteTotpSecret: " + e.getMessage());
+      logger.warning("bindInviteTotpSecret: " + e.getMessage());
             return false;
         }
     }
@@ -1174,7 +1210,7 @@ public class DatabaseManager {
             ps.setInt(2, id);
             ps.executeUpdate();
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка обновления резервных кодов: " + e.getMessage());
+      logger.warning("Ошибка обновления резервных кодов: " + e.getMessage());
         }
     }
 
@@ -1216,7 +1252,7 @@ public class DatabaseManager {
             ps.setLong(7, session.lastUsedAt());
             ps.executeUpdate();
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка сохранения сессии: " + e.getMessage());
+      logger.warning("Ошибка сохранения сессии: " + e.getMessage());
         }
     }
 
@@ -1245,7 +1281,7 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка получения сессии: " + e.getMessage());
+      logger.warning("Ошибка получения сессии: " + e.getMessage());
         }
         return Optional.empty();
     }
@@ -1256,7 +1292,7 @@ public class DatabaseManager {
             ps.setString(1, token);
             ps.executeUpdate();
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка удаления сессии: " + e.getMessage());
+      logger.warning("Ошибка удаления сессии: " + e.getMessage());
         }
     }
 
@@ -1266,7 +1302,7 @@ public class DatabaseManager {
             ps.setLong(1, System.currentTimeMillis() / 1000);
             ps.executeUpdate();
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка очистки истёкших сессий: " + e.getMessage());
+      logger.warning("Ошибка очистки истёкших сессий: " + e.getMessage());
         }
     }
 
@@ -1296,7 +1332,7 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка загрузки активных сессий: " + e.getMessage());
+      logger.warning("Ошибка загрузки активных сессий: " + e.getMessage());
         }
         return sessions;
     }
@@ -1329,7 +1365,7 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка получения сессий администратора: " + e.getMessage());
+      logger.warning("Ошибка получения сессий администратора: " + e.getMessage());
         }
         return sessions;
     }
@@ -1340,7 +1376,7 @@ public class DatabaseManager {
             ps.setInt(1, adminId);
             ps.executeUpdate();
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка удаления сессий администратора: " + e.getMessage());
+      logger.warning("Ошибка удаления сессий администратора: " + e.getMessage());
         }
     }
 
@@ -1351,7 +1387,7 @@ public class DatabaseManager {
             ps.setString(2, currentToken);
             ps.executeUpdate();
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка удаления других сессий: " + e.getMessage());
+      logger.warning("Ошибка удаления других сессий: " + e.getMessage());
         }
     }
 
@@ -1361,7 +1397,7 @@ public class DatabaseManager {
             ps.setString(1, currentToken != null ? currentToken : "");
             ps.executeUpdate();
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка сброса всех сессий: " + e.getMessage());
+      logger.warning("Ошибка сброса всех сессий: " + e.getMessage());
         }
     }
 
@@ -1372,11 +1408,27 @@ public class DatabaseManager {
             ps.setString(2, token);
             ps.executeUpdate();
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка обновления активности сессии: " + e.getMessage());
+      logger.warning("Ошибка обновления активности сессии: " + e.getMessage());
         }
     }
 
-    // ---------- Баны ----------
+  // ---------- Баны ----------
+
+  /** Updates only mutable sanction fields; the original issuer/source remains immutable. */
+  public synchronized boolean correctActiveBan(WebBan before, WebBan after) throws SQLException {
+    try (var q =
+        connection.prepareStatement(
+            "UPDATE web_bans SET rule_reason=?,description=?,duration_seconds=?,expires_at=? WHERE id=? AND status='ACTIVE' AND rule_reason=? AND expires_at=?")) {
+      q.setString(1, after.ruleReason());
+      q.setString(2, after.description());
+      q.setLong(3, after.durationSeconds());
+      q.setLong(4, after.expiresAt());
+      q.setInt(5, before.id());
+      q.setString(6, before.ruleReason());
+      q.setLong(7, before.expiresAt());
+      return q.executeUpdate() == 1;
+    }
+  }
 
     public synchronized WebBan saveBan(WebBan ban) {
         try {
@@ -1445,7 +1497,7 @@ public class DatabaseManager {
                 return ban;
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка сохранения бана: " + e.getMessage());
+      logger.warning("Ошибка сохранения бана: " + e.getMessage());
         }
         throw new IllegalStateException("Блокировка не сохранена в SQLite");
     }
@@ -1458,7 +1510,7 @@ public class DatabaseManager {
                 if (rs.next()) return Optional.of(mapBan(rs));
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка получения бана: " + e.getMessage());
+      logger.warning("Ошибка получения бана: " + e.getMessage());
         }
         return Optional.empty();
     }
@@ -1479,7 +1531,7 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка получения списка банов: " + e.getMessage());
+      logger.warning("Ошибка получения списка банов: " + e.getMessage());
         }
         return list;
     }
@@ -1495,7 +1547,7 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка получения банов создателя: " + e.getMessage());
+      logger.warning("Ошибка получения банов создателя: " + e.getMessage());
         }
         return list;
     }
@@ -1520,7 +1572,7 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка поиска активных банов игрока: " + e.getMessage());
+      logger.warning("Ошибка поиска активных банов игрока: " + e.getMessage());
         }
         return list;
     }
@@ -1546,7 +1598,7 @@ public class DatabaseManager {
             ps.setInt(1, banId);
             return ps.executeUpdate() > 0;
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка разбана: " + e.getMessage());
+      logger.warning("Ошибка разбана: " + e.getMessage());
             return false;
         }
     }
@@ -1557,7 +1609,7 @@ public class DatabaseManager {
             ps.setInt(1, id);
             ps.executeUpdate();
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка удаления бана: " + e.getMessage());
+      logger.warning("Ошибка удаления бана: " + e.getMessage());
         }
     }
 
@@ -1567,10 +1619,10 @@ public class DatabaseManager {
             ps.setLong(1, olderThanSeconds);
             int count = ps.executeUpdate();
             if (count > 0) {
-                plugin.getLogger().info("[WebAdmin] Очищено " + count + " записей банов старше 2 месяцев.");
+        logger.info("[WebAdmin] Очищено " + count + " записей банов старше 2 месяцев.");
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка очистки старых банов: " + e.getMessage());
+      logger.warning("Ошибка очистки старых банов: " + e.getMessage());
         }
     }
 
@@ -1605,7 +1657,7 @@ public class DatabaseManager {
             ps.setString(3, message);
             ps.executeUpdate();
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка сохранения чат-лога: " + e.getMessage());
+      logger.warning("Ошибка сохранения чат-лога: " + e.getMessage());
         }
     }
 
@@ -1627,7 +1679,7 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка загрузки сообщений игрока: " + e.getMessage());
+      logger.warning("Ошибка загрузки сообщений игрока: " + e.getMessage());
         }
         return list;
     }
@@ -1651,7 +1703,7 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка поиска сообщений: " + e.getMessage());
+      logger.warning("Ошибка поиска сообщений: " + e.getMessage());
         }
         return list;
     }
@@ -1662,10 +1714,10 @@ public class DatabaseManager {
             ps.setLong(1, olderThanSeconds);
             int count = ps.executeUpdate();
             if (count > 0) {
-                plugin.getLogger().info("[WebAdmin] Очищено " + count + " сообщений чата старше 2 месяцев.");
+        logger.info("[WebAdmin] Очищено " + count + " сообщений чата старше 2 месяцев.");
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка очистки старых сообщений: " + e.getMessage());
+      logger.warning("Ошибка очистки старых сообщений: " + e.getMessage());
         }
     }
 
@@ -1689,7 +1741,7 @@ public class DatabaseManager {
             ps.setString(5, ip);
             ps.executeUpdate();
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка обновления статистики игрока при входе: " + e.getMessage());
+      logger.warning("Ошибка обновления статистики игрока при входе: " + e.getMessage());
         }
 
         if (ip != null && !ip.isBlank()) {
@@ -1723,7 +1775,7 @@ public class DatabaseManager {
             ps.setString(3, uuid);
             ps.executeUpdate();
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка обновления времени игры: " + e.getMessage());
+      logger.warning("Ошибка обновления времени игры: " + e.getMessage());
         }
     }
 
@@ -1745,7 +1797,7 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка получения статистики игрока: " + e.getMessage());
+      logger.warning("Ошибка получения статистики игрока: " + e.getMessage());
         }
         return Optional.empty();
     }
@@ -1768,7 +1820,7 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка поиска игроков: " + e.getMessage());
+      logger.warning("Ошибка поиска игроков: " + e.getMessage());
         }
         return list;
     }
@@ -1856,7 +1908,7 @@ public class DatabaseManager {
                         long playtime = rs.getLong("total_playtime_seconds");
                         boolean isOnline = false;
                         try {
-                            isOnline = plugin.isPlayerOnline(UUID.fromString(altUuid));
+              isOnline = plugin != null && plugin.isPlayerOnline(UUID.fromString(altUuid));
                         } catch (Exception ignored) {}
                         boolean isBanned = isPlayerBanned(altName);
 
@@ -1872,18 +1924,23 @@ public class DatabaseManager {
                         altAcc.put("isBanned", isBanned);
                         accounts.add(altAcc);
 
-                        Map<String, Object> globalAlt = altMap.computeIfAbsent(altUuid, k -> {
-                            Map<String, Object> m = new LinkedHashMap<>();
-                            m.put("uuid", altUuid);
-                            m.put("name", altName);
-                            m.put("lastSeenAt", lastSeen);
-                            m.put("lastSeen", lastSeen);
-                            m.put("playtimeSeconds", playtime);
-                            m.put("isOnline", plugin.isPlayerOnline(UUID.fromString(altUuid)));
-                            m.put("isBanned", isPlayerBanned(altName));
-                            m.put("sharedIps", new ArrayList<String>());
-                            return m;
-                        });
+            Map<String, Object> globalAlt =
+                altMap.computeIfAbsent(
+                    altUuid,
+                    k -> {
+                      Map<String, Object> m = new LinkedHashMap<>();
+                      m.put("uuid", altUuid);
+                      m.put("name", altName);
+                      m.put("lastSeenAt", lastSeen);
+                      m.put("lastSeen", lastSeen);
+                      m.put("playtimeSeconds", playtime);
+                      m.put(
+                          "isOnline",
+                          plugin != null && plugin.isPlayerOnline(UUID.fromString(altUuid)));
+                      m.put("isBanned", isPlayerBanned(altName));
+                      m.put("sharedIps", new ArrayList<String>());
+                      return m;
+                    });
                         @SuppressWarnings("unchecked")
                         List<String> sIps = (List<String>) globalAlt.get("sharedIps");
                         if (!sIps.contains(ip)) {
@@ -1892,7 +1949,7 @@ public class DatabaseManager {
                     }
                 }
             } catch (SQLException e) {
-                plugin.getLogger().warning("Ошибка поиска связанных аккаунтов по IP " + ip + ": " + e.getMessage());
+        logger.warning("Ошибка поиска связанных аккаунтов по IP " + ip + ": " + e.getMessage());
             }
 
             ipGroup.put("accounts", accounts);
@@ -1973,7 +2030,7 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка получения популярных команд: " + e.getMessage());
+      logger.warning("Ошибка получения популярных команд: " + e.getMessage());
         }
         return list;
     }
@@ -1997,7 +2054,7 @@ public class DatabaseManager {
             ps.setInt(5, playtimeMinutes);
             ps.executeUpdate();
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка обновления дневной аналитики: " + e.getMessage());
+      logger.warning("Ошибка обновления дневной аналитики: " + e.getMessage());
         }
     }
 
@@ -2078,7 +2135,7 @@ public class DatabaseManager {
             ps.setString(2, action);
             ps.executeUpdate();
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка записи лога панели: " + e.getMessage());
+      logger.warning("Ошибка записи лога панели: " + e.getMessage());
         }
     }
 
@@ -2143,7 +2200,7 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка получения логов панели с фильтрами: " + e.getMessage());
+      logger.warning("Ошибка получения логов панели с фильтрами: " + e.getMessage());
         }
         return logs;
     }
@@ -2156,7 +2213,7 @@ public class DatabaseManager {
             ps.setString(1, message);
             ps.executeUpdate();
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка записи серверного лога: " + e.getMessage());
+      logger.warning("Ошибка записи серверного лога: " + e.getMessage());
         }
     }
 
@@ -2184,7 +2241,7 @@ public class DatabaseManager {
             } catch (SQLException ignored) {
                 // nothing more to do; the original error is the useful one
             }
-            plugin.getLogger().warning("Ошибка записи серверных логов: " + e.getMessage());
+      logger.warning("Ошибка записи серверных логов: " + e.getMessage());
         } finally {
             try {
                 connection.setAutoCommit(previousAutoCommit);
@@ -2212,7 +2269,7 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка получения серверных логов: " + e.getMessage());
+      logger.warning("Ошибка получения серверных логов: " + e.getMessage());
         }
         return logs;
     }
@@ -2226,7 +2283,7 @@ public class DatabaseManager {
             ps.setInt(1, keepCount);
             ps.executeUpdate();
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка обрезки серверных логов: " + e.getMessage());
+      logger.warning("Ошибка обрезки серверных логов: " + e.getMessage());
         }
     }
 
@@ -2242,7 +2299,7 @@ public class DatabaseManager {
             ps.setLong(5, System.currentTimeMillis() / 1000L);
             ps.executeUpdate();
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка записи команды персонала: " + e.getMessage());
+      logger.warning("Ошибка записи команды персонала: " + e.getMessage());
         }
     }
 
@@ -2280,7 +2337,7 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка получения логов команд персонала: " + e.getMessage());
+      logger.warning("Ошибка получения логов команд персонала: " + e.getMessage());
         }
         return logs;
     }
@@ -2351,7 +2408,7 @@ public class DatabaseManager {
             ps.setInt(5, scaleVersion);
             ps.executeUpdate();
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка сохранения среза экономики: " + e.getMessage());
+      logger.warning("Ошибка сохранения среза экономики: " + e.getMessage());
         }
     }
 
@@ -2373,7 +2430,7 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка получения срезов экономики: " + e.getMessage());
+      logger.warning("Ошибка получения срезов экономики: " + e.getMessage());
         }
         return list;
     }
@@ -2388,7 +2445,7 @@ public class DatabaseManager {
             ps.setLong(5, System.currentTimeMillis() / 1000L);
             ps.executeUpdate();
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка записи аномалии экономики: " + e.getMessage());
+      logger.warning("Ошибка записи аномалии экономики: " + e.getMessage());
         }
     }
 
@@ -2411,7 +2468,7 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка получения аномалий экономики: " + e.getMessage());
+      logger.warning("Ошибка получения аномалий экономики: " + e.getMessage());
         }
         return list;
     }
@@ -2445,7 +2502,7 @@ public class DatabaseManager {
             ps.setString(5, settingsJson != null ? settingsJson : "{}");
             ps.executeUpdate();
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка сохранения состояния режима ЧС: " + e.getMessage());
+      logger.warning("Ошибка сохранения состояния режима ЧС: " + e.getMessage());
         }
     }
 
@@ -2468,7 +2525,7 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка загрузки заметок игрока: " + e.getMessage());
+      logger.warning("Ошибка загрузки заметок игрока: " + e.getMessage());
         }
         return list;
     }
@@ -2481,7 +2538,7 @@ public class DatabaseManager {
             ps.setString(3, note);
             ps.executeUpdate();
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка сохранения заметки игрока: " + e.getMessage());
+      logger.warning("Ошибка сохранения заметки игрока: " + e.getMessage());
         }
     }
 
@@ -2491,7 +2548,7 @@ public class DatabaseManager {
             ps.setInt(1, id);
             ps.executeUpdate();
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка удаления заметки игрока: " + e.getMessage());
+      logger.warning("Ошибка удаления заметки игрока: " + e.getMessage());
         }
     }
 
@@ -2523,7 +2580,7 @@ public class DatabaseManager {
                 list.add(map);
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка получения списка всех сессий: " + e.getMessage());
+      logger.warning("Ошибка получения списка всех сессий: " + e.getMessage());
         }
         return list;
     }
@@ -2534,7 +2591,7 @@ public class DatabaseManager {
             ps.setString(1, token);
             ps.executeUpdate();
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка завершения сессии: " + e.getMessage());
+      logger.warning("Ошибка завершения сессии: " + e.getMessage());
         }
     }
 
@@ -2557,7 +2614,7 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка получения топа игроков: " + e.getMessage());
+      logger.warning("Ошибка получения топа игроков: " + e.getMessage());
         }
         return list;
     }
@@ -2580,7 +2637,7 @@ public class DatabaseManager {
             ps.setInt(2, adminId);
             ps.executeUpdate();
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка обновления срока роли: " + e.getMessage());
+      logger.warning("Ошибка обновления срока роли: " + e.getMessage());
         }
     }
 
@@ -2848,7 +2905,7 @@ public class DatabaseManager {
                 if (rs.next()) return rs.getInt(1);
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка создания репорта: " + e.getMessage());
+      logger.warning("Ошибка создания репорта: " + e.getMessage());
         }
         return -1;
     }
@@ -2872,7 +2929,7 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка проверки кулдауна жалобы: " + e.getMessage());
+      logger.warning("Ошибка проверки кулдауна жалобы: " + e.getMessage());
         }
         return false;
     }
@@ -2885,7 +2942,7 @@ public class DatabaseManager {
                 if (rs.next()) return rs.getInt(1);
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка подсчета активных репортов на цель: " + e.getMessage());
+      logger.warning("Ошибка подсчета активных репортов на цель: " + e.getMessage());
         }
         return 0;
     }
@@ -2927,7 +2984,7 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка выборки списка репортов: " + e.getMessage());
+      logger.warning("Ошибка выборки списка репортов: " + e.getMessage());
         }
         return list;
     }
@@ -2942,7 +2999,7 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка выборки репорта #" + id + ": " + e.getMessage());
+      logger.warning("Ошибка выборки репорта #" + id + ": " + e.getMessage());
         }
         return Optional.empty();
     }
@@ -2962,7 +3019,7 @@ public class DatabaseManager {
             ps.setInt(5, id);
             return ps.executeUpdate() > 0;
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка обновления статуса репорта #" + id + ": " + e.getMessage());
+      logger.warning("Ошибка обновления статуса репорта #" + id + ": " + e.getMessage());
             return false;
         }
     }
@@ -2978,7 +3035,8 @@ public class DatabaseManager {
             ps.setInt(2, banId);
             ps.executeUpdate();
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка привязки репорта #" + reportId + " к бану #" + banId + ": " + e.getMessage());
+      logger.warning(
+          "Ошибка привязки репорта #" + reportId + " к бану #" + banId + ": " + e.getMessage());
             return false;
         }
         return resolveReport(reportId, "ACCEPTED", adminUsername, banId);
@@ -2996,7 +3054,8 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка получения активных жалоб на игрока " + targetName + ": " + e.getMessage());
+      logger.warning(
+          "Ошибка получения активных жалоб на игрока " + targetName + ": " + e.getMessage());
         }
         return list;
     }
@@ -3007,7 +3066,7 @@ public class DatabaseManager {
             ps.setInt(1, id);
             return ps.executeUpdate() > 0;
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка удаления репорта #" + id + ": " + e.getMessage());
+      logger.warning("Ошибка удаления репорта #" + id + ": " + e.getMessage());
             return false;
         }
     }
@@ -3023,7 +3082,7 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка поиска просроченных репортов: " + e.getMessage());
+      logger.warning("Ошибка поиска просроченных репортов: " + e.getMessage());
         }
         return list;
     }
@@ -3035,7 +3094,7 @@ public class DatabaseManager {
             ps.setString(2, message);
             ps.executeUpdate();
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка постановки уведомления в очередь: " + e.getMessage());
+      logger.warning("Ошибка постановки уведомления в очередь: " + e.getMessage());
         }
     }
 
@@ -3052,7 +3111,7 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка получения недоставленных уведомлений: " + e.getMessage());
+      logger.warning("Ошибка получения недоставленных уведомлений: " + e.getMessage());
         }
 
         if (!ids.isEmpty()) {
@@ -3066,7 +3125,7 @@ public class DatabaseManager {
                 }
                 ps.executeBatch();
             } catch (SQLException e) {
-                plugin.getLogger().warning("Ошибка отметки доставки уведомлений: " + e.getMessage());
+        logger.warning("Ошибка отметки доставки уведомлений: " + e.getMessage());
             }
         }
         return messages;
@@ -3100,7 +3159,7 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка загрузки контекста чата игроков: " + e.getMessage());
+      logger.warning("Ошибка загрузки контекста чата игроков: " + e.getMessage());
         }
         return list;
     }
@@ -3126,7 +3185,7 @@ public class DatabaseManager {
                 else if ("EXPIRED".equalsIgnoreCase(st)) expired = cnt;
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка подсчета статистики репортов: " + e.getMessage());
+      logger.warning("Ошибка подсчета статистики репортов: " + e.getMessage());
         }
 
         int suspiciousCount = 0;
@@ -3135,7 +3194,7 @@ public class DatabaseManager {
              ResultSet rs = ps.executeQuery()) {
             if (rs.next()) suspiciousCount = rs.getInt(1);
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка подсчета подозрительных игроков: " + e.getMessage());
+      logger.warning("Ошибка подсчета подозрительных игроков: " + e.getMessage());
         }
 
         stats.put("total", total);
@@ -3193,7 +3252,7 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("[DatabaseManager] Ошибка сохранения API ключа: " + e.getMessage());
+      logger.warning("[DatabaseManager] Ошибка сохранения API ключа: " + e.getMessage());
         }
         return null;
     }
@@ -3208,7 +3267,7 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("[DatabaseManager] Ошибка поиска API ключа: " + e.getMessage());
+      logger.warning("[DatabaseManager] Ошибка поиска API ключа: " + e.getMessage());
         }
         return Optional.empty();
     }
@@ -3222,7 +3281,7 @@ public class DatabaseManager {
                 list.add(mapApiKey(rs));
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("[DatabaseManager] Ошибка получения списка API ключей: " + e.getMessage());
+      logger.warning("[DatabaseManager] Ошибка получения списка API ключей: " + e.getMessage());
         }
         return list;
     }
@@ -3233,7 +3292,7 @@ public class DatabaseManager {
             stmt.setInt(1, id);
             return stmt.executeUpdate() > 0;
         } catch (SQLException e) {
-            plugin.getLogger().warning("[DatabaseManager] Ошибка удаления API ключа: " + e.getMessage());
+      logger.warning("[DatabaseManager] Ошибка удаления API ключа: " + e.getMessage());
             return false;
         }
     }
@@ -3245,7 +3304,7 @@ public class DatabaseManager {
             stmt.setInt(2, id);
             stmt.executeUpdate();
         } catch (SQLException e) {
-            plugin.getLogger().warning("[DatabaseManager] Ошибка обновления last_used API ключа: " + e.getMessage());
+      logger.warning("[DatabaseManager] Ошибка обновления last_used API ключа: " + e.getMessage());
         }
     }
 
@@ -3288,7 +3347,7 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("[DatabaseManager] Ошибка сохранения вебхука: " + e.getMessage());
+      logger.warning("[DatabaseManager] Ошибка сохранения вебхука: " + e.getMessage());
         }
         return null;
     }
@@ -3302,7 +3361,7 @@ public class DatabaseManager {
                 list.add(mapWebhook(rs));
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("[DatabaseManager] Ошибка получения списка вебхуков: " + e.getMessage());
+      logger.warning("[DatabaseManager] Ошибка получения списка вебхуков: " + e.getMessage());
         }
         return list;
     }
@@ -3316,7 +3375,7 @@ public class DatabaseManager {
                 list.add(mapWebhook(rs));
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("[DatabaseManager] Ошибка получения активных вебхуков: " + e.getMessage());
+      logger.warning("[DatabaseManager] Ошибка получения активных вебхуков: " + e.getMessage());
         }
         return list;
     }
@@ -3327,7 +3386,7 @@ public class DatabaseManager {
             stmt.setInt(1, id);
             return stmt.executeUpdate() > 0;
         } catch (SQLException e) {
-            plugin.getLogger().warning("[DatabaseManager] Ошибка удаления вебхука: " + e.getMessage());
+      logger.warning("[DatabaseManager] Ошибка удаления вебхука: " + e.getMessage());
             return false;
         }
     }
@@ -3339,7 +3398,7 @@ public class DatabaseManager {
             stmt.setInt(2, id);
             stmt.executeUpdate();
         } catch (SQLException e) {
-            plugin.getLogger().warning("[DatabaseManager] Ошибка обновления last_trigger вебхука: " + e.getMessage());
+      logger.warning("[DatabaseManager] Ошибка обновления last_trigger вебхука: " + e.getMessage());
         }
     }
 
@@ -3382,7 +3441,7 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("[DatabaseManager] Ошибка создания апелляции: " + e.getMessage());
+      logger.warning("[DatabaseManager] Ошибка создания апелляции: " + e.getMessage());
         }
         return -1;
     }
@@ -3397,7 +3456,7 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("[DatabaseManager] Ошибка получения апелляции по ID: " + e.getMessage());
+      logger.warning("[DatabaseManager] Ошибка получения апелляции по ID: " + e.getMessage());
         }
         return Optional.empty();
     }
@@ -3412,7 +3471,7 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("[DatabaseManager] Ошибка получения апелляции по banId: " + e.getMessage());
+      logger.warning("[DatabaseManager] Ошибка получения апелляции по banId: " + e.getMessage());
         }
         return Optional.empty();
     }
@@ -3427,7 +3486,7 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("[DatabaseManager] Ошибка получения апелляции по игроку: " + e.getMessage());
+      logger.warning("[DatabaseManager] Ошибка получения апелляции по игроку: " + e.getMessage());
         }
         return Optional.empty();
     }
@@ -3442,7 +3501,8 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("[DatabaseManager] Ошибка получения апелляции по discordChannelId: " + e.getMessage());
+      logger.warning(
+          "[DatabaseManager] Ошибка получения апелляции по discordChannelId: " + e.getMessage());
         }
         return Optional.empty();
     }
@@ -3469,7 +3529,7 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("[DatabaseManager] Ошибка списка апелляций: " + e.getMessage());
+      logger.warning("[DatabaseManager] Ошибка списка апелляций: " + e.getMessage());
         }
         return list;
     }
@@ -3550,7 +3610,7 @@ public class DatabaseManager {
             stmt.setInt(2, id);
             return stmt.executeUpdate() > 0;
         } catch (SQLException e) {
-            plugin.getLogger().warning("[DatabaseManager] Ошибка обновления статуса апелляции: " + e.getMessage());
+      logger.warning("[DatabaseManager] Ошибка обновления статуса апелляции: " + e.getMessage());
             return false;
         }
     }
@@ -3562,7 +3622,8 @@ public class DatabaseManager {
             stmt.setInt(2, id);
             return stmt.executeUpdate() > 0;
         } catch (SQLException e) {
-            plugin.getLogger().warning("[DatabaseManager] Ошибка установки Discord канала апелляции: " + e.getMessage());
+      logger.warning(
+          "[DatabaseManager] Ошибка установки Discord канала апелляции: " + e.getMessage());
             return false;
         }
     }
@@ -3596,7 +3657,8 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("[DatabaseManager] Ошибка добавления сообщения в апелляцию: " + e.getMessage());
+      logger.warning(
+          "[DatabaseManager] Ошибка добавления сообщения в апелляцию: " + e.getMessage());
         }
         return -1;
     }
@@ -3626,7 +3688,7 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("[DatabaseManager] Ошибка загрузки сообщений апелляции: " + e.getMessage());
+      logger.warning("[DatabaseManager] Ошибка загрузки сообщений апелляции: " + e.getMessage());
         }
         return list;
     }
@@ -3669,7 +3731,7 @@ public class DatabaseManager {
             ps.setLong(5, now);
             ps.executeUpdate();
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка сохранения уведомления: " + e.getMessage());
+      logger.warning("Ошибка сохранения уведомления: " + e.getMessage());
         }
     }
 
@@ -3704,7 +3766,7 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка выборки уведомлений: " + e.getMessage());
+      logger.warning("Ошибка выборки уведомлений: " + e.getMessage());
         }
         return list;
     }
@@ -3748,7 +3810,7 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка отметки уведомления прочитанным: " + e.getMessage());
+      logger.warning("Ошибка отметки уведомления прочитанным: " + e.getMessage());
         }
     }
 
@@ -3788,7 +3850,7 @@ public class DatabaseManager {
             ps.setInt(3, adminId);
             ps.executeUpdate();
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка обновления статуса смены: " + e.getMessage());
+      logger.warning("Ошибка обновления статуса смены: " + e.getMessage());
         }
     }
 
@@ -3816,7 +3878,7 @@ public class DatabaseManager {
                 list.add(map);
             }
         } catch (SQLException e) {
-            plugin.getLogger().warning("Ошибка получения списка персонала на смене: " + e.getMessage());
+      logger.warning("Ошибка получения списка персонала на смене: " + e.getMessage());
         }
         return list;
     }

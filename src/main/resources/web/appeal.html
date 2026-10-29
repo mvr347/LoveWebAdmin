@@ -1,1 +1,60 @@
-<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>Апелляция блокировки</title><link rel="stylesheet" href="/moderation.css"><main><a href="/">В панель</a><h1>Апелляция блокировки</h1><p role="status" id="status"></p><p class="muted">Опишите, почему наказание следует пересмотреть. Непривязанный аккаунт будет отмечен как неподтверждённый.</p><section id="create"><form id="appeal-form"><label for="nick">Ник Minecraft</label><input id="nick" maxlength="16" pattern="[A-Za-z0-9_]{1,16}" required autocomplete="username"><label for="reason">Обоснование апелляции</label><textarea id="reason" minlength="5" maxlength="2000" required></textarea><button>Подать апелляцию</button></form></section><section id="thread" hidden><h2 id="heading"></h2><p id="state"></p><p id="verification"></p><div id="messages"></div><form id="reply-form"><label for="reply">Ответ сотруднику</label><textarea id="reply" maxlength="2000" required></textarea><button>Отправить</button><button type="button" id="refresh">Обновить переписку</button></form><p class="muted">Сохраните доступ к этой странице. Знание ника не даёт доступа к вашей переписке.</p></section></main><script src="/appeal.js" defer></script></html>
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Апелляция блокировки</title>
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/moderation.css" />
+  </head>
+  <body class="workspace-page">
+    <main>
+      <a href="/">В панель</a>
+      <h1>Апелляция блокировки</h1>
+      <p role="status" id="status"></p>
+      <p class="muted">
+        Опишите, почему наказание следует пересмотреть. Непривязанный аккаунт
+        будет отмечен как неподтверждённый.
+      </p>
+      <section id="create">
+        <form id="appeal-form">
+          <label for="nick">Ник Minecraft</label
+          ><input
+            id="nick"
+            maxlength="16"
+            pattern="[A-Za-z0-9_]{1,16}"
+            required
+            autocomplete="username"
+          /><label for="reason">Обоснование апелляции</label
+          ><textarea
+            id="reason"
+            minlength="5"
+            maxlength="2000"
+            required
+          ></textarea
+          ><button>Подать апелляцию</button>
+        </form>
+      </section>
+      <section id="thread" hidden>
+        <h2 id="heading"></h2>
+        <p id="state"></p>
+        <p id="verification"></p>
+        <div id="messages"></div>
+        <h3>Доказательства</h3>
+        <div id="evidence"></div>
+        <form id="reply-form">
+          <label for="reply">Ответ сотруднику</label
+          ><textarea id="reply" maxlength="2000" required></textarea
+          ><button>Отправить</button
+          ><button type="button" id="refresh">Обновить переписку</button>
+        </form>
+        <p class="muted">
+          Сохраните доступ к этой странице. Знание ника не даёт доступа к вашей
+          переписке.
+        </p>
+      </section>
+    </main>
+    <script type="module" src="/appeal.js"></script>
+  </body>
+</html>

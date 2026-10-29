@@ -1,0 +1,286 @@
+{
+  "version": 1,
+  "viewer": 1,
+  "pendingLogin": null,
+  "nextId": 10,
+  "roles": [
+    {
+      "id": 1,
+      "name": "Управляющий",
+      "isOwner": true,
+      "permissions": [
+        "VIEW_SERVER_LOGS",
+        "VIEW_WEB_LOGS",
+        "VIEW_STATS",
+        "EXECUTE_COMMANDS",
+        "MANAGE_ADMINS",
+        "MANAGE_ROLES",
+        "MANAGE_PASSWORDS",
+        "VIEW_BANS",
+        "MANAGE_BANS",
+        "VIEW_APPEALS",
+        "MANAGE_APPEALS",
+        "VIEW_PLAYERS",
+        "MANAGE_PLAYERS",
+        "VIEW_PLAYER_IP",
+        "VIEW_PLAYER_INVENTORY",
+        "CONFISCATE_ITEMS",
+        "RESTORE_ITEMS",
+        "FREEZE_PLAYERS",
+        "TELEPORT_PLAYERS",
+        "CHANGE_GAMEMODE",
+        "KICK_PLAYERS",
+        "KILL_PLAYERS",
+        "VIEW_ANALYTICS",
+        "MANAGE_LOVEAUTH",
+        "VIEW_VESUVIO",
+        "VIEW_VESUVIO_ADVANCED",
+        "MANAGE_VESUVIO",
+        "MANAGE_LOCKDOWN",
+        "VIEW_STAFF_AUDIT",
+        "VIEW_ECONOMY",
+        "MANAGE_ECONOMY",
+        "VIEW_REPORTS",
+        "MANAGE_REPORTS",
+        "MANAGE_API",
+        "VIEW_SERVER_SETTINGS",
+        "MANAGE_PANEL_SETTINGS",
+        "MANAGE_SERVER_SETTINGS",
+        "MANAGE_SECURITY_SETTINGS",
+        "MANAGE_INTEGRATIONS",
+        "MANAGE_MAINTENANCE",
+        "MANAGE_WHITELIST",
+        "MANAGE_OPERATORS",
+        "MANAGE_PREVIEW",
+        "REVIEW_VESUVIO_SAMPLES",
+        "MANAGE_VESUVIO_MODELS",
+        "VIEW_SERVER_INTERNALS",
+        "BYPASS_MAINTENANCE"
+      ],
+      "color": "#a78bfa",
+      "description": "Все права в превью"
+    },
+    {
+      "id": 2,
+      "name": "Модератор",
+      "isOwner": false,
+      "permissions": [
+        "VIEW_STATS",
+        "VIEW_PLAYERS",
+        "VIEW_BANS",
+        "MANAGE_BANS",
+        "VIEW_REPORTS",
+        "MANAGE_REPORTS",
+        "VIEW_APPEALS",
+        "MANAGE_APPEALS",
+        "VIEW_PLAYER_INVENTORY",
+        "CONFISCATE_ITEMS",
+        "RESTORE_ITEMS",
+        "FREEZE_PLAYERS",
+        "KICK_PLAYERS"
+      ],
+      "color": "#60a5fa"
+    },
+    {
+      "id": 3,
+      "name": "Наблюдатель",
+      "isOwner": false,
+      "permissions": [
+        "VIEW_STATS",
+        "VIEW_PLAYERS",
+        "VIEW_BANS",
+        "VIEW_REPORTS"
+      ],
+      "color": "#94a3b8"
+    }
+  ],
+  "admins": [
+    {
+      "id": 1,
+      "username": "PreviewOwner",
+      "roleId": 1,
+      "status": "ACTIVE",
+      "totpEnabled": true,
+      "createdAt": 1793140271,
+      "lastLoginAt": 1793226671,
+      "uiPreferences": {
+        "discordNotifyReports": true,
+        "discordNotifyTickets": true
+      }
+    },
+    {
+      "id": 2,
+      "username": "PreviewModerator",
+      "roleId": 2,
+      "status": "ACTIVE",
+      "totpEnabled": true,
+      "createdAt": 1793140271,
+      "lastLoginAt": 1793226671,
+      "uiPreferences": {
+        "discordNotifyReports": true,
+        "discordNotifyTickets": true
+      }
+    },
+    {
+      "id": 3,
+      "username": "PreviewReader",
+      "roleId": 3,
+      "status": "ACTIVE",
+      "totpEnabled": true,
+      "createdAt": 1793140271,
+      "lastLoginAt": 1793226671,
+      "uiPreferences": {
+        "discordNotifyReports": true,
+        "discordNotifyTickets": true
+      }
+    }
+  ],
+  "players": [
+    {
+      "name": "Ada123",
+      "uuid": "00000000-0000-4000-8000-000000000001",
+      "isOnline": true,
+      "online": true,
+      "ping": 24,
+      "ip": "192.0.2.10",
+      "playtimeSeconds": 18000,
+      "firstJoinedAt": 1792362671,
+      "lastSeenAt": 1793226671,
+      "health": 20,
+      "foodLevel": 20,
+      "level": 16,
+      "gameMode": "SURVIVAL",
+      "balance": 25000,
+      "hasDiscord": true,
+      "discordId": "preview-discord-0",
+      "authLocked": false,
+      "isFrozen": false,
+      "vanished": false,
+      "inventory": [
+        {
+          "slot": 0,
+          "material": "DIAMOND",
+          "displayName": "Алмаз",
+          "amount": 12,
+          "empty": false,
+          "fingerprint": "preview-item-0"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "name": "Lovelace69",
+      "uuid": "00000000-0000-4000-8000-000000000002",
+      "isOnline": true,
+      "online": true,
+      "ping": 37,
+      "ip": "192.0.2.11",
+      "playtimeSeconds": 36000,
+      "firstJoinedAt": 1792362671,
+      "lastSeenAt": 1793226611,
+      "health": 20,
+      "foodLevel": 20,
+      "level": 16,
+      "gameMode": "SURVIVAL",
+      "balance": 50000,
+      "hasDiscord": true,
+      "discordId": "preview-discord-1",
+      "authLocked": false,
+      "isFrozen": false,
+      "vanished": false,
+      "inventory": [
+        {
+          "slot": 0,
+          "material": "DIAMOND",
+          "displayName": "Алмаз",
+          "amount": 12,
+          "empty": false,
+          "fingerprint": "preview-item-1"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "name": "Traveller",
+      "uuid": "00000000-0000-4000-8000-000000000003",
+      "isOnline": false,
+      "online": false,
+      "ping": 50,
+      "ip": "192.0.2.12",
+      "playtimeSeconds": 54000,
+      "firstJoinedAt": 1792362671,
+      "lastSeenAt": 1793226551,
+      "health": 20,
+      "foodLevel": 20,
+      "level": 16,
+      "gameMode": "SURVIVAL",
+      "balance": 75000,
+      "hasDiscord": false,
+      "discordId": "preview-discord-2",
+      "authLocked": false,
+      "isFrozen": false,
+      "vanished": false,
+      "inventory": [
+        {
+          "slot": 0,
+          "material": "DIAMOND",
+          "displayName": "Алмаз",
+          "amount": 12,
+          "empty": false,
+          "fingerprint": "preview-item-2"
+        }
+      ],
+      "notes": []
+    }
+  ],
+  "bans": [],
+  "appeals": [],
+  "reports": [],
+  "work": {},
+  "notes": {},
+  "discussion": {},
+  "evidence": [],
+  "deliveries": [],
+  "logs": [],
+  "notifications": [],
+  "invites": [],
+  "keys": [],
+  "webhooks": [],
+  "sessions": [],
+  "config": {
+    "previewEnabled": true,
+    "webPort": 8080,
+    "webHost": "127.0.0.1",
+    "sessionLifetimeMinutes": 60,
+    "keepLogCount": 5000,
+    "strictIp": false,
+    "minPasswordLength": 12,
+    "loginMaxAttempts": 5,
+    "loginLockoutMinutes": 15,
+    "commandBlacklist": [
+      "stop",
+      "op"
+    ],
+    "corsAllowedOrigins": [],
+    "maintenanceEnabled": false,
+    "maintenanceMessage": "Тестовый режим технических работ",
+    "webhooksEnabled": false,
+    "telegramEnabled": false
+  },
+  "whitelist": {
+    "enabled": false,
+    "players": []
+  },
+  "ops": [],
+  "templates": {
+    "ban": "Блокировка №{id}: {player}\n{reason}",
+    "report": "Жалоба №{id}: {player}",
+    "appeal": "Апелляция №{id}: {reason}",
+    "clarification": "Уточнение №{id}: {text}"
+  },
+  "discord": {
+    "fail": false,
+    "quiet": false
+  },
+  "scenario": "default"
+}

@@ -61,6 +61,17 @@ public enum Permission {
 
     // API и Вебхуки
     MANAGE_API,
+  VIEW_SERVER_SETTINGS,
+  MANAGE_PANEL_SETTINGS,
+  MANAGE_SERVER_SETTINGS,
+  MANAGE_SECURITY_SETTINGS,
+  MANAGE_INTEGRATIONS,
+  MANAGE_MAINTENANCE,
+  MANAGE_WHITELIST,
+  MANAGE_OPERATORS,
+  MANAGE_PREVIEW,
+  REVIEW_VESUVIO_SAMPLES,
+  MANAGE_VESUVIO_MODELS,
 
     // Просмотр технических параметров сервера (СУБД, хеши, брутфорс-фильтр, системные сервисы)
     VIEW_SERVER_INTERNALS,

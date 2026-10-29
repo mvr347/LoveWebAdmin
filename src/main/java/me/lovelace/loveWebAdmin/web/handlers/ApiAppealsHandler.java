@@ -60,6 +60,34 @@ public class ApiAppealsHandler extends ApiHandlerSupport {
       return;
     }
 
+    if (pathInfo.matches("/[0-9]+/evidence/[0-9]+")) {
+      String[] parts = pathInfo.split("/");
+      int id = Integer.parseInt(parts[1]), image = Integer.parseInt(parts[3]);
+      var staff = authenticate(req);
+      boolean canView = staff.isPresent() && hasViewPermission(staff.get());
+      if (!canView && !isAuthor(id, req.getHeader("X-Appeal-Token"))) {
+        sendError(resp, 403, "Нужен доступ автора или сотрудника");
+        return;
+      }
+      try {
+        var bytes = plugin.moderation().evidenceBytes("appeal", id, image, !canView);
+        if (bytes.isEmpty()) {
+          sendError(resp, 404, "Доказательство не найдено");
+          return;
+        }
+        resp.setHeader("Cache-Control", "no-store");
+        sendSuccess(
+            resp,
+            Map.of(
+                "mime",
+                me.lovelace.loveWebAdmin.managers.CaseEvidence.imageMime(bytes.get()),
+                "base64",
+                java.util.Base64.getEncoder().encodeToString(bytes.get())));
+        return;
+      } catch (java.sql.SQLException error) {
+        throw new IllegalStateException(error);
+      }
+    }
     // GET /api/appeals/{id}
     String idStr = pathInfo.startsWith("/") ? pathInfo.substring(1) : pathInfo;
     try {
@@ -309,6 +337,7 @@ public class ApiAppealsHandler extends ApiHandlerSupport {
     String authorName;
 
     if (isStaff) {
+      req.setAttribute("lwa.permission", Permission.MANAGE_APPEALS.name());
       authorName = sessionOpt.get().adminUsername();
     } else {
       String authorParam = stringOrNull(body.get("authorName"));
@@ -385,6 +414,7 @@ public class ApiAppealsHandler extends ApiHandlerSupport {
       sendError(resp, 403, "Недостаточно прав для рассмотрения апелляций");
       return Optional.empty();
     }
+    req.setAttribute("lwa.permission", Permission.MANAGE_APPEALS.name());
     return sessionOpt;
   }
 
@@ -443,6 +473,11 @@ public class ApiAppealsHandler extends ApiHandlerSupport {
       mappedMsgs.add(mm);
     }
     map.put("messages", mappedMsgs);
+    try {
+      map.put("evidence", plugin.moderation().evidence("appeal", appeal.id(), true));
+    } catch (java.sql.SQLException error) {
+      throw new IllegalStateException(error);
+    }
     return map;
   }
 

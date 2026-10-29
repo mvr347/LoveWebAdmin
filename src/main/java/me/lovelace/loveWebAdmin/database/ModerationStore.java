@@ -12,7 +12,24 @@ public final class ModerationStore implements AutoCloseable {
   private final Connection db;
 
   public ModerationStore(Path file) throws SQLException {
-    this(DriverManager.getConnection("jdbc:sqlite:" + file));
+    this(openWithBackup(file));
+  }
+
+  private static Connection openWithBackup(Path file) throws SQLException {
+    var connection = DriverManager.getConnection("jdbc:sqlite:" + file);
+    Path backup = file.resolveSibling(file.getFileName() + ".before-panel-v3.db");
+    try {
+      if (java.nio.file.Files.size(file) > 0 && !java.nio.file.Files.exists(backup))
+        try (var snapshot = connection.createStatement()) {
+          snapshot.execute(
+              "VACUUM INTO '" + backup.toAbsolutePath().toString().replace("'", "''") + "'");
+        }
+      return connection;
+    } catch (Exception error) {
+      connection.close();
+      if (error instanceof SQLException sql) throw sql;
+      throw new SQLException("Не удалось сохранить резервную копию дел", error);
+    }
   }
 
   public ModerationStore(Connection db) throws SQLException {
@@ -55,10 +72,23 @@ public final class ModerationStore implements AutoCloseable {
       s.execute(
           "CREATE TABLE IF NOT EXISTS confiscation_returns(id TEXT PRIMARY KEY,actor TEXT NOT"
               + " NULL,at INTEGER NOT NULL)");
+      s.execute(
+          "CREATE TABLE IF NOT EXISTS portal_links(token_hash TEXT PRIMARY KEY,discord_id TEXT NOT NULL,player_uuid TEXT,expires_at INTEGER NOT NULL,used INTEGER NOT NULL DEFAULT 0)");
+      s.execute(
+          "CREATE TABLE IF NOT EXISTS portal_sessions(token_hash TEXT PRIMARY KEY,discord_id TEXT NOT NULL,player_uuid TEXT,expires_at INTEGER NOT NULL)");
+      s.execute(
+          "CREATE TABLE IF NOT EXISTS case_tickets(kind TEXT NOT NULL,case_id INTEGER NOT NULL,discord_id TEXT NOT NULL,channel TEXT,PRIMARY KEY(kind,case_id))");
+      s.execute(
+          "CREATE TABLE IF NOT EXISTS entity_versions(kind TEXT NOT NULL,id INTEGER NOT NULL,version INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(kind,id))");
+      s.execute(
+          "CREATE TABLE IF NOT EXISTS ban_history(id INTEGER PRIMARY KEY,ban_id INTEGER NOT NULL,actor TEXT NOT NULL,explanation TEXT NOT NULL,before_json TEXT NOT NULL,after_json TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'PREPARED',created_at INTEGER NOT NULL)");
+      s.execute(
+          "CREATE TABLE IF NOT EXISTS case_evidence(id INTEGER PRIMARY KEY,kind TEXT NOT NULL,case_id INTEGER NOT NULL,author TEXT NOT NULL,type TEXT NOT NULL,value TEXT NOT NULL,visibility TEXT NOT NULL,mime TEXT,data BLOB,created_at INTEGER NOT NULL)");
       s.execute("CREATE INDEX IF NOT EXISTS idx_delivery_due ON delivery_outbox(state,next_at,id)");
       s.execute(
           "CREATE INDEX IF NOT EXISTS idx_delivery_ticket ON delivery_outbox(recipient,id,state)");
-      s.execute("UPDATE delivery_outbox SET state='PENDING' WHERE state='SENDING'");
+      s.execute(
+          "UPDATE delivery_outbox SET state='UNCERTAIN',error='Остановка до подтверждения доставки: проверьте Discord перед повтором' WHERE state='SENDING'");
     } catch (SQLException | RuntimeException error) {
       try {
         db.close();
@@ -313,9 +343,9 @@ public final class ModerationStore implements AutoCloseable {
     try (var q =
         db.prepareStatement(
             "SELECT o.* FROM delivery_outbox o WHERE o.state='PENDING' AND o.next_at<=? AND"
-                + " (o.recipient NOT LIKE 'ticket:%' OR NOT EXISTS(SELECT 1 FROM delivery_outbox"
+                + " ((o.recipient NOT LIKE 'ticket:%' AND o.recipient NOT LIKE 'report-ticket:%') OR NOT EXISTS(SELECT 1 FROM delivery_outbox"
                 + " earlier WHERE earlier.recipient=o.recipient AND earlier.id<o.id AND"
-                + " earlier.state IN ('PENDING','SENDING'))) ORDER BY o.id LIMIT 8")) {
+                + " earlier.state IN ('PENDING','SENDING','UNCERTAIN'))) ORDER BY o.id LIMIT 8")) {
       q.setLong(1, System.currentTimeMillis() / 1000);
       try (var r = q.executeQuery()) {
         while (r.next())
@@ -340,6 +370,16 @@ public final class ModerationStore implements AutoCloseable {
             "UPDATE delivery_outbox SET state='SENDING' WHERE id=? AND state='PENDING'")) {
       q.setInt(1, id);
       return q.executeUpdate() == 1;
+    }
+  }
+
+  public synchronized void uncertainDelivery(int id, String reason) throws SQLException {
+    try (var q =
+        db.prepareStatement(
+            "UPDATE delivery_outbox SET state='UNCERTAIN',error=? WHERE id=? AND state='SENDING'")) {
+      q.setString(1, reason);
+      q.setInt(2, id);
+      q.executeUpdate();
     }
   }
 
@@ -377,6 +417,20 @@ public final class ModerationStore implements AutoCloseable {
       q.setString(1, reason);
       q.setInt(2, id);
       q.executeUpdate();
+    }
+  }
+
+  public synchronized boolean resolveDelivery(
+      int id, boolean delivered, String actor, String explanation) throws SQLException {
+    if (explanation == null || explanation.trim().length() < 5 || explanation.length() > 2000)
+      throw new IllegalArgumentException("Укажите обоснование сверки с Discord");
+    try (var q =
+        db.prepareStatement(
+            "UPDATE delivery_outbox SET state=?,error=? WHERE id=? AND state='UNCERTAIN'")) {
+      q.setString(1, delivered ? "DELIVERED" : "FAILED");
+      q.setString(2, "Проверил " + actor + ": " + explanation.trim());
+      q.setInt(3, id);
+      return q.executeUpdate() == 1;
     }
   }
 
@@ -591,6 +645,358 @@ public final class ModerationStore implements AutoCloseable {
       q.setString(3, channel);
       q.setString(4, message);
       q.executeUpdate();
+    }
+  }
+
+  public synchronized String portalLink(String discord, String uuid) throws SQLException {
+    if (discord == null || !discord.matches("[0-9]{5,24}"))
+      throw new IllegalArgumentException("Неверный Discord ID");
+    String token =
+        UUID.randomUUID().toString().replace("-", "")
+            + UUID.randomUUID().toString().replace("-", "");
+    try (var q = db.prepareStatement("DELETE FROM portal_links WHERE expires_at<?")) {
+      q.setLong(1, System.currentTimeMillis() / 1000);
+      q.executeUpdate();
+    }
+    try (var q =
+        db.prepareStatement(
+            "INSERT INTO portal_links(token_hash,discord_id,player_uuid,expires_at) VALUES(?,?,?,?)")) {
+      q.setString(1, hash(token));
+      q.setString(2, discord);
+      q.setString(3, uuid);
+      q.setLong(4, System.currentTimeMillis() / 1000 + 300);
+      q.executeUpdate();
+    }
+    return token;
+  }
+
+  public synchronized Optional<Map<String, String>> exchangePortal(String token)
+      throws SQLException {
+    if (token == null || token.length() > 100) return Optional.empty();
+    String hashed = hash(token);
+    long now = System.currentTimeMillis() / 1000;
+    String discord, uuid;
+    try (var q =
+        db.prepareStatement(
+            "SELECT discord_id,player_uuid FROM portal_links WHERE token_hash=? AND used=0 AND expires_at>?")) {
+      q.setString(1, hashed);
+      q.setLong(2, now);
+      try (var rs = q.executeQuery()) {
+        if (!rs.next()) return Optional.empty();
+        discord = rs.getString(1);
+        uuid = rs.getString(2);
+      }
+    }
+    String session =
+        UUID.randomUUID().toString().replace("-", "")
+            + UUID.randomUUID().toString().replace("-", "");
+    db.setAutoCommit(false);
+    try {
+      try (var q =
+          db.prepareStatement("UPDATE portal_links SET used=1 WHERE token_hash=? AND used=0")) {
+        q.setString(1, hashed);
+        if (q.executeUpdate() != 1) {
+          db.rollback();
+          return Optional.empty();
+        }
+      }
+      try (var q =
+          db.prepareStatement(
+              "INSERT INTO portal_sessions(token_hash,discord_id,player_uuid,expires_at) VALUES(?,?,?,?)")) {
+        q.setString(1, hash(session));
+        q.setString(2, discord);
+        q.setString(3, uuid);
+        q.setLong(4, now + 3600);
+        q.executeUpdate();
+      }
+      db.commit();
+    } catch (SQLException error) {
+      db.rollback();
+      throw error;
+    } finally {
+      db.setAutoCommit(true);
+    }
+    return Optional.of(
+        Map.of("token", session, "discordId", discord, "playerUuid", Objects.toString(uuid, "")));
+  }
+
+  public synchronized Optional<Map<String, String>> portalSession(String token)
+      throws SQLException {
+    if (token == null || token.length() > 100) return Optional.empty();
+    try (var q =
+        db.prepareStatement(
+            "SELECT discord_id,player_uuid FROM portal_sessions WHERE token_hash=? AND expires_at>?")) {
+      q.setString(1, hash(token));
+      q.setLong(2, System.currentTimeMillis() / 1000);
+      try (var rs = q.executeQuery()) {
+        return rs.next()
+            ? Optional.of(
+                Map.of(
+                    "discordId",
+                    rs.getString(1),
+                    "playerUuid",
+                    Objects.toString(rs.getString(2), "")))
+            : Optional.empty();
+      }
+    }
+  }
+
+  public synchronized void portalLogout(String token) throws SQLException {
+    if (token == null) return;
+    try (var q = db.prepareStatement("DELETE FROM portal_sessions WHERE token_hash=?")) {
+      q.setString(1, hash(token));
+      q.executeUpdate();
+    }
+  }
+
+  public synchronized void ticketOwner(String kind, int id, String discord) throws SQLException {
+    try (var q =
+        db.prepareStatement(
+            "INSERT INTO case_tickets(kind,case_id,discord_id) VALUES(?,?,?) ON CONFLICT(kind,case_id) DO NOTHING")) {
+      q.setString(1, kind(kind));
+      q.setInt(2, id);
+      q.setString(3, discord);
+      q.executeUpdate();
+    }
+  }
+
+  public synchronized void ticketChannel(String kind, int id, String channel) throws SQLException {
+    try (var q =
+        db.prepareStatement("UPDATE case_tickets SET channel=? WHERE kind=? AND case_id=?")) {
+      q.setString(1, channel);
+      q.setString(2, kind(kind));
+      q.setInt(3, id);
+      q.executeUpdate();
+    }
+  }
+
+  public synchronized Optional<Map<String, Object>> ticket(String kind, int id)
+      throws SQLException {
+    try (var q =
+        db.prepareStatement(
+            "SELECT discord_id,channel FROM case_tickets WHERE kind=? AND case_id=?")) {
+      q.setString(1, kind(kind));
+      q.setInt(2, id);
+      try (var rs = q.executeQuery()) {
+        return rs.next()
+            ? Optional.of(
+                Map.of(
+                    "discordId", rs.getString(1), "channel", Objects.toString(rs.getString(2), "")))
+            : Optional.empty();
+      }
+    }
+  }
+
+  public synchronized List<Map<String, Object>> tickets() throws SQLException {
+    var result = new ArrayList<Map<String, Object>>();
+    try (var q = db.createStatement();
+        var rs = q.executeQuery("SELECT * FROM case_tickets WHERE channel IS NOT NULL")) {
+      while (rs.next())
+        result.add(
+            Map.of(
+                "kind",
+                rs.getString("kind"),
+                "id",
+                rs.getInt("case_id"),
+                "discordId",
+                rs.getString("discord_id"),
+                "channel",
+                rs.getString("channel")));
+    }
+    return result;
+  }
+
+  public synchronized long revision(String kind, int id) throws SQLException {
+    try (var q = db.prepareStatement("SELECT version FROM entity_versions WHERE kind=? AND id=?")) {
+      q.setString(1, kind);
+      q.setInt(2, id);
+      try (var rs = q.executeQuery()) {
+        return rs.next() ? rs.getLong(1) : 0;
+      }
+    }
+  }
+
+  /** Compare-and-increment before a write. A conflict cannot silently overwrite another draft. */
+  public synchronized boolean reserveRevision(String kind, int id, long expected)
+      throws SQLException {
+    try (var q =
+        db.prepareStatement("INSERT OR IGNORE INTO entity_versions(kind,id) VALUES(?,?)")) {
+      q.setString(1, kind);
+      q.setInt(2, id);
+      q.executeUpdate();
+    }
+    try (var q =
+        db.prepareStatement(
+            "UPDATE entity_versions SET version=version+1 WHERE kind=? AND id=? AND version=?")) {
+      q.setString(1, kind);
+      q.setInt(2, id);
+      q.setLong(3, expected);
+      return q.executeUpdate() == 1;
+    }
+  }
+
+  public synchronized int prepareBanCorrection(
+      int id, String actor, String why, String before, String after) throws SQLException {
+    if (why == null || why.trim().length() < 5 || why.length() > 2000)
+      throw new IllegalArgumentException("Укажите объяснение изменения");
+    try (var q =
+        db.prepareStatement(
+            "INSERT INTO ban_history(ban_id,actor,explanation,before_json,after_json,created_at) VALUES(?,?,?,?,?,?)",
+            Statement.RETURN_GENERATED_KEYS)) {
+      q.setInt(1, id);
+      q.setString(2, actor);
+      q.setString(3, why.trim());
+      q.setString(4, before);
+      q.setString(5, after);
+      q.setLong(6, System.currentTimeMillis() / 1000);
+      q.executeUpdate();
+      try (var keys = q.getGeneratedKeys()) {
+        keys.next();
+        return keys.getInt(1);
+      }
+    }
+  }
+
+  public synchronized void finishBanCorrection(int id, String state) throws SQLException {
+    if (!Set.of("APPLIED", "ROLLED_BACK", "UNCERTAIN").contains(state))
+      throw new IllegalArgumentException("Неизвестное состояние");
+    try (var q =
+        db.prepareStatement("UPDATE ban_history SET state=? WHERE id=? AND state='PREPARED'")) {
+      q.setString(1, state);
+      q.setInt(2, id);
+      q.executeUpdate();
+    }
+  }
+
+  private static String publicBanChange(String json) {
+    var value = me.lovelace.loveWebAdmin.utils.JsonUtils.parseObject(json);
+    value.keySet().retainAll(Set.of("ruleReason", "description", "durationSeconds", "expiresAt"));
+    return me.lovelace.loveWebAdmin.utils.JsonUtils.toJson(value);
+  }
+
+  public synchronized List<Map<String, Object>> banHistory(int id) throws SQLException {
+    var result = new ArrayList<Map<String, Object>>();
+    try (var q =
+        db.prepareStatement(
+            "SELECT * FROM ban_history WHERE ban_id=? ORDER BY id DESC LIMIT 100")) {
+      q.setInt(1, id);
+      try (var rs = q.executeQuery()) {
+        while (rs.next())
+          result.add(
+              Map.of(
+                  "id",
+                  rs.getInt("id"),
+                  "actor",
+                  rs.getString("actor"),
+                  "explanation",
+                  rs.getString("explanation"),
+                  "before",
+                  publicBanChange(rs.getString("before_json")),
+                  "after",
+                  publicBanChange(rs.getString("after_json")),
+                  "state",
+                  rs.getString("state"),
+                  "createdAt",
+                  rs.getLong("created_at")));
+      }
+    }
+    return result;
+  }
+
+  public synchronized int addEvidence(
+      String kind,
+      int id,
+      String author,
+      String type,
+      String value,
+      String visibility,
+      String mime,
+      byte[] data)
+      throws SQLException {
+    kind(kind);
+    if (!Set.of("TEXT", "CHAT", "LINK", "IMAGE").contains(type)
+        || !Set.of("STAFF", "AUTHOR").contains(visibility))
+      throw new IllegalArgumentException("Неизвестный тип или видимость доказательства");
+    if (value == null
+        || value.isBlank()
+        || value.length() > 8000
+        || data != null && data.length > 700000)
+      throw new IllegalArgumentException("Доказательство слишком велико или пусто");
+    try (var q =
+        db.prepareStatement("SELECT COUNT(*) FROM case_evidence WHERE kind=? AND case_id=?")) {
+      q.setString(1, kind);
+      q.setInt(2, id);
+      try (var rs = q.executeQuery()) {
+        if (rs.next() && rs.getInt(1) >= 100)
+          throw new IllegalArgumentException("Лимит 100 доказательств в деле");
+      }
+    }
+    try (var q =
+        db.prepareStatement(
+            "INSERT INTO case_evidence(kind,case_id,author,type,value,visibility,mime,data,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
+            Statement.RETURN_GENERATED_KEYS)) {
+      q.setString(1, kind);
+      q.setInt(2, id);
+      q.setString(3, author);
+      q.setString(4, type);
+      q.setString(5, value);
+      q.setString(6, visibility);
+      q.setString(7, mime);
+      q.setBytes(8, data);
+      q.setLong(9, System.currentTimeMillis() / 1000);
+      q.executeUpdate();
+      try (var keys = q.getGeneratedKeys()) {
+        keys.next();
+        return keys.getInt(1);
+      }
+    }
+  }
+
+  public synchronized List<Map<String, Object>> evidence(String kind, int id, boolean author)
+      throws SQLException {
+    var result = new ArrayList<Map<String, Object>>();
+    try (var q =
+        db.prepareStatement(
+            "SELECT id,author,type,value,visibility,mime,created_at FROM case_evidence WHERE kind=? AND case_id=?"
+                + (author ? " AND visibility='AUTHOR'" : "")
+                + " ORDER BY id")) {
+      q.setString(1, kind(kind));
+      q.setInt(2, id);
+      try (var rs = q.executeQuery()) {
+        while (rs.next())
+          result.add(
+              Map.of(
+                  "id",
+                  rs.getInt(1),
+                  "author",
+                  rs.getString(2),
+                  "type",
+                  rs.getString(3),
+                  "value",
+                  rs.getString(4),
+                  "visibility",
+                  rs.getString(5),
+                  "mime",
+                  Objects.toString(rs.getString(6), ""),
+                  "createdAt",
+                  rs.getLong(7)));
+      }
+    }
+    return result;
+  }
+
+  public synchronized Optional<byte[]> evidenceBytes(
+      String kind, int caseId, int id, boolean author) throws SQLException {
+    try (var q =
+        db.prepareStatement(
+            "SELECT data FROM case_evidence WHERE kind=? AND case_id=? AND id=?"
+                + (author ? " AND visibility='AUTHOR'" : ""))) {
+      q.setString(1, kind(kind));
+      q.setInt(2, caseId);
+      q.setInt(3, id);
+      try (var rs = q.executeQuery()) {
+        return rs.next() ? Optional.ofNullable(rs.getBytes(1)) : Optional.empty();
+      }
     }
   }
 

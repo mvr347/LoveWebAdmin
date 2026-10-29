@@ -57,9 +57,30 @@ public final class ApiCasesHandler extends ApiHandlerSupport {
       return;
     }
     try {
+      if (p.length == 5 && p[3].equals("evidence")) {
+        int evidenceId = Integer.parseInt(p[4]);
+        var bytes = plugin.moderation().evidenceBytes(p[1], id, evidenceId, false);
+        if (bytes.isEmpty()) {
+          sendError(resp, 404, "Доказательство не найдено");
+          return;
+        }
+        resp.setHeader("Cache-Control", "no-store");
+        sendSuccess(
+            resp,
+            Map.of(
+                "mime",
+                me.lovelace.loveWebAdmin.managers.CaseEvidence.imageMime(bytes.get()),
+                "base64",
+                Base64.getEncoder().encodeToString(bytes.get())));
+        return;
+      }
       sendSuccess(
           resp,
           Map.of(
+              "revision",
+              plugin.moderation().revision(p[1], id),
+              "evidence",
+              plugin.moderation().evidence(p[1], id, false),
               "work",
               plugin.moderation().work(p[1], id),
               "notes",
@@ -110,6 +131,33 @@ public final class ApiCasesHandler extends ApiHandlerSupport {
       sendSuccess(resp, Map.of("preview", preview));
       return;
     }
+    if (Objects.toString(req.getPathInfo(), "").matches("/deliveries/[0-9]+/resolve")) {
+      var auth = requirePermission(req, resp, Permission.MANAGE_API);
+      if (auth.isEmpty()) return;
+      int id = Integer.parseInt(req.getPathInfo().split("/")[2]);
+      var body = readJsonBody(req);
+      String explanation = Objects.toString(body.get("explanation"), "");
+      try {
+        if (!plugin
+            .moderation()
+            .resolveDelivery(
+                id,
+                Boolean.TRUE.equals(body.get("delivered")),
+                auth.get().adminUsername(),
+                explanation)) {
+          sendError(resp, 409, "Результат этой доставки уже установлен");
+          return;
+        }
+      } catch (SQLException error) {
+        throw new IllegalStateException(error);
+      }
+      plugin
+          .getLogManager()
+          .logWebAction(
+              auth.get().adminUsername(), "Сверил доставку Discord №" + id + ": " + explanation);
+      sendSuccess(resp, Map.of("message", "Результат доставки сохранён"));
+      return;
+    }
     if (Objects.toString(req.getPathInfo(), "").matches("/deliveries/[0-9]+/retry")) {
       var auth = requirePermission(req, resp, Permission.MANAGE_API);
       if (auth.isEmpty()) return;
@@ -158,7 +206,24 @@ public final class ApiCasesHandler extends ApiHandlerSupport {
     var body = readJsonBody(req);
     boolean ok;
     try {
+      if (body.get("revision") instanceof Number revision
+          && !plugin.moderation().reserveRevision(p[1], id, revision.longValue())) {
+        sendError(
+            resp,
+            409,
+            "Дело изменилось другим сотрудником. Черновик сохранён; обновите данные перед применением.");
+        return;
+      }
       switch (p[3]) {
+        case "evidence" -> {
+          int evidenceId =
+              me.lovelace.loveWebAdmin.managers.CaseEvidence.add(
+                  plugin.moderation(), p[1], id, actor, body);
+          if ("AUTHOR".equals(body.get("visibility")))
+            plugin.getDiscordBridge().notifyCaseEvidence(p[1], id, evidenceId);
+          ok = true;
+        }
+
         case "claim" -> ok = plugin.moderation().claim(p[1], id, actor);
         case "merge" -> {
           if (!p[1].equals("report"))

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Мои обращения</title>
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/moderation.css" />
+  </head>
+  <body class="workspace-page">
+    <main>
+      <h1>Мои обращения</h1>
+      <p class="muted">
+        Здесь доступны только ваши обращения. Для входа используйте личную
+        одноразовую ссылку из команды /мои-обращения в Discord. Ник игрока не
+        даёт доступа к его делам.
+      </p>
+      <p id="status" role="status"></p>
+      <button id="refresh">Обновить</button><button id="logout">Выйти</button>
+      <section>
+        <h2>Список обращений</h2>
+        <div id="cases"></div>
+      </section>
+      <section id="conversation" hidden>
+        <h2 id="heading"></h2>
+        <div id="messages"></div>
+        <h3>Доказательства, доступные вам</h3>
+        <div id="evidence"></div>
+        <form id="reply-form">
+          <label
+            >Ответ сотруднику<textarea
+              id="reply"
+              maxlength="2000"
+              required
+            ></textarea></label
+          ><button>Отправить</button>
+        </form>
+      </section>
+    </main>
+    <script type="module" src="/portal.js"></script>
+  </body>
+</html>

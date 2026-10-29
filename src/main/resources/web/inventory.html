@@ -1,1 +1,35 @@
-<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Инвентарь игрока</title><link rel="stylesheet" href="/moderation.css"><main><a href="/">В панель</a><h1 id="heading">Инвентарь игрока</h1><p role="status" id="status"></p><button id="refresh">Обновить снимок</button><section><h2>Содержимое</h2><p class="muted">Изъятие проверяет, что предмет не изменился с момента просмотра. Предмет сохраняется для возможного возврата.</p><div id="items" class="row"></div></section><section><h2>Изъятые предметы</h2><p class="muted">Возврат требует отдельного права, игрока онлайн и свободной ячейки. Неопределённые после сбоя операции требуют ручной проверки.</p><div id="evidence"></div></section></main><script src="/inventory.js" defer></script></html>
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Инвентарь игрока</title>
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/moderation.css" />
+  </head>
+  <body class="workspace-page">
+    <main>
+      <a href="/">В панель</a>
+      <h1 id="heading">Инвентарь игрока</h1>
+      <p role="status" id="status"></p>
+      <button id="refresh">Обновить снимок</button>
+      <section>
+        <h2>Содержимое</h2>
+        <p class="muted">
+          Изъятие проверяет, что предмет не изменился с момента просмотра.
+          Предмет сохраняется для возможного возврата.
+        </p>
+        <div id="items" class="row"></div>
+      </section>
+      <section>
+        <h2>Изъятые предметы</h2>
+        <p class="muted">
+          Возврат требует отдельного права, игрока онлайн и свободной ячейки.
+          Неопределённые после сбоя операции требуют ручной проверки.
+        </p>
+        <div id="evidence"></div>
+      </section>
+    </main>
+    <script type="module" src="/inventory.js"></script>
+  </body>
+</html>

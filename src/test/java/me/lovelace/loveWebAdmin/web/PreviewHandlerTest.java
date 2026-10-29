@@ -24,21 +24,22 @@ class PreviewHandlerTest {
     assertTrue(r.body.toString().contains("/preview/preview-bootstrap.js"));
     assertTrue(r.body.toString().contains("/preview/app.js"));
     assertFalse(r.body.toString().contains("href=\"/style.css\""));
-    assertTrue(r.headers.get("Content-Security-Policy").contains("connect-src 'none'"));
+    assertTrue(r.headers.get("Content-Security-Policy").contains("connect-src 'self'"));
     assertEquals("no-store", r.headers.get("Cache-Control"));
   }
 
   @Test
   void localAvatarIsServedAndScriptUsesIt() throws Exception {
     assertEquals(200, get(true, "/preview/avatar.svg", "/avatar.svg").status);
-    var js = get(true, "/preview/app.js", "/app.js").body.toString();
+    var js =
+        get(true, "/preview/js/features/vesuvio.js", "/js/features/vesuvio.js").body.toString();
     assertFalse(js.contains("https://mc-heads.net/"));
     assertTrue(js.contains("/preview/avatar.svg?name="));
   }
 
   @Test
   void packagedJavaScriptRetainsItsOwnTemplateLiterals() throws Exception {
-    try (var input = getClass().getResourceAsStream("/web/app.js")) {
+    try (var input = getClass().getResourceAsStream("/web/js/features/moderation.js")) {
       assertNotNull(input);
       String js = new String(input.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
       assertTrue(js.contains("/api/reports/${id}/accept"));

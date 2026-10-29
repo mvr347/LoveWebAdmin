@@ -1,1 +1,37 @@
-<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Шаблоны Discord</title><link rel="stylesheet" href="/moderation.css"><main><a href="/">В панель</a><h1>Шаблоны Discord</h1><p id="status" role="status"></p><label for="kind">Сообщение</label><select id="kind"><option value="ban">Блокировка</option><option value="report">Жалоба</option><option value="appeal">Апелляция</option><option value="clarification">Запрос уточнения</option></select><p id="tokens"></p><textarea id="text" maxlength="1800" rows="12"></textarea><button id="preview">Предпросмотр</button><button id="save">Сохранить</button><section><h2>Пример сообщения</h2><p class="muted">Используются демонстрационные данные. Discord отображает своё форматирование.</p><pre id="result"></pre></section></main><script src="/templates.js" defer></script></html>
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Шаблоны Discord</title>
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/moderation.css" />
+  </head>
+  <body class="workspace-page">
+    <main>
+      <a href="/">В панель</a>
+      <h1>Шаблоны Discord</h1>
+      <p id="status" role="status"></p>
+      <label for="kind">Сообщение</label
+      ><select id="kind">
+        <option value="ban">Блокировка</option>
+        <option value="report">Жалоба</option>
+        <option value="appeal">Апелляция</option>
+        <option value="clarification">Запрос уточнения</option>
+      </select>
+      <p id="tokens"></p>
+      <textarea id="text" maxlength="1800" rows="12"></textarea
+      ><button id="preview">Предпросмотр</button
+      ><button id="save">Сохранить</button>
+      <section>
+        <h2>Пример сообщения</h2>
+        <p class="muted">
+          Используются демонстрационные данные. Discord отображает своё
+          форматирование.
+        </p>
+        <pre id="result"></pre>
+      </section>
+    </main>
+    <script type="module" src="/templates.js"></script>
+  </body>
+</html>

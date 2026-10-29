@@ -30,7 +30,9 @@ public final class JsonUtils {
         } else if (value instanceof Boolean b) {
             sb.append(b.toString());
         } else if (value instanceof Number n) {
-            sb.append(n.toString());
+      if (n instanceof Double d && !Double.isFinite(d)
+          || n instanceof Float f && !Float.isFinite(f)) sb.append("null");
+      else sb.append(n.toString());
         } else if (value instanceof Map<?, ?> map) {
             sb.append('{');
             boolean first = true;
@@ -51,6 +53,17 @@ public final class JsonUtils {
                 write(sb, item);
             }
             sb.append(']');
+    } else if (value.getClass().isRecord()) {
+      var fields = new java.util.LinkedHashMap<String, Object>();
+      for (var component : value.getClass().getRecordComponents())
+        try {
+          if (component.getName().matches("(?i).*password.*|.*secret.*|keyHash|backupCodes|token"))
+            continue;
+          fields.put(component.getName(), component.getAccessor().invoke(value));
+        } catch (ReflectiveOperationException error) {
+          throw new IllegalArgumentException("Не удалось сериализовать запись", error);
+        }
+      write(sb, fields);
         } else if (value instanceof Object[] array) {
             write(sb, List.of(array));
         } else {
@@ -189,7 +202,14 @@ public final class JsonUtils {
             }
         }
 
+    private int depth;
+
         Object parseValue() {
+      if (++depth > 128) {
+        depth--;
+        throw new IllegalArgumentException("Слишком глубокая структура JSON");
+      }
+      try {
             skipWhitespace();
             char c = peek();
             return switch (c) {
@@ -200,6 +220,9 @@ public final class JsonUtils {
                 case 'n' -> parseNullValue();
                 default -> parseNumberValue();
             };
+      } finally {
+        depth--;
+      }
         }
 
         Map<String, Object> parseObjectValue() {
