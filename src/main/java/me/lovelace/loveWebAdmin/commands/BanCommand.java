@@ -31,7 +31,6 @@ public class BanCommand implements CommandExecutor, TabCompleter {
     @Override
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, @NotNull String[] args) {
         if (!sender.hasPermission("lovewebadmin.ban")) {
-            sender.sendMessage("§cУ вас нет прав для выполнения этой команды!");
             return true;
         }
 
