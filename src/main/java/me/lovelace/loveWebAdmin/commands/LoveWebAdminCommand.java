@@ -36,7 +36,6 @@ public class LoveWebAdminCommand implements CommandExecutor, TabCompleter {
     @Override
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, @NotNull String[] args) {
         if (!sender.hasPermission("lovewebadmin.admin")) {
-            sender.sendMessage("§cУ вас нет прав для выполнения этой команды!");
             return true;
         }
 
