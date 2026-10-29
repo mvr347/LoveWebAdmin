@@ -23,12 +23,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: mvr347/LoveCore
-          ref: 1b3dbbdb6408af42d0c3584d7d4a090bb90244c7
+          ref: 78290090063bf47272af14a52bc428bd03864bc8
           path: .build/LoveCore
       - name: Build paired LoveCore API
         run: |
           mvn -B -f .build/LoveCore/pom.xml -pl lovecore-api -am package -DskipTests
-          mvn -B org.apache.maven.plugins:maven-install-plugin:3.1.4:install-file -Dfile=.build/LoveCore/lovecore-api/target/lovecore-api-1.0.0.jar -DgroupId=com.github.mvr347.LoveCore -DartifactId=lovecore-api -Dversion=1b3dbbdb6408af42d0c3584d7d4a090bb90244c7 -Dpackaging=jar -DgeneratePom=true
+          mvn -B org.apache.maven.plugins:maven-install-plugin:3.1.4:install-file -Dfile=.build/LoveCore/lovecore-api/target/lovecore-api-1.0.0.jar -DgroupId=com.github.mvr347.LoveCore -DartifactId=lovecore-api -Dversion=78290090063bf47272af14a52bc428bd03864bc8 -Dpackaging=jar -DgeneratePom=true
 
       - name: Build with Maven
         run: mvn -B verify

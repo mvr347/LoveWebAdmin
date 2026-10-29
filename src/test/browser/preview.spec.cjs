@@ -218,3 +218,253 @@ test("late dashboard responses cannot replace a newer section", async ({
   );
   await expect(page.locator("#content-area")).toContainText("ПЕРСОНАЛ");
 });
+test("delivery reconciliation and panel recovery send the required JSON explanation", async ({
+  page,
+}) => {
+  const mutations = [];
+  let deliveryDone = false,
+    panelDone = false;
+  await page.addInitScript(() =>
+    localStorage.setItem("wa_token", "test-session"),
+  );
+  // Serve the real production workspace only in this fixture; Preview's sentinel stays intact.
+  const fs = require("node:fs/promises"),
+    path = require("node:path"),
+    root = path.resolve(__dirname, "../../main/resources/web");
+  await page.route("**/*", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.startsWith("/api/")) return route.fallback();
+    const file = path.resolve(root, "." + url.pathname);
+    if (url.hostname !== "127.0.0.1" || !file.startsWith(root + path.sep))
+      return route.abort();
+    try {
+      await route.fulfill({
+        status: 200,
+        contentType: file.endsWith(".html")
+          ? "text/html"
+          : file.endsWith(".css")
+            ? "text/css"
+            : "text/javascript",
+        body: await fs.readFile(file),
+      });
+    } catch {
+      await route.abort();
+    }
+  });
+  await page.route("**/api/**", async (route) => {
+    const request = route.request(),
+      path = new URL(request.url()).pathname;
+    let data = {};
+    if (path === "/api/me")
+      data = {
+        id: 1,
+        username: "Owner",
+        isOwner: true,
+        permissions: ["MANAGE_API", "MANAGE_INTEGRATIONS"],
+      };
+    else if (path === "/api/cases/deliveries")
+      data = deliveryDone
+        ? []
+        : [
+            {
+              id: 1,
+              event: "ban:12",
+              state: "UNCERTAIN",
+              attempts: 1,
+              error: "Результат неизвестен",
+            },
+          ];
+    else if (path === "/api/cases/discord-messages")
+      data = panelDone
+        ? []
+        : [
+            {
+              slot: "panel:70000",
+              channel: "70000",
+              state: "UNCERTAIN",
+              message: "",
+              error: "Проверьте сообщение",
+            },
+          ];
+    else if (request.method() === "POST") {
+      mutations.push({ path, body: request.postDataJSON() });
+      if (path.endsWith("/1/resolve")) deliveryDone = true;
+      if (path.endsWith("/discord-messages/resolve")) panelDone = true;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ success: true, data }),
+    });
+  });
+  await page.goto("/deliveries.html");
+  await page
+    .getByRole("button", {
+      name: "Не доставлено: разрешить повтор",
+      exact: true,
+    })
+    .click();
+  await page
+    .getByRole("dialog")
+    .locator("textarea")
+    .fill("Проверили Discord, сообщения нет");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Подтвердить", exact: true })
+    .click();
+  await expect.poll(() => mutations.length).toBe(1);
+  expect(mutations[0].body).toEqual({
+    delivered: false,
+    explanation: "Проверили Discord, сообщения нет",
+  });
+  await page
+    .getByLabel("ID найденного сообщения из Discord")
+    .fill("123456789012345678");
+  await page
+    .getByRole("button", { name: "Связать найденное сообщение", exact: true })
+    .click();
+  await page
+    .getByRole("dialog")
+    .locator("textarea")
+    .fill("Нашли исходное сообщение в канале");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Подтвердить", exact: true })
+    .click();
+  await expect.poll(() => mutations.length).toBe(2);
+  expect(mutations[1].body).toEqual({
+    slot: "panel:70000",
+    messageId: "123456789012345678",
+    explanation: "Нашли исходное сообщение в канале",
+  });
+  await expect(page.locator("#discord-messages")).toContainText(
+    "неизвестным результатом нет",
+  );
+});
+test("editable templates, decision preview and new-evidence review preserve the previous verdict", async ({
+  page,
+}) => {
+  await page.goto("/preview/");
+  const saved = await page.evaluate(() => {
+    LovePreview.model.scenario("ban");
+    LovePreview.model.scenario("appeal");
+    LovePreview.model.switchRole(2);
+    return { id: LovePreview.model.snapshot().appeals[0].id };
+  });
+  await page.goto(`/preview/case.html?kind=appeal&id=${saved.id}`);
+  await expect(page.locator("#case-wait")).toContainText("Ожидаем сотрудника");
+  await page.locator("#case-workflow summary").click();
+  await page.locator("#template-name").fill("Личное уточнение");
+  await page.locator("#template-text").fill("Уточните время и место ситуации");
+  await page
+    .locator(
+      "#template-form button[type=submit],#template-form button:not([type])",
+    )
+    .first()
+    .click();
+  await expect(page.locator("#case-template")).toContainText(
+    "Личное уточнение",
+  );
+  await page
+    .locator("#verdict")
+    .fill("По исходным материалам недостаточно доказательств");
+  await page.evaluate(() => {
+    document.getElementById("reject").click();
+    document.getElementById("reject").click();
+  });
+  await expect(page.getByRole("dialog")).toHaveCount(1);
+  await expect(page.getByRole("dialog")).toContainText(
+    "Наказание не изменится",
+  );
+  expect(
+    await page.evaluate(
+      (id) =>
+        LovePreview.model.snapshot().appeals.find((a) => a.id === id).status,
+      saved.id,
+    ),
+  ).toBe("PENDING");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Отмена", exact: true })
+    .click();
+  await expect(page.locator("#verdict")).toHaveValue(
+    "По исходным материалам недостаточно доказательств",
+  );
+  await page.locator("#reject").click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Применить решение", exact: true })
+    .click();
+  await expect(page.locator("#summary")).toContainText("Отклонена");
+  const code = await page.evaluate(
+    () => LovePreview.model.scenario("portal").code,
+  );
+  await page.goto("/preview/portal.html#" + code);
+  await page.locator("#cases button").first().click();
+  await page
+    .getByRole("button", { name: "Дополнить закрытое обращение", exact: true })
+    .click();
+  await page
+    .locator("[data-form] textarea")
+    .fill("Новое видео показывает дополнительный контекст");
+  await page.locator("[data-form] button").click();
+  await expect(page.locator("[data-reviews]")).toContainText(
+    "Ожидает рассмотрения",
+  );
+  await page.goto(`/preview/case.html?kind=appeal&id=${saved.id}`);
+  await page
+    .getByRole("button", { name: "Принять к рассмотрению", exact: true })
+    .click();
+  await page
+    .getByRole("dialog")
+    .locator("textarea")
+    .fill("Новые материалы требуют отдельного рассмотрения");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Подтвердить", exact: true })
+    .click();
+  await expect(page.locator("#review-requests")).toContainText(
+    "Открыть новое рассмотрение",
+  );
+  const cases = await page.evaluate(() => LovePreview.model.snapshot().appeals);
+  await page.screenshot({
+    path: "test-results/case-workflow.png",
+    fullPage: true,
+  });
+  expect(cases.find((a) => a.id === saved.id).status).toBe("REJECTED");
+  expect(cases.filter((a) => a.status === "PENDING")).toHaveLength(1);
+});
+
+test("compact moderation actions also require explanation and a pure decision preview", async ({
+  page,
+}) => {
+  await page.goto("/preview/");
+  await page.evaluate(() => LovePreview.model.scenario("report"));
+  const id = await page.evaluate(
+    () => LovePreview.model.snapshot().reports[0].id,
+  );
+  await page.evaluate((id) => {
+    window.handleAcceptReport(id, "Ada123");
+  }, id);
+  await page
+    .getByRole("dialog")
+    .locator("textarea")
+    .fill("Нарушение подтверждается представленными материалами");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Подтвердить", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toContainText("Предпросмотр решения");
+  expect(
+    await page.evaluate(() => LovePreview.model.snapshot().reports[0].status),
+  ).toBe("PENDING");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Применить решение" })
+    .click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => LovePreview.model.snapshot().reports[0].status),
+    )
+    .toBe("ACCEPTED");
+});

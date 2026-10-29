@@ -22,6 +22,15 @@ public final class ApiCasesHandler extends ApiHandlerSupport {
 
   @Override
   protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+    if ("/discord-messages".equals(req.getPathInfo())) {
+      if (requirePermission(req, resp, Permission.MANAGE_INTEGRATIONS).isEmpty()) return;
+      try {
+        sendSuccess(resp, plugin.getDiscordBridge().ticketDeskStore().messages());
+      } catch (SQLException error) {
+        throw new IllegalStateException(error);
+      }
+      return;
+    }
     if ("/templates".equals(req.getPathInfo())) {
       if (requirePermission(req, resp, Permission.MANAGE_API).isEmpty()) return;
       sendSuccess(
@@ -57,6 +66,46 @@ public final class ApiCasesHandler extends ApiHandlerSupport {
       return;
     }
     try {
+      if (new CaseWorkflowRoutes(plugin).get(req, resp, p, id, auth.get())) return;
+      if (p.length >= 4 && p[3].equals("transcript")) {
+        resp.setHeader("Cache-Control", "no-store");
+        var archive = plugin.getDiscordBridge().ticketDeskStore();
+        if (p.length == 5) {
+          var bytes = archive.file(p[1], id, Integer.parseInt(p[4]));
+          if (bytes.isEmpty()) {
+            sendError(resp, 404, "Вложение не найдено");
+            return;
+          }
+          resp.setContentType("application/octet-stream");
+          resp.setHeader("Content-Disposition", "attachment; filename=\"attachment-" + p[4] + "\"");
+          resp.setHeader("Cache-Control", "no-store");
+          resp.setHeader("X-Content-Type-Options", "nosniff");
+          resp.getOutputStream().write(bytes.get());
+          return;
+        }
+        int offset =
+            Math.max(
+                0,
+                Math.min(
+                    10000, Integer.parseInt(Objects.toString(req.getParameter("offset"), "0"))));
+        var messages = archive.transcript(p[1], id, offset);
+        sendSuccess(
+            resp,
+            Map.of(
+                "messages",
+                messages,
+                "files",
+                archive.files(p[1], id),
+                "nextOffset",
+                messages.size() == 100 ? offset + 100 : -1,
+                "state",
+                archive.get(p[1], id).map(t -> t.state()).orElse("NONE"),
+                "closedBy",
+                archive.get(p[1], id).map(t -> t.actor()).orElse(""),
+                "closeReason",
+                archive.get(p[1], id).map(t -> t.reason()).orElse("")));
+        return;
+      }
       if (p.length == 5 && p[3].equals("evidence")) {
         int evidenceId = Integer.parseInt(p[4]);
         var bytes = plugin.moderation().evidenceBytes(p[1], id, evidenceId, false);
@@ -91,13 +140,40 @@ public final class ApiCasesHandler extends ApiHandlerSupport {
               p[1].equals("report")
                   ? plugin.getDatabaseManager().reportDiscussion(id)
                   : List.of()));
-    } catch (SQLException e) {
+    } catch (Exception e) {
       throw new IllegalStateException(e);
     }
   }
 
   @Override
   protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+    if ("/discord-messages/resolve".equals(req.getPathInfo())) {
+      var auth = requirePermission(req, resp, Permission.MANAGE_INTEGRATIONS);
+      if (auth.isEmpty()) return;
+      var body = readJsonBody(req);
+      String slot = Objects.toString(body.get("slot"), ""),
+          message = Objects.toString(body.get("messageId"), ""),
+          explanation = Objects.toString(body.get("explanation"), "");
+      try {
+        if (!plugin
+            .getDiscordBridge()
+            .ticketDeskStore()
+            .resolveMessage(slot, message, explanation)) {
+          sendError(resp, 409, "Сообщение уже сверено или ещё отправляется");
+          return;
+        }
+      } catch (SQLException error) {
+        throw new IllegalStateException(error);
+      }
+      plugin.getDiscordBridge().ticketDesk().refreshMessage(slot);
+      plugin
+          .getLogManager()
+          .logWebAction(
+              auth.get().adminUsername(), "Сверил сообщение Discord " + slot + ": " + explanation);
+      sendSuccess(
+          resp, Map.of("message", "Результат проверки сохранён; сообщение обновится в Discord"));
+      return;
+    }
     if (Set.of("/templates/preview", "/templates/save")
         .contains(Objects.toString(req.getPathInfo(), ""))) {
       var auth = requirePermission(req, resp, Permission.MANAGE_API);
@@ -186,6 +262,16 @@ public final class ApiCasesHandler extends ApiHandlerSupport {
             resp,
             p[1].equals("report") ? Permission.MANAGE_REPORTS : Permission.MANAGE_APPEALS);
     if (auth.isEmpty()) return;
+    try {
+      if (new CaseWorkflowRoutes(plugin).post(req, resp, p, id, auth.get())) return;
+    } catch (me.lovelace.loveWebAdmin.utils.ActionRejectedException error) {
+      throw error;
+    } catch (IllegalArgumentException error) {
+      sendError(resp, 400, error.getMessage());
+      return;
+    } catch (Exception error) {
+      throw new IllegalStateException(error);
+    }
     String actor = auth.get().adminUsername();
     boolean open =
         p[1].equals("report")

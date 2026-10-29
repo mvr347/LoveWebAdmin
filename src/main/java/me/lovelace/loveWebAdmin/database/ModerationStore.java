@@ -84,6 +84,8 @@ public final class ModerationStore implements AutoCloseable {
           "CREATE TABLE IF NOT EXISTS ban_history(id INTEGER PRIMARY KEY,ban_id INTEGER NOT NULL,actor TEXT NOT NULL,explanation TEXT NOT NULL,before_json TEXT NOT NULL,after_json TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'PREPARED',created_at INTEGER NOT NULL)");
       s.execute(
           "CREATE TABLE IF NOT EXISTS case_evidence(id INTEGER PRIMARY KEY,kind TEXT NOT NULL,case_id INTEGER NOT NULL,author TEXT NOT NULL,type TEXT NOT NULL,value TEXT NOT NULL,visibility TEXT NOT NULL,mime TEXT,data BLOB,created_at INTEGER NOT NULL)");
+      s.execute(
+          "CREATE TABLE IF NOT EXISTS appeal_access_parent(appeal_id INTEGER PRIMARY KEY,parent_id INTEGER NOT NULL)");
       s.execute("CREATE INDEX IF NOT EXISTS idx_delivery_due ON delivery_outbox(state,next_at,id)");
       s.execute(
           "CREATE INDEX IF NOT EXISTS idx_delivery_ticket ON delivery_outbox(recipient,id,state)");
@@ -222,10 +224,42 @@ public final class ModerationStore implements AutoCloseable {
     return raw;
   }
 
+  /** Same author capability extends only to an explicitly approved child review. */
+  public synchronized void copyAppealAccess(int from, int to) throws SQLException {
+    db.setAutoCommit(false);
+    try {
+      byte[] random = new byte[32];
+      new SecureRandom().nextBytes(random);
+      try (var q =
+          db.prepareStatement(
+              "INSERT INTO appeal_access(appeal_id,token_hash,discord_id,verified) SELECT ?,?,discord_id,verified FROM appeal_access WHERE appeal_id=?")) {
+        q.setInt(1, to);
+        q.setString(2, hash(HexFormat.of().formatHex(random)));
+        q.setInt(3, from);
+        if (q.executeUpdate() != 1)
+          throw new SQLException("Не подтверждён автор исходного обращения");
+      }
+      try (var q =
+          db.prepareStatement(
+              "INSERT INTO appeal_access_parent(appeal_id,parent_id) VALUES(?,?)")) {
+        q.setInt(1, to);
+        q.setInt(2, from);
+        q.executeUpdate();
+      }
+      db.commit();
+    } catch (SQLException error) {
+      db.rollback();
+      throw error;
+    } finally {
+      db.setAutoCommit(true);
+    }
+  }
+
   public synchronized boolean author(int appeal, String raw) throws SQLException {
     if (raw == null || raw.length() != 64) return false;
     try (var q =
-        db.prepareStatement("SELECT 1 FROM appeal_access WHERE appeal_id=? AND token_hash=?")) {
+        db.prepareStatement(
+            "WITH RECURSIVE lineage(id) AS (SELECT ? UNION SELECT p.parent_id FROM appeal_access_parent p JOIN lineage l ON p.appeal_id=l.id) SELECT 1 FROM appeal_access a JOIN lineage l ON a.appeal_id=l.id WHERE a.token_hash=?")) {
       q.setInt(1, appeal);
       q.setString(2, hash(raw));
       try (var r = q.executeQuery()) {

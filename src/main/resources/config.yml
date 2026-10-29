@@ -92,6 +92,18 @@ security:
 
 # Бот и привязки аккаунтов настраиваются в LoveCore.
 discord:
+  tickets:
+    waiting:
+      # 0 отключает соответствующее напоминание. Никаких автоматических решений/закрытий.
+      staff-reminder-minutes: 20
+      staff-escalation-minutes: 60
+      player-reminder-minutes: 2880
+    # Публичный канал с постоянной панелью кнопок. Включите после настройки бота.
+    panel-channel-id: ""
+    # Отдельный закрытый канал персонала с краткими карточками и кнопкой назначения.
+    queue-channel-id: ""
+    # Только руководство. Обычная staff-role-ids НЕ открывает все новые тикеты.
+    supervisor-role-ids: []
   # auto: бот при доступности, иначе Discord-вебхук; bot, webhook, both.
   reports-transport: auto
   reports-channel-id: ""
@@ -104,7 +116,7 @@ discord:
       end-hour: 8
       timezone: Europe/Moscow
     escalation:
-      # 0 отключает эскалацию неназначенных жалоб.
+      # Совместимость старых конфигов; сроки теперь задаются в tickets.waiting.
       after-minutes: 15
-      # Точные имена ролей WebAdmin. Управляющий также получает эскалацию, если включил ЛС.
+      # Совместимость старых конфигов; руководство определяется через tickets.supervisor-role-ids.
       roles: []

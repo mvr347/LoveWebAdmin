@@ -472,7 +472,7 @@ public class ApiBansHandler extends ApiHandlerSupport {
             map.put("sourceDisplay", new me.lovelace.loveWebAdmin.models.BanOrigin(
                 me.lovelace.loveWebAdmin.models.BanOrigin.Kind.valueOf(source.get("kind").toString()),
                 source.get("actor").toString().isBlank() ? ban.creatorName() : source.get("actor").toString(),null).display());
-            if("UNKNOWN".equals(source.get("kind")))map.put("sourceDisplay","Не указан · автор: "+java.util.Objects.toString(ban.creatorName(),"Неизвестен"));
+
         } catch (java.sql.SQLException e) { throw new IllegalStateException(e); }
         map.put("ruleReason", ban.ruleReason());
         map.put("description", ban.description());

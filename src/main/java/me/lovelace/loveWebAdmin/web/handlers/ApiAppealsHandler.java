@@ -123,6 +123,37 @@ public class ApiAppealsHandler extends ApiHandlerSupport {
 
     if (parts.length >= 2) {
       String action = parts[1];
+      if (action.equals("review")) {
+        if (!isAuthor(appealId, req.getHeader("X-Appeal-Token"))) {
+          sendError(resp, 403, "Нужна личная ссылка автора");
+          return;
+        }
+        if (!submissions.take(
+            "review:"
+                + me.lovelace.loveWebAdmin.database.ModerationStore.hash(
+                    req.getHeader("X-Appeal-Token")))) {
+          sendError(resp, 429, "Слишком много дополнений");
+          return;
+        }
+        try {
+          int review =
+              plugin
+                  .workflows()
+                  .requestReview(
+                      "appeal",
+                      appealId,
+                      "cap:"
+                          + me.lovelace.loveWebAdmin.database.ModerationStore.hash(
+                              req.getHeader("X-Appeal-Token")),
+                      readJsonBody(req));
+          sendSuccess(resp, Map.of("id", review, "message", "Дополнение отправлено"));
+        } catch (IllegalArgumentException error) {
+          throw error;
+        } catch (Exception error) {
+          throw new IllegalStateException(error);
+        }
+        return;
+      }
       switch (action.toLowerCase()) {
         case "reply" -> handleReply(appealId, req, resp);
         case "approve" -> handleApprove(appealId, req, resp);
@@ -386,6 +417,7 @@ public class ApiAppealsHandler extends ApiHandlerSupport {
       throws IOException {
     var auth = requireManagePermission(req, resp);
     if (auth.isEmpty()) return;
+    if (approve && requirePermission(req, resp, Permission.MANAGE_BANS).isEmpty()) return;
     var body = readJsonBody(req);
     String result =
         plugin
@@ -461,6 +493,12 @@ public class ApiAppealsHandler extends ApiHandlerSupport {
   private Map<String, Object> toAppealDetailMap(WebBanAppeal appeal) {
     Map<String, Object> map = toAppealSummaryMap(appeal);
     List<AppealMessage> messages = plugin.getDatabaseManager().getAppealMessages(appeal.id());
+    try {
+      map.put("reviews", plugin.workflows().publicReviews("appeal", appeal.id()));
+    } catch (Exception error) {
+      throw new IllegalStateException(error);
+    }
+
     List<Map<String, Object>> mappedMsgs = new ArrayList<>();
     for (AppealMessage msg : messages) {
       Map<String, Object> mm = new LinkedHashMap<>();

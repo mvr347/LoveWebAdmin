@@ -84,10 +84,18 @@ public final class AppealService {
       if (!status.equals("REJECTED")
           && "SECURITY".equals(context.moderation().source(appeal.banId()).get("kind")))
         throw new me.lovelace.loveWebAdmin.utils.ActionRejectedException(
-            "Снимите ограничение через раздел безопасности LoveAuth; обычный разбан к нему"
-                + " неприменим");
+            "Снимите ограничение через раздел безопасности; обычный разбан к нему" + " неприменим");
     } catch (java.sql.SQLException e) {
       throw new IllegalStateException(e);
+    }
+    try {
+      var source = context.moderation().source(appeal.banId());
+      if ("STAFF".equals(source.get("kind"))
+          && actor.equalsIgnoreCase(source.get("actor").toString()))
+        throw new me.lovelace.loveWebAdmin.utils.ActionRejectedException(
+            "Своё наказание рассматривает другой сотрудник или руководство");
+    } catch (java.sql.SQLException error) {
+      throw new IllegalStateException(error);
     }
     if (!context.database().reserveAppealDecision(id))
       throw new me.lovelace.loveWebAdmin.utils.ActionRejectedException(
@@ -95,7 +103,13 @@ public final class AppealService {
     boolean completed = false;
     boolean nativeChanged = false;
     try {
-      if (approve && !context.unban(appeal.banId(), actor))
+      if (approve
+          && context
+              .database()
+              .getBanById(appeal.banId())
+              .filter(b -> b.status().equals("ACTIVE"))
+              .isPresent()
+          && !context.unban(appeal.banId(), actor))
         throw new IllegalStateException("Не удалось снять блокировку");
       if (status.equals("REDUCED")) context.reduce(appeal.banId(), actor, remainingSeconds);
       nativeChanged = approve || status.equals("REDUCED");

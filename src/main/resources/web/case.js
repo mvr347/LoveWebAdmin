@@ -1,3 +1,4 @@
+import { installCaseWorkflow } from "./js/core/case-workflow.js";
 import { requestFetch } from "./js/core/requests.js";
 import { installWorkspace, confirmDialog } from "./js/core/workspace.js";
 installWorkspace();
@@ -44,6 +45,79 @@ installWorkspace();
       $(target).append(el);
     }
   }
+  let archiveOffset = 0;
+  $("archive-load").onclick = async () => {
+    const button = $("archive-load");
+    button.disabled = true;
+    try {
+      const archive = await api(
+        "GET",
+        "/api/cases/" + kind + "/" + id + "/transcript?offset=" + archiveOffset,
+      );
+      $("archive-status").textContent =
+        ({
+          NONE: "Архива пока нет",
+          OPEN: "Канал ещё открыт",
+          CLOSING: "Сохраняются переписка и файлы; канал пока сохранён",
+          ARCHIVED: "Архив сохранён; удаление канала ожидает подтверждения",
+          CLOSED: "Канал удалён, история сохранена",
+        }[archive.state] || "Архив обращения") +
+        (archive.closeReason
+          ? " · " + archive.closedBy + ": " + archive.closeReason
+          : "");
+      for (const message of archive.messages) {
+        const row = document.createElement("p");
+        row.className = "message";
+        row.textContent =
+          message.author +
+          " · " +
+          new Date(message.createdAt * 1000).toLocaleString("ru-RU") +
+          "\n" +
+          message.text;
+        $("archive-messages").append(row);
+      }
+      $("archive-files").replaceChildren();
+      for (const file of archive.files) {
+        const download = document.createElement("button");
+        download.textContent =
+          "Скачать: " + file.name + " (" + Math.ceil(file.size / 1024) + " КБ)";
+        download.onclick = async () => {
+          download.disabled = true;
+          try {
+            const response = await requestFetch(
+              "/api/cases/" + kind + "/" + id + "/transcript/" + file.id,
+              { headers: { Authorization: "Bearer " + (key || "") } },
+            );
+            if (!response.ok) throw Error("Вложение недоступно");
+            const url = URL.createObjectURL(await response.blob());
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = file.name;
+            link.click();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+          } catch (e) {
+            fail(e);
+          } finally {
+            download.disabled = false;
+          }
+        };
+        $("archive-files").append(download);
+      }
+      archiveOffset = archive.nextOffset;
+      button.textContent =
+        archiveOffset < 0 ? "История загружена" : "Следующие сообщения";
+    } catch (e) {
+      fail(e);
+    } finally {
+      button.disabled = archiveOffset < 0;
+    }
+  };
+  const workflow = installCaseWorkflow({
+    api,
+    context: () => ({ kind, id, identity }),
+    reload: load,
+    fail,
+  });
   async function load() {
     if (!["report", "appeal"].includes(kind) || !/^\d+$/.test(id))
       throw Error("Некорректная ссылка на дело");
@@ -72,7 +146,11 @@ installWorkspace();
             : "У вашей роли нет права изменять это дело";
       }
     for (const name of ["claim", "merge", "approve", "reject", "reduce"]) {
-      $(name).disabled = !manage || (name === "reduce" && !can("MANAGE_BANS"));
+      $(name).disabled =
+        !manage ||
+        (kind === "appeal" &&
+          ["approve", "reduce"].includes(name) &&
+          !can("MANAGE_BANS"));
       $(name).title = $(name).disabled
         ? "Действие недоступно: проверьте права и состояние дела"
         : "";
@@ -143,6 +221,7 @@ installWorkspace();
         ACCEPTED: "Подтверждена",
         EXPIRED: "Истекла",
         MERGED: "Объединена",
+        CLOSED: "Закрыта",
       }[d.status];
     $("details").textContent =
       kind === "report"
@@ -181,6 +260,9 @@ installWorkspace();
     }
     $("appeal").hidden = kind !== "appeal";
     if (kind === "appeal") messages("messages", data.messages || []);
+    await workflow.render();
+    $("remaining").hidden = kind !== "appeal";
+    $("reduce").hidden = kind !== "appeal";
     $("status").textContent =
       "Обновлено: " + new Date().toLocaleTimeString("ru-RU");
   }
@@ -218,27 +300,8 @@ installWorkspace();
       .catch(fail);
   };
   for (const action of ["approve", "reject"])
-    $(action).onclick = async () => {
-      if ($("verdict").value.trim().length < 5) {
-        fail(Error("Укажите причину решения"));
-        return;
-      }
-      if (
-        !(await confirmDialog(
-          "\u041F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043D\u0438\u0435 \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u044F",
-          "Применить решение по апелляции №" + id + "?",
-        ))
-      )
-        return;
-      try {
-        await api("POST", "/api/appeals/" + id + "/" + action, {
-          verdictMessage: $("verdict").value,
-        });
-        await load();
-      } catch (e) {
-        fail(e);
-      }
-    };
+    $(action).onclick = () =>
+      workflow.decide(action, $("verdict").value).catch(fail);
   $("clarify-form").onsubmit = (e) => {
     e.preventDefault();
     post("clarify", {
@@ -261,33 +324,10 @@ installWorkspace();
         targetId: target,
       }).catch(fail);
   };
-  $("reduce").onclick = async () => {
-    const minutes = Number($("remaining").value);
-    if (
-      !Number.isInteger(minutes) ||
-      minutes < 1 ||
-      $("verdict").value.trim().length < 5
-    ) {
-      fail(Error("Укажите оставшийся срок и обоснование"));
-      return;
-    }
-    if (
-      !(await confirmDialog(
-        "\u041F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043D\u0438\u0435 \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u044F",
-        "Сократить блокировку по апелляции №" + id + "?",
-      ))
-    )
-      return;
-    try {
-      await api("POST", "/api/appeals/" + id + "/reduce", {
-        remainingSeconds: minutes * 60,
-        verdictMessage: $("verdict").value,
-      });
-      await load();
-    } catch (e) {
-      fail(e);
-    }
-  };
+  $("reduce").onclick = () =>
+    workflow
+      .decide("reduce", $("verdict").value, Number($("remaining").value) * 60)
+      .catch(fail);
   $("evidence-chat").onclick = () => {
     const selected = window.getSelection()?.toString().trim();
     if (!selected) {

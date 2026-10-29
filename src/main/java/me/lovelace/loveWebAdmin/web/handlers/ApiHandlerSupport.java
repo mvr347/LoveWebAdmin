@@ -38,7 +38,9 @@ public abstract class ApiHandlerSupport extends HttpServlet {
       throws ServletException, IOException {
     boolean mutation = java.util.Set.of("POST", "PUT", "PATCH", "DELETE").contains(req.getMethod());
     String path = req.getRequestURI();
-    if (mutation && path.matches("/api/appeals/[0-9]+/reply") && plugin.operations() != null) {
+    if (mutation
+        && path.matches("/api/appeals/[0-9]+/(reply|review)")
+        && plugin.operations() != null) {
       String author = req.getHeader("X-Appeal-Token");
       int id = Integer.parseInt(path.split("/")[3]);
       var staff = authenticate(req);
@@ -62,6 +64,7 @@ public abstract class ApiHandlerSupport extends HttpServlet {
         && !path.equals("/api/appeals")
         && !path.equals("/api/appeals/")
         && !path.startsWith("/api/auth")
+        && !path.equals("/api/portal/exchange")
         && plugin.operations() != null) {
       var session = authenticate(req);
       if (session.isPresent()) {

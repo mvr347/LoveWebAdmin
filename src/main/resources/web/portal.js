@@ -1,3 +1,4 @@
+import { mountReviewRequest } from "./js/core/review-request.js";
 import { requestFetch } from "./js/core/requests.js";
 import { installWorkspace } from "./js/core/workspace.js";
 installWorkspace();
@@ -23,6 +24,15 @@ async function api(method, path, body) {
 function fail(error) {
   $("status").textContent = error.message;
 }
+const reviewForm = mountReviewRequest($("conversation"), {
+  api,
+  reload: () => open(selected),
+  fail,
+  onOpenChild: async (review) => {
+    await load();
+    await open({ kind: review.new_kind, id: review.new_id, status: "PENDING" });
+  },
+});
 async function open(item) {
   selected = item;
   const data = await api("GET", "/" + item.kind + "/" + item.id);
@@ -40,6 +50,13 @@ async function open(item) {
       "\n" +
       (message.message || message.body);
     $("messages").append(row);
+  }
+  if (data.closure?.reason) {
+    const result = document.createElement("p");
+    result.className = "message";
+    result.textContent =
+      "Итог · " + data.closure.actor + "\n" + data.closure.reason;
+    $("messages").append(result);
   }
   $("evidence").replaceChildren();
   for (const evidence of data.evidence) {
@@ -69,6 +86,11 @@ async function open(item) {
     }
     $("evidence").append(row);
   }
+  reviewForm.render({
+    closed: !["PENDING", "DECIDING"].includes(item.status),
+    reviews: data.reviews || [],
+    endpoint: "/" + item.kind + "/" + item.id + "/review",
+  });
   $("reply").disabled = item.status !== "PENDING";
   $("reply-form").querySelector("button").disabled = item.status !== "PENDING";
 }

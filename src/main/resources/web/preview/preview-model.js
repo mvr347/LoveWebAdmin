@@ -363,6 +363,7 @@
       const b = getBan(a.banId);
       const result = {
         ...clone(a),
+        reviews: publicReviews("appeal", a.id),
         banReason: b.ruleReason,
         banCreator: b.creatorName,
         banStatus: b.status,
@@ -396,6 +397,362 @@
     }
     function author(a, headers) {
       return headers["x-appeal-token"] === a.accessToken;
+    }
+    function independentCase(kind, c) {
+      const name = viewer().username.toLowerCase();
+      if (
+        kind === "report"
+          ? c.targetName.toLowerCase() === name
+          : getBan(c.banId).source?.kind === "STAFF" &&
+            String(getBan(c.banId).source.actor).toLowerCase() === name
+      )
+        fail(
+          409,
+          "Собственное наказание или жалобу на себя рассматривает другой сотрудник",
+        );
+    }
+    function reviewImageMime(encoded) {
+      let bytes;
+      try {
+        bytes = atob(encoded);
+      } catch {
+        fail(400, "Некорректный файл скриншота");
+      }
+      if (bytes.length > 700000) fail(400, "Скриншот до 700 КБ");
+      if (bytes.startsWith("\x89PNG\r\n\x1a\n")) return "image/png";
+      if (bytes.startsWith("\xff\xd8") && bytes.endsWith("\xff\xd9"))
+        return "image/jpeg";
+      if (bytes.startsWith("RIFF") && bytes.slice(8, 12) === "WEBP")
+        return "image/webp";
+      fail(400, "Поддерживаются PNG, JPEG и WebP");
+    }
+    function requestReview(kind, c, actor, body) {
+      if (["PENDING", "DECIDING"].includes(c.status))
+        fail(409, "Дело ещё рассматривается");
+      state.reviewRequests ||= [];
+      if (
+        state.reviewRequests.some(
+          (r) =>
+            r.kind === kind &&
+            r.case_id === c.id &&
+            ["PENDING", "PROCESSING"].includes(r.state),
+        )
+      )
+        fail(409, "Дополнение уже ожидает рассмотрения");
+      const text = String(body.text || "").trim();
+      if (text.length < 10 || text.length > 2000)
+        fail(400, "Опишите новые доказательства (10–2000 символов)");
+      if (String(body.base64 || "").length > 933336)
+        fail(400, "Скриншот до 700 КБ");
+      const review = {
+        id: id(),
+        kind,
+        case_id: c.id,
+        actor,
+        body: text,
+        state: "PENDING",
+        staff: "",
+        explanation: "",
+        new_kind: "",
+        new_id: 0,
+        hasImage: !!body.base64,
+        image_name: body.imageName || "Скриншот",
+        base64: body.base64,
+        mime: body.base64 ? reviewImageMime(body.base64) : null,
+        created: clock(),
+      };
+      state.reviewRequests.push(review);
+      return { id: review.id };
+    }
+    const publicReviews = (kind, n) =>
+      (state.reviewRequests || [])
+        .filter((r) => r.kind === kind && r.case_id === Number(n))
+        .map(({ actor, base64, mime, ...r }) => clone(r));
+    function caseWorkflow(kind, c, action, method, body, headers) {
+      const key = kind + ":" + c.id;
+      state.replyTemplates ||= [
+        {
+          id: id(),
+          owner: "*",
+          purpose: "CLARIFY",
+          name: "Уточнить время",
+          text: "Укажите дату, примерное время и место ситуации.",
+          revision: 0,
+        },
+        {
+          id: id(),
+          owner: "*",
+          purpose: "VERDICT",
+          name: "Недостаточно доказательств",
+          text: "Для пересмотра решения недостаточно доказательств. Вы можете направить новые материалы.",
+          revision: 0,
+        },
+      ];
+      state.decisionPreviews ||= {};
+      state.reviewParents ||= {};
+      const snapshot = () =>
+        JSON.stringify([
+          c.status,
+          currentWork(kind, c.id),
+          kind === "appeal" ? getBan(c.banId) : null,
+          state.caseVersions?.[key] || 0,
+        ]);
+      if (action === "workflow") {
+        state.waiting ||= {};
+        const w = currentWork(kind, c.id),
+          last = (
+            kind === "appeal" ? c.messages : state.discussion[key] || []
+          ).at(-1),
+          marker = last ? JSON.stringify(last) : "",
+          old = state.waiting[key];
+        let mode = !["PENDING"].includes(c.status)
+          ? "NONE"
+          : w.state === "WAITING"
+            ? "PLAYER"
+            : "STAFF";
+        if (old && mode !== "NONE") {
+          mode = old.mode === "NONE" ? mode : old.mode;
+          if (marker && marker !== old.marker)
+            mode = last.isStaff ? "PLAYER" : "STAFF";
+          if (old.work !== w.state)
+            mode = w.state === "WAITING" ? "PLAYER" : "STAFF";
+        }
+        state.waiting[key] = {
+          mode,
+          since: old && old.mode === mode ? old.since : clock(),
+          marker,
+          work: w.state,
+        };
+        const wait = state.waiting[key],
+          deadline =
+            mode === "NONE"
+              ? 0
+              : wait.since + (mode === "PLAYER" ? 2880 : 20) * 60;
+        return {
+          waiting: {
+            ...wait,
+            deadline,
+            overdue: deadline > 0 && deadline <= clock(),
+          },
+          templates: state.replyTemplates.filter((t) =>
+            ["*", viewer().username].includes(t.owner),
+          ),
+          reviews: publicReviews(kind, c.id),
+          parent: state.reviewParents[key] || {},
+        };
+      }
+      if (action === "decision-preview") {
+        independentCase(kind, c);
+        if (
+          !["approve", "reject", "reduce"].includes(body.action) ||
+          (kind === "report" && body.action === "reduce")
+        )
+          fail(400, "Неизвестное решение");
+        if (c.status !== "PENDING") fail(409, "Дело закрыто");
+        if (kind === "appeal" && body.action !== "reject")
+          requirePermission("MANAGE_BANS");
+        const why = reason(body.reason);
+        const b = kind === "appeal" ? getBan(c.banId) : null;
+        let end = 0;
+        if (b?.source?.kind === "SECURITY" && body.action !== "reject")
+          fail(400, "Ограничение снимается через раздел безопасности");
+        if (body.action === "reduce") {
+          if (
+            b.status !== "ACTIVE" ||
+            !(body.remainingSeconds > 0) ||
+            body.remainingSeconds > 315360000
+          )
+            fail(400, "Неверный срок");
+          end = clock() + body.remainingSeconds;
+          if (b.expiresAt > 0 && end >= b.expiresAt)
+            fail(400, "Новый срок должен быть короче");
+        }
+        const token = "preview-decision-" + id();
+        const value = {
+          key: token,
+          kind,
+          id: c.id,
+          action: body.action,
+          reason: why,
+          staff: viewer().username,
+          before: {
+            target: c.playerName || c.targetName,
+            expiry: b?.expiresAt,
+          },
+          targetExpiry: end,
+          effect:
+            !b || body.action === "reject"
+              ? "Наказание не изменится"
+              : body.action === "reduce"
+                ? "Срок наказания будет сокращён"
+                : "Блокировка будет снята",
+          playerMessage: why,
+          closesCase: true,
+        };
+        state.decisionPreviews[token] = {
+          value: clone(value),
+          actor: viewer().id,
+          hash: snapshot(),
+          state: "DRAFT",
+          expires: clock() + 600,
+        };
+        return value;
+      }
+      if (action === "decision-confirm" || action === "decision-cancel") {
+        const draft = state.decisionPreviews[body.key];
+        if (
+          !draft ||
+          draft.actor !== viewer().id ||
+          draft.value.id !== c.id ||
+          draft.value.kind !== kind ||
+          draft.expires < clock()
+        )
+          fail(403, "Предпросмотр недоступен");
+        if (action === "decision-cancel") {
+          if (draft.state === "DRAFT") draft.state = "CANCELLED";
+          return {};
+        }
+        if (draft.state === "DONE") return draft.result;
+        independentCase(kind, c);
+        if (draft.state !== "DRAFT") fail(409, "Решение уже обработано");
+        if (draft.hash !== snapshot())
+          fail(409, "Дело или наказание изменились; обновите предпросмотр");
+        if (kind === "appeal" && draft.value.action !== "reject")
+          requirePermission("MANAGE_BANS");
+        draft.state = "APPLYING";
+        const a = draft.value.action,
+          seconds = draft.value.targetExpiry - clock();
+        const result = route(
+          "POST",
+          new URL(
+            `/api/${kind === "appeal" ? "appeals" : "reports"}/${c.id}/${kind === "report" && a === "approve" ? "accept" : a}`,
+            "https://preview.invalid",
+          ),
+          { verdictMessage: draft.value.reason, remainingSeconds: seconds },
+          headers,
+        );
+        if (kind === "report")
+          (state.discussion[key] ||= []).push({
+            author: viewer().username,
+            isStaff: true,
+            body: draft.value.reason,
+            createdAt: clock(),
+          });
+        draft.state = "DONE";
+        draft.result = clone(result);
+        return result;
+      }
+      if (action.startsWith("reply-template")) {
+        if (body.shared) requirePermission("MANAGE_INTEGRATIONS");
+        const owner = body.shared ? "*" : viewer().username,
+          template = state.replyTemplates.find(
+            (t) => t.id === Number(body.id) && t.owner === owner,
+          );
+        if (
+          body.id &&
+          (!template || template.revision !== Number(body.revision))
+        )
+          fail(409, "Шаблон изменён или недоступен");
+        if (action.endsWith("delete")) {
+          state.replyTemplates = state.replyTemplates.filter(
+            (t) => t !== template,
+          );
+          return {};
+        }
+        if (
+          !["CLARIFY", "VERDICT"].includes(body.purpose) ||
+          !String(body.name || "").trim()
+        )
+          fail(400, "Заполните название и назначение");
+        const values = {
+          owner,
+          purpose: body.purpose,
+          name: body.name,
+          text: reason(body.text),
+        };
+        if (template)
+          Object.assign(template, values, { revision: template.revision + 1 });
+        else state.replyTemplates.push({ id: id(), revision: 0, ...values });
+        return {};
+      }
+      if (action === "review-image") {
+        const proof = state.reviewRequests.find(
+          (r) =>
+            r.id === Number(body.imageId) &&
+            r.kind === kind &&
+            r.case_id === c.id,
+        );
+        if (!proof?.base64) fail(404, "Скриншот не найден");
+        return { mime: proof.mime, base64: proof.base64 };
+      }
+      independentCase(kind, c);
+      if (c.status === "PENDING") fail(409, "Исходное дело снова открыто");
+      const review = (state.reviewRequests || []).find(
+        (r) =>
+          r.id === Number(body.requestId) &&
+          r.kind === kind &&
+          r.case_id === c.id,
+      );
+      if (!review || review.state !== "PENDING")
+        fail(409, "Дополнение уже рассмотрено");
+      const why = reason(body.reason);
+      review.staff = viewer().username;
+      review.explanation = why;
+      if (action === "review-reject") {
+        review.state = "REJECTED";
+        return { state: "REJECTED" };
+      }
+      if (
+        kind === "appeal" &&
+        state.appeals.some(
+          (a) =>
+            a.banId === c.banId && ["PENDING", "DECIDING"].includes(a.status),
+        )
+      )
+        fail(409, "Уже есть открытая апелляция");
+      const child = {
+        ...clone(c),
+        id: id(),
+        status: "PENDING",
+        createdAt: clock(),
+        reason: review.body,
+        description: review.body,
+        messages: [
+          {
+            id: id(),
+            authorName: c.playerName || c.reporterName,
+            isStaff: false,
+            message: review.body,
+            createdAt: clock(),
+          },
+        ],
+        reputationDeducted: -1,
+      };
+      (kind === "appeal" ? state.appeals : state.reports).push(child);
+      state.caseEvidence ||= {};
+      const proof = {
+        id: id(),
+        author: "Автор обращения",
+        type: "TEXT",
+        value: review.body,
+        visibility: "AUTHOR",
+        createdAt: clock(),
+      };
+      state.caseEvidence[kind + ":" + child.id] = [proof];
+      if (review.base64)
+        state.caseEvidence[kind + ":" + child.id].push({
+          ...proof,
+          id: id(),
+          type: "IMAGE",
+          value: review.image_name,
+          base64: review.base64,
+          mime: review.mime,
+        });
+      review.state = "ACCEPTED";
+      review.new_kind = kind;
+      review.new_id = child.id;
+      state.reviewParents[kind + ":" + child.id] = { kind, id: c.id };
+      return { state: "ACCEPTED", kind, id: child.id };
     }
     function route(method, url, body, headers) {
       const p = url.pathname.replace(/^\/preview(?=\/api)/, ""),
@@ -524,8 +881,11 @@
           fail(404, "Обращение не найдено");
         const c = n === "appeal" ? getAppeal(action) : getReport(action),
           key = n + ":" + c.id;
+        if (method === "POST" && parts[4] === "review")
+          return requestReview(n, c, "portal", body);
         if (method === "GET")
           return {
+            reviews: publicReviews(n, c.id),
             messages: n === "appeal" ? c.messages : state.discussion[key] || [],
             evidence: (state.caseEvidence?.[key] || [])
               .filter((e) => e.visibility === "AUTHOR")
@@ -549,6 +909,10 @@
         if (method === "GET") {
           if (!author(a, headers)) requirePermission("VIEW_APPEALS");
           return publicAppeal(a);
+        }
+        if (action === "review") {
+          if (!author(a, headers)) fail(403, "Нужна ссылка автора");
+          return requestReview("appeal", a, "author", body);
         }
         if (action === "reply") {
           if (a.status !== "PENDING") fail(409, "Апелляция закрыта");
@@ -1019,6 +1383,29 @@
           key = kind + ":" + caseId;
         state.caseEvidence ||= {};
         state.caseVersions ||= {};
+        if (
+          [
+            "workflow",
+            "decision-preview",
+            "decision-confirm",
+            "decision-cancel",
+            "reply-template",
+            "reply-template-delete",
+            "review-accept",
+            "review-reject",
+            "review-image",
+          ].includes(act)
+        )
+          return caseWorkflow(
+            kind,
+            c,
+            act,
+            method,
+            act === "review-image"
+              ? { ...body, imageId: Number(parts[5]) }
+              : body,
+            headers,
+          );
         if (method === "GET" && act === "evidence") {
           const evidence = (state.caseEvidence[key] || []).find(
             (e) => e.id === Number(parts[5]),

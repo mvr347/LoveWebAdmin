@@ -22,6 +22,109 @@ class PreviewRuntimeTest {
   }
 
   @Test
+  void reportDecisionPreservesExactAuthorVisibleExplanationOnce() throws Exception {
+    try (var runtime = new PreviewRuntime(dir, "report-verdict")) {
+      var report = map(runtime.control("report", Map.of()));
+      int id = ((Number) report.get("id")).intValue();
+      String route = "/api/cases/report/" + id;
+      String reason = "Контекст проверен, нарушение подтверждается записью";
+      var draft =
+          map(
+              runtime.execute(
+                  "POST",
+                  route + "/decision-preview",
+                  Map.of("action", "approve", "reason", reason),
+                  headers()));
+      assertTrue(runtime.database().reportDiscussion(id).isEmpty());
+      runtime.execute(
+          "POST", route + "/decision-confirm", Map.of("key", draft.get("key")), headers());
+      runtime.execute(
+          "POST", route + "/decision-confirm", Map.of("key", draft.get("key")), headers());
+      assertEquals(1, runtime.database().reportDiscussion(id).size());
+      assertEquals(reason, runtime.database().reportDiscussion(id).getFirst().get("body"));
+    }
+  }
+
+  @Test
+  void sandboxRunsDurablePreviewsTemplatesAndClosedCaseReview() throws Exception {
+    try (var runtime = new PreviewRuntime(dir, "workflow")) {
+      var appeal = map(runtime.control("appeal", Map.of()));
+      int id = ((Number) appeal.get("id")).intValue();
+      String route = "/api/cases/appeal/" + id;
+      assertThrows(
+          IllegalArgumentException.class,
+          () ->
+              runtime.execute(
+                  "POST",
+                  route + "/decision-preview",
+                  Map.of("action", "reject", "reason", "Своё наказание нельзя рассматривать"),
+                  headers()));
+      runtime.control("role", Map.of("id", 2));
+      runtime.execute(
+          "POST",
+          route + "/reply-template",
+          Map.of(
+              "name",
+              "Мой ответ",
+              "purpose",
+              "VERDICT",
+              "text",
+              "Проверенные материалы не меняют решение"),
+          headers());
+      var view = map(runtime.execute("GET", route + "/workflow", Map.of(), headers()));
+      assertTrue(JsonUtils.toJson(view.get("templates")).contains("Мой ответ"));
+      var draft =
+          map(
+              runtime.execute(
+                  "POST",
+                  route + "/decision-preview",
+                  Map.of("action", "reject", "reason", "Исходное решение подтверждено материалами"),
+                  headers()));
+      assertEquals("PENDING", runtime.database().getAppealById(id).orElseThrow().status());
+      runtime.execute(
+          "POST", route + "/decision-cancel", Map.of("key", draft.get("key")), headers());
+      var cancelled = Map.<String, Object>of("key", draft.get("key"));
+      assertThrows(
+          IllegalArgumentException.class,
+          () -> runtime.execute("POST", route + "/decision-confirm", cancelled, headers()));
+      draft =
+          map(
+              runtime.execute(
+                  "POST",
+                  route + "/decision-preview",
+                  Map.of("action", "reject", "reason", "Исходное решение подтверждено материалами"),
+                  headers()));
+      var confirmation = Map.<String, Object>of("key", draft.get("key"));
+      runtime.execute("POST", route + "/decision-confirm", confirmation, headers());
+      runtime.execute("POST", route + "/decision-confirm", confirmation, headers());
+      assertEquals("REJECTED", runtime.database().getAppealById(id).orElseThrow().status());
+      var author = Map.of("x-appeal-token", appeal.get("accessToken").toString());
+      var request =
+          map(
+              runtime.execute(
+                  "POST",
+                  "/api/appeals/" + id + "/review",
+                  Map.of("text", "Появилась запись с полным контекстом ситуации"),
+                  author));
+      var child =
+          map(
+              runtime.execute(
+                  "POST",
+                  route + "/review-accept",
+                  Map.of(
+                      "requestId",
+                      request.get("id"),
+                      "reason",
+                      "Запись содержит ранее недоступный контекст"),
+                  headers()));
+      int childId = ((Number) child.get("id")).intValue();
+      assertEquals("REJECTED", runtime.database().getAppealById(id).orElseThrow().status());
+      assertEquals("PENDING", runtime.database().getAppealById(childId).orElseThrow().status());
+      assertNotNull(runtime.execute("GET", "/api/appeals/" + childId, Map.of(), author));
+    }
+  }
+
+  @Test
   void isolatedStoresAndRestartKeepData() throws Exception {
     try (var one = new PreviewRuntime(dir.resolve("one"), "one");
         var two = new PreviewRuntime(dir.resolve("two"), "two")) {
@@ -79,6 +182,15 @@ class PreviewRuntimeTest {
     try (var runtime = new PreviewRuntime(dir, "appeals")) {
       var appeal = map(runtime.control("appeal", Map.of()));
       int id = ((Number) appeal.get("id")).intValue();
+      assertThrows(
+          me.lovelace.loveWebAdmin.utils.ActionRejectedException.class,
+          () ->
+              runtime.execute(
+                  "POST",
+                  "/api/appeals/" + id + "/approve",
+                  Map.of("verdictMessage", "Собственное решение недопустимо"),
+                  headers()));
+      runtime.control("role", Map.of("id", 2));
       runtime.execute(
           "POST",
           "/api/appeals/" + id + "/approve",

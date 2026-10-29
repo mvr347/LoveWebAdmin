@@ -1,4 +1,5 @@
-import { noticeDialog } from "../core/dialogs.js";
+import { confirmCaseDecision } from "../core/decision-preview.js";
+import { explanationDialog, noticeDialog } from "../core/dialogs.js";
 import { state } from "../state.js";
 import {
   api,
@@ -883,58 +884,45 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                   showToast("Ошибка", e.message, "error");
                 }
               });
-            document
-              .getElementById("btn-approve-appeal-modal")
-              ?.addEventListener("click", async () => {
-                confirmAction(
-                  "ОДОБРЕНИЕ АПЕЛЛЯЦИИ",
-                  `Разблокировать игрока ${appeal.playerName} и закрыть тикет Discord?`,
-                  async () => {
-                    try {
-                      await api("POST", `/api/appeals/${appealId}/approve`, {
-                        verdictMessage:
-                          prompt("Обоснование решения (минимум 5 символов)") ||
-                          "",
-                      });
-                      showToast(
-                        "Апелляция одобрена",
-                        `Игрок ${appeal.playerName} разбанен на сервере`,
-                        "success",
-                      );
-                      closeModal();
-                      renderLiveAppealsList();
-                    } catch (e) {
-                      showToast("Ошибка", e.message, "error");
-                    }
-                  },
-                );
+            for (const [action, label] of [
+              ["approve", "Одобрить апелляцию"],
+              ["reject", "Отклонить апелляцию"],
+            ]) {
+              const button = document.getElementById(
+                `btn-${action}-appeal-modal`,
+              );
+              button?.addEventListener("click", async () => {
+                button.disabled = true;
+                try {
+                  const reason = await explanationDialog(
+                    label,
+                    "Объяснение будет доступно игроку. Перед применением проверьте последствия решения.",
+                  );
+                  if (
+                    !reason ||
+                    !(await confirmCaseDecision(
+                      api,
+                      "appeal",
+                      appealId,
+                      action,
+                      reason,
+                    ))
+                  )
+                    return;
+                  showToast(
+                    "Решение сохранено",
+                    "Обращение закрыто, доставка уведомления поставлена в очередь",
+                    "success",
+                  );
+                  closeModal();
+                  renderLiveAppealsList();
+                } catch (e) {
+                  showToast("Ошибка", e.message, "error");
+                } finally {
+                  button.disabled = false;
+                }
               });
-            document
-              .getElementById("btn-reject-appeal-modal")
-              ?.addEventListener("click", async () => {
-                confirmAction(
-                  "ОТКЛОНЕНИЕ АПЕЛЛЯЦИИ",
-                  `Отклонить апелляцию игрока ${appeal.playerName} и закрыть тикет Discord?`,
-                  async () => {
-                    try {
-                      await api("POST", `/api/appeals/${appealId}/reject`, {
-                        verdictMessage:
-                          prompt("Обоснование решения (минимум 5 символов)") ||
-                          "",
-                      });
-                      showToast(
-                        "Апелляция отклонена",
-                        "Статус обновлен, тикет закрыт",
-                        "info",
-                      );
-                      closeModal();
-                      renderLiveAppealsList();
-                    } catch (e) {
-                      showToast("Ошибка", e.message, "error");
-                    }
-                  },
-                );
-              });
+            }
           },
         );
       } catch (e) {
@@ -1198,7 +1186,13 @@ export function exposeOpenQuickBanModal() {
         fileInput?.addEventListener("change", (e) => {
           const file = e.target.files?.[0];
           if (!file) return;
-          if(file.size>700000||!['image/png','image/jpeg','image/webp'].includes(file.type)){noticeDialog('Скриншот','Выберите PNG, JPEG или WebP до 700 КБ');return;}
+          if (
+            file.size > 700000 ||
+            !["image/png", "image/jpeg", "image/webp"].includes(file.type)
+          ) {
+            noticeDialog("Скриншот", "Выберите PNG, JPEG или WebP до 700 КБ");
+            return;
+          }
           const reader = new FileReader();
           reader.onload = (ev) => setScreenshot(ev.target.result);
           reader.readAsDataURL(file);
@@ -1219,7 +1213,13 @@ export function exposeOpenQuickBanModal() {
           for (const item of items) {
             if (item.type.indexOf("image") !== -1) {
               const blob = item.getAsFile();
-              if(!blob||blob.size>700000){noticeDialog('Скриншот','Изображение должно быть не больше 700 КБ');return;}
+              if (!blob || blob.size > 700000) {
+                noticeDialog(
+                  "Скриншот",
+                  "Изображение должно быть не больше 700 КБ",
+                );
+                return;
+              }
               const reader = new FileReader();
               reader.onload = (ev) => setScreenshot(ev.target.result);
               reader.readAsDataURL(blob);
@@ -1693,53 +1693,40 @@ export function exposeConfirmUnban() {
   // Modal: Player Alts
 }
 
-export function exposeHandleAcceptReport() {
-  window.handleAcceptReport = (id, targetName) => {
-    confirmAction(
-      "ПРИНЯТЬ ЖАЛОБУ #" + id,
-      `Вы подтверждаете, что нарушение игрока ${targetName} доказано?\nНарушитель будет помечен как наказанный, а заявителю начислится репутация.`,
-      async () => {
-        try {
-          await api("POST", `/api/reports/${id}/accept`);
-          showToast(
-            "Жалоба принята",
-            `Наказание подтверждено. Заявитель уведомлен.`,
-            "success",
-          );
-          if (window.refreshPunishmentsView) window.refreshPunishmentsView();
-          updateReportsBadge();
-        } catch (e) {
-          showToast("Ошибка", e.message, "error");
-        }
-      },
-      "ПРИНЯТЬ И НАКАЗАТЬ",
-      false,
+const pendingReportDecisions = new Set();
+async function decideReport(id, targetName, action) {
+  if (pendingReportDecisions.has(id)) return;
+  pendingReportDecisions.add(id);
+  try {
+    const reason = await explanationDialog(
+      action === "approve" ? "Подтвердить жалобу" : "Отклонить жалобу",
+      `Игрок: ${targetName}. Объясните вывод по представленным доказательствам.`,
     );
-  };
+    if (
+      !reason ||
+      !(await confirmCaseDecision(api, "report", id, action, reason))
+    )
+      return;
+    showToast(
+      "Решение сохранено",
+      "Обращение закрыто, доставка уведомления поставлена в очередь",
+      "success",
+    );
+    if (window.refreshPunishmentsView) window.refreshPunishmentsView();
+    updateReportsBadge();
+  } catch (e) {
+    showToast("Ошибка", e.message, "error");
+  } finally {
+    pendingReportDecisions.delete(id);
+  }
+}
+export function exposeHandleAcceptReport() {
+  window.handleAcceptReport = (id, targetName) =>
+    decideReport(id, targetName, "approve");
 }
 export function exposeHandleRejectReport() {
-  window.handleRejectReport = (id, targetName) => {
-    confirmAction(
-      "ОТКЛОНИТЬ ЖАЛОБУ #" + id,
-      `Пометить жалобу как ложную?\nИгроку ${targetName} будет возвращена снятая репутация (+25), а заявитель уведомлен в игре.`,
-      async () => {
-        try {
-          await api("POST", `/api/reports/${id}/reject`);
-          showToast(
-            "Жалоба отклонена",
-            "Помечена как ложная. Репутация возвращена цели.",
-            "info",
-          );
-          if (window.refreshPunishmentsView) window.refreshPunishmentsView();
-          updateReportsBadge();
-        } catch (e) {
-          showToast("Ошибка", e.message, "error");
-        }
-      },
-      "ПОМЕТИТЬ КАК ЛОЖНУЮ",
-      true,
-    );
-  };
+  window.handleRejectReport = (id, targetName) =>
+    decideReport(id, targetName, "reject");
 }
 export function exposeHandleDeleteReport() {
   window.handleDeleteReport = (id) => {

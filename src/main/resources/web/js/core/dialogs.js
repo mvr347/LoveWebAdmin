@@ -5,6 +5,7 @@ export function confirmDialog(title, message, action = "Подтвердить")
     const heading = document.createElement("h2");
     heading.textContent = title;
     const text = document.createElement("p");
+    text.style.whiteSpace = "pre-wrap";
     text.textContent = message;
     const row = document.createElement("div");
     row.className = "row";
