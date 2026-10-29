@@ -41,6 +41,13 @@ async function open(item) {
       (message.message || message.body);
     $("messages").append(row);
   }
+  if (data.closure?.reason) {
+    const result = document.createElement("p");
+    result.className = "message";
+    result.textContent =
+      "Итог · " + data.closure.actor + "\n" + data.closure.reason;
+    $("messages").append(result);
+  }
   $("evidence").replaceChildren();
   for (const evidence of data.evidence) {
     const row = document.createElement("p");

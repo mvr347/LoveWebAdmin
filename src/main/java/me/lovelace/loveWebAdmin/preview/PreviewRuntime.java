@@ -440,6 +440,7 @@ public final class PreviewRuntime implements AutoCloseable, AppealService.Contex
         return Map.of("id", messageId);
       }
       if (!read && !action.equals("reply")) require("MANAGE_APPEALS");
+      if (action.equals("approve")) require("MANAGE_BANS");
       if (action.equals("approve") || action.equals("reject"))
         return Map.of(
             "message",

@@ -92,6 +92,13 @@ security:
 
 # Бот и привязки аккаунтов настраиваются в LoveCore.
 discord:
+  tickets:
+    # Публичный канал с постоянной панелью кнопок. Включите после настройки бота.
+    panel-channel-id: ""
+    # Отдельный закрытый канал персонала с краткими карточками и кнопкой назначения.
+    queue-channel-id: ""
+    # Только руководство. Обычная staff-role-ids НЕ открывает все новые тикеты.
+    supervisor-role-ids: []
   # auto: бот при доступности, иначе Discord-вебхук; bot, webhook, both.
   reports-transport: auto
   reports-channel-id: ""

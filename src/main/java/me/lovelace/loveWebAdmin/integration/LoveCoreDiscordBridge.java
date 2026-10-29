@@ -43,6 +43,17 @@ public class LoveCoreDiscordBridge implements Listener {
   // and its jar closed, so reflecting on the service class then throws "zip file closed".
   private java.lang.reflect.Method unregisterMethod;
   private DiscordActions actions;
+  private final me.lovelace.loveWebAdmin.database.TicketDeskStore ticketDeskStore;
+  private final DiscordTicketDesk ticketDesk;
+
+  public DiscordTicketDesk ticketDesk() {
+    return ticketDesk;
+  }
+
+  public me.lovelace.loveWebAdmin.database.TicketDeskStore ticketDeskStore() {
+    return ticketDeskStore;
+  }
+
   private org.bukkit.scheduler.BukkitTask maintenanceTask;
   private volatile boolean closed;
   private final java.util.concurrent.atomic.AtomicBoolean delivering =
@@ -50,6 +61,23 @@ public class LoveCoreDiscordBridge implements Listener {
 
   public LoveCoreDiscordBridge(LoveWebAdmin plugin) {
     this.plugin = plugin;
+    try {
+      this.ticketDeskStore =
+          new me.lovelace.loveWebAdmin.database.TicketDeskStore(
+              plugin.getDataFolder().toPath().resolve("discord-desk.db"));
+    } catch (Exception error) {
+      throw new IllegalStateException("Не открыто хранилище обращений", error);
+    }
+    try {
+      this.ticketDesk = new DiscordTicketDesk(plugin, ticketDeskStore);
+    } catch (RuntimeException error) {
+      try {
+        ticketDeskStore.close();
+      } catch (java.sql.SQLException close) {
+        error.addSuppressed(close);
+      }
+      throw error;
+    }
     this.store = plugin.moderation();
     this.database = plugin.getDatabaseManager();
     this.io = plugin.io();
@@ -81,6 +109,7 @@ public class LoveCoreDiscordBridge implements Listener {
                               synchronized (this) {
                                 if (closed) return;
                                 actions = new DiscordActions(plugin, service);
+                                ticketDesk.attach(service, actions);
                                 actions.register();
                                 registeredService = service;
                                 unregisterMethod = resolveUnregister(service);
@@ -104,6 +133,7 @@ public class LoveCoreDiscordBridge implements Listener {
                                       String.valueOf(appeal.id()), appeal.discordChannelId());
                             }
                             deliver(service);
+                            ticketDesk.tick();
                           });
                 },
                 20L,
@@ -145,6 +175,7 @@ public class LoveCoreDiscordBridge implements Listener {
 
   public synchronized void close() {
     closed = true;
+    ticketDesk.close();
     if (maintenanceTask != null) maintenanceTask.cancel();
     unregister();
   }
@@ -328,10 +359,8 @@ public class LoveCoreDiscordBridge implements Listener {
                         sent = CompletableFuture.completedFuture("closed");
                       else
                         sent =
-                            service
-                                .closeTicketChannel(
-                                    ticket.get().get("channel").toString(),
-                                    payload.get("text").toString())
+                            ticketDesk
+                                .finish("report", reportId, payload.get("text").toString())
                                 .thenCompose(
                                     ok ->
                                         io.supply(
@@ -358,13 +387,8 @@ public class LoveCoreDiscordBridge implements Listener {
                                 owner.get().get("channel").toString());
                       else
                         sent =
-                            service
-                                .createTicketChannel(
-                                    TicketType.REPORT,
-                                    "report:" + reportId,
-                                    report.get().reporterName(),
-                                    report.get().description(),
-                                    owner.get().get("discordId").toString())
+                            ticketDesk
+                                .create("report", reportId, owner.get().get("discordId").toString())
                                 .thenCompose(
                                     channel ->
                                         io.supply(
@@ -702,13 +726,23 @@ public class LoveCoreDiscordBridge implements Listener {
                               "Жалоба №"
                                   + report.id()
                                   + ": "
-                                  + report.status()
+                                  + switch (report.status()) {
+                                    case "ACCEPTED" -> "Подтверждена";
+                                    case "REJECTED" -> "Отклонена";
+                                    case "EXPIRED" -> "Истекла";
+                                    default -> "Закрыта";
+                                  }
                                   + ". Сотрудник: "
                                   + java.util.Objects.toString(report.resolvedBy(), "Система"))));
               } catch (java.sql.SQLException error) {
                 throw new IllegalStateException(error);
               }
             });
+  }
+
+  public void notifyTicketCreated(String kind, int id) {
+    if (kind.equals("appeal")) database.getAppealById(id).ifPresent(this::notifyAppealCreated);
+    else database.getReportById(id).ifPresent(report -> notifyReportCreated(report, true));
   }
 
   public void notifyReportCreated(PlayerReport report) {
@@ -762,8 +796,9 @@ public class LoveCoreDiscordBridge implements Listener {
                 content,
                 0xE74C3C,
                 List.of(),
-                "LoveWebAdmin",
+                "Модерация",
                 Instant.now()));
+      if (ticketDesk.enabled()) return;
       if (channel.isBlank()
           || "webhook"
               .equalsIgnoreCase(plugin.getConfig().getString("discord.reports-transport", "auto")))
@@ -831,6 +866,12 @@ public class LoveCoreDiscordBridge implements Listener {
   }
 
   private CompletableFuture<String> doCreateAppealTicket(WebBanAppeal appeal) {
+    if (ticketDesk.enabled())
+      try {
+        return ticketDesk.create("appeal", appeal.id(), store.owner(appeal.id()).orElse(null));
+      } catch (java.sql.SQLException error) {
+        return CompletableFuture.failedFuture(error);
+      }
     Optional<DiscordService> serviceOpt = discord();
     if (serviceOpt.isEmpty() || !serviceOpt.get().isEnabled()) {
       return CompletableFuture.completedFuture(null);
@@ -873,10 +914,10 @@ public class LoveCoreDiscordBridge implements Listener {
                                     + appeal.playerName()
                                     + "**.\n"
                                     + "Все сообщения синхронизируются с панелью управления"
-                                    + " WebAdmin.",
+                                    + ".",
                                 0xF1C40F, // Gold
                                 fields,
-                                "LoveWebAdmin • Тикеты",
+                                "Обращения",
                                 Instant.now());
                         service.sendChannelMessage(
                             channelId,
@@ -975,12 +1016,12 @@ public class LoveCoreDiscordBridge implements Listener {
             desc,
             0x3498DB, // Blue
             fields,
-            "LoveWebAdmin • Апелляции",
+            "Обращения",
             Instant.now());
 
     // Канал апелляций если настроен
     String channelId = plugin.getConfig().getString("discord.appeals-channel-id", "");
-    if (channelId != null && !channelId.isBlank()) {
+    if (!ticketDesk.enabled() && channelId != null && !channelId.isBlank()) {
       service.sendChannelMessage(channelId, null, embed);
     }
 
@@ -1056,6 +1097,7 @@ public class LoveCoreDiscordBridge implements Listener {
 
   private CompletableFuture<Boolean> doFinishAppeal(
       WebBanAppeal appeal, String reason, String nonce) {
+    if (ticketDesk.enabled()) return ticketDesk.finish("appeal", appeal.id(), reason);
     var service = discord();
     String channel = appeal.discordChannelId();
     if (service.isEmpty() || channel == null) return CompletableFuture.completedFuture(false);
@@ -1092,6 +1134,10 @@ public class LoveCoreDiscordBridge implements Listener {
   }
 
   public void closeAppealTicket(WebBanAppeal appeal, String reason) {
+    if (ticketDesk.enabled()) {
+      ticketDesk.finish("appeal", appeal.id(), reason);
+      return;
+    }
     Optional<DiscordService> serviceOpt = discord();
     if (serviceOpt.isEmpty() || !serviceOpt.get().isEnabled()) return;
 
@@ -1205,7 +1251,7 @@ public class LoveCoreDiscordBridge implements Listener {
                   + " мин. Откройте дело в панели.",
               0xE74C3C,
               List.of(),
-              "LoveWebAdmin",
+              "Модерация",
               Instant.now()));
     }
   }

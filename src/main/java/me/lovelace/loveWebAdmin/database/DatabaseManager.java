@@ -3603,6 +3603,17 @@ public class DatabaseManager {
         finally{try{connection.setAutoCommit(true);}catch(SQLException e){throw new IllegalStateException(e);}}
     }
 
+  public synchronized boolean closeAppealConversation(int id) {
+    try (var q =
+        connection.prepareStatement(
+            "UPDATE ban_appeals SET status='CLOSED',updated_at=strftime('%s','now') WHERE id=? AND status='PENDING'")) {
+      q.setInt(1, id);
+      return q.executeUpdate() == 1;
+    } catch (SQLException error) {
+      throw new IllegalStateException("Закрытие обращения не сохранено", error);
+    }
+  }
+
     public synchronized boolean updateAppealStatus(int id, String status) {
         String sql = "UPDATE ban_appeals SET status = ?, updated_at = strftime('%s', 'now') WHERE id = ?";
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {

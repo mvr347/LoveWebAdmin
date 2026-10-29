@@ -79,6 +79,15 @@ class PreviewRuntimeTest {
     try (var runtime = new PreviewRuntime(dir, "appeals")) {
       var appeal = map(runtime.control("appeal", Map.of()));
       int id = ((Number) appeal.get("id")).intValue();
+      assertThrows(
+          me.lovelace.loveWebAdmin.utils.ActionRejectedException.class,
+          () ->
+              runtime.execute(
+                  "POST",
+                  "/api/appeals/" + id + "/approve",
+                  Map.of("verdictMessage", "Собственное решение недопустимо"),
+                  headers()));
+      runtime.control("role", Map.of("id", 2));
       runtime.execute(
           "POST",
           "/api/appeals/" + id + "/approve",

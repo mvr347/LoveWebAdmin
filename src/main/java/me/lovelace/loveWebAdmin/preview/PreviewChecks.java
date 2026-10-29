@@ -94,6 +94,7 @@ final class PreviewChecks {
                 "/api/appeals/" + id,
                 Map.of(),
                 Map.of("x-appeal-token", text(a, "accessToken", "")));
+            r.control("role", Map.of("id", 2));
             r.execute(
                 "POST",
                 "/api/appeals/" + id + "/approve",
@@ -108,6 +109,7 @@ final class PreviewChecks {
               throw new AssertionError("Повторное решение разрешено");
             } catch (me.lovelace.loveWebAdmin.utils.ActionRejectedException expected) {
             }
+            r.control("role", Map.of("id", 1));
           });
       check(
           results,

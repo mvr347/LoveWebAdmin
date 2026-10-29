@@ -218,3 +218,126 @@ test("late dashboard responses cannot replace a newer section", async ({
   );
   await expect(page.locator("#content-area")).toContainText("ПЕРСОНАЛ");
 });
+test("delivery reconciliation and panel recovery send the required JSON explanation", async ({
+  page,
+}) => {
+  const mutations = [];
+  let deliveryDone = false,
+    panelDone = false;
+  await page.addInitScript(() =>
+    localStorage.setItem("wa_token", "test-session"),
+  );
+  // Serve the real production workspace only in this fixture; Preview's sentinel stays intact.
+  const fs = require("node:fs/promises"),
+    path = require("node:path"),
+    root = path.resolve(__dirname, "../../main/resources/web");
+  await page.route("**/*", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.startsWith("/api/")) return route.fallback();
+    const file = path.resolve(root, "." + url.pathname);
+    if (url.hostname !== "127.0.0.1" || !file.startsWith(root + path.sep))
+      return route.abort();
+    try {
+      await route.fulfill({
+        status: 200,
+        contentType: file.endsWith(".html")
+          ? "text/html"
+          : file.endsWith(".css")
+            ? "text/css"
+            : "text/javascript",
+        body: await fs.readFile(file),
+      });
+    } catch {
+      await route.abort();
+    }
+  });
+  await page.route("**/api/**", async (route) => {
+    const request = route.request(),
+      path = new URL(request.url()).pathname;
+    let data = {};
+    if (path === "/api/me")
+      data = {
+        id: 1,
+        username: "Owner",
+        isOwner: true,
+        permissions: ["MANAGE_API", "MANAGE_INTEGRATIONS"],
+      };
+    else if (path === "/api/cases/deliveries")
+      data = deliveryDone
+        ? []
+        : [
+            {
+              id: 1,
+              event: "ban:12",
+              state: "UNCERTAIN",
+              attempts: 1,
+              error: "Результат неизвестен",
+            },
+          ];
+    else if (path === "/api/cases/discord-messages")
+      data = panelDone
+        ? []
+        : [
+            {
+              slot: "panel:70000",
+              channel: "70000",
+              state: "UNCERTAIN",
+              message: "",
+              error: "Проверьте сообщение",
+            },
+          ];
+    else if (request.method() === "POST") {
+      mutations.push({ path, body: request.postDataJSON() });
+      if (path.endsWith("/1/resolve")) deliveryDone = true;
+      if (path.endsWith("/discord-messages/resolve")) panelDone = true;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ success: true, data }),
+    });
+  });
+  await page.goto("/deliveries.html");
+  await page
+    .getByRole("button", {
+      name: "Не доставлено: разрешить повтор",
+      exact: true,
+    })
+    .click();
+  await page
+    .getByRole("dialog")
+    .locator("textarea")
+    .fill("Проверили Discord, сообщения нет");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Подтвердить", exact: true })
+    .click();
+  await expect.poll(() => mutations.length).toBe(1);
+  expect(mutations[0].body).toEqual({
+    delivered: false,
+    explanation: "Проверили Discord, сообщения нет",
+  });
+  await page
+    .getByLabel("ID найденного сообщения из Discord")
+    .fill("123456789012345678");
+  await page
+    .getByRole("button", { name: "Связать найденное сообщение", exact: true })
+    .click();
+  await page
+    .getByRole("dialog")
+    .locator("textarea")
+    .fill("Нашли исходное сообщение в канале");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Подтвердить", exact: true })
+    .click();
+  await expect.poll(() => mutations.length).toBe(2);
+  expect(mutations[1].body).toEqual({
+    slot: "panel:70000",
+    messageId: "123456789012345678",
+    explanation: "Нашли исходное сообщение в канале",
+  });
+  await expect(page.locator("#discord-messages")).toContainText(
+    "неизвестным результатом нет",
+  );
+});

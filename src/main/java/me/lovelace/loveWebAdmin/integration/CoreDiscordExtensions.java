@@ -77,4 +77,78 @@ public final class CoreDiscordExtensions {
           new IllegalStateException("Обновите LoveCore для передачи изображений", unavailable));
     }
   }
+
+  @SuppressWarnings("unchecked")
+  public static <T> java.util.concurrent.CompletableFuture<T> managed(
+      DiscordService service, String method, Class<?>[] types, Object... args) {
+    try {
+      return (java.util.concurrent.CompletableFuture<T>)
+          service.getClass().getMethod(method, types).invoke(service, args);
+    } catch (ReflectiveOperationException error) {
+      return java.util.concurrent.CompletableFuture.failedFuture(
+          new IllegalStateException("Обновите ядро: требуются управляемые обращения", error));
+    }
+  }
+
+  public static String guild(DiscordService service) {
+    try {
+      return (String) service.getClass().getMethod("getDiscordGuildId").invoke(service);
+    } catch (ReflectiveOperationException error) {
+      return "";
+    }
+  }
+
+  public static java.util.concurrent.CompletableFuture<String> managedTicket(
+      DiscordService service,
+      TicketType kind,
+      String key,
+      String player,
+      String reason,
+      String owner,
+      java.util.List<String> roles,
+      java.util.List<String> members,
+      String name) {
+    return managedTicket(service, kind, key, player, reason, owner, roles, members, name, false);
+  }
+
+  public static java.util.concurrent.CompletableFuture<String> managedTicket(
+      DiscordService service,
+      TicketType kind,
+      String key,
+      String player,
+      String reason,
+      String owner,
+      java.util.List<String> roles,
+      java.util.List<String> members,
+      String name,
+      boolean lookupOnly) {
+    try {
+      var loader = DiscordService.class.getClassLoader();
+      var routing = Class.forName("dev.lovelace.lovecore.api.discord.TicketRequest", true, loader);
+      Object request =
+          routing
+              .getConstructor(
+                  TicketType.class,
+                  String.class,
+                  String.class,
+                  String.class,
+                  String.class,
+                  String.class,
+                  boolean.class)
+              .newInstance(kind, key, player, reason, owner, null, false);
+      var type =
+          Class.forName("dev.lovelace.lovecore.api.discord.ManagedTicketRequest", true, loader);
+      Object managed =
+          type.getConstructor(routing, java.util.List.class, java.util.List.class, String.class)
+              .newInstance(request, roles, members, name);
+      return managed(
+          service,
+          lookupOnly ? "recoverManagedTicket" : "createManagedTicket",
+          new Class<?>[] {type},
+          managed);
+    } catch (ReflectiveOperationException error) {
+      return java.util.concurrent.CompletableFuture.failedFuture(
+          new IllegalStateException("Обновите ядро для приватных обращений", error));
+    }
+  }
 }

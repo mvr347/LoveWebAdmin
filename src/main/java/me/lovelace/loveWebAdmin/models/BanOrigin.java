@@ -17,10 +17,10 @@ public record BanOrigin(Kind kind, String actor, String externalEventId) {
   public String display() {
     return switch (kind) {
       case STAFF -> "Сотрудник: " + actor;
-      case ANTICHEAT -> "Система — Античит (" + actor + ")";
-      case SECURITY -> "Система — Безопасность (" + actor + ")";
-      case CONSOLE -> "Система — Консоль";
-      case UNKNOWN -> "Не указан";
+      case ANTICHEAT -> "Античит";
+      case SECURITY -> "Безопасность";
+      case CONSOLE -> "Система";
+      case UNKNOWN -> "Система";
     };
   }
 }

@@ -386,6 +386,7 @@ public class ApiAppealsHandler extends ApiHandlerSupport {
       throws IOException {
     var auth = requireManagePermission(req, resp);
     if (auth.isEmpty()) return;
+    if (approve && requirePermission(req, resp, Permission.MANAGE_BANS).isEmpty()) return;
     var body = readJsonBody(req);
     String result =
         plugin

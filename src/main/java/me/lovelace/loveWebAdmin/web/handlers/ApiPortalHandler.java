@@ -135,7 +135,15 @@ public final class ApiPortalHandler extends ApiHandlerSupport {
                     ? plugin.getDatabaseManager().getAppealMessages(id)
                     : plugin.getDatabaseManager().reportDiscussion(id),
                 "evidence",
-                plugin.moderation().evidence(kind, id, true)));
+                plugin.moderation().evidence(kind, id, true),
+                "closure",
+                plugin
+                    .getDiscordBridge()
+                    .ticketDeskStore()
+                    .get(kind, id)
+                    .filter(t -> !t.state().equals("OPEN"))
+                    .map(t -> Map.of("actor", t.actor(), "reason", t.reason()))
+                    .orElse(Map.of())));
         return;
       }
       if (!limiter.take(discord)) {

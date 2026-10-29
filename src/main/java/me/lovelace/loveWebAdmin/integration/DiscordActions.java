@@ -66,6 +66,7 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
   @Override
   public boolean onInteraction(DiscordInteraction i) {
     if (closed) return false;
+    if (plugin.getDiscordBridge().ticketDesk().onInteraction(i)) return true;
     if (!i.name().startsWith("lwa:")
         && !Set.of("апелляция", "жалоба", "мои-обращения", "дело", "игрок").contains(i.name()))
       return false;
@@ -131,7 +132,7 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
     }
     if (i.name().startsWith("lwa:decision:")
         && (staff(i.userId(), Permission.MANAGE_APPEALS).isEmpty()
-            || i.name().contains(":reduce:")
+            || (i.name().contains(":reduce:") || i.name().contains(":approve:"))
                 && staff(i.userId(), Permission.MANAGE_BANS).isEmpty())) {
       response(i, 4, Map.of("flags", 64, "content", "Недостаточно прав для решения по апелляции"));
       return true;
@@ -284,7 +285,7 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
                 ? Permission.MANAGE_REPORTS
                 : i.name().equals("игрок") ? Permission.VIEW_PLAYERS : Permission.MANAGE_APPEALS;
     var auth = staff(i.userId(), permission);
-    if (auth.isEmpty()) return "Недостаточно прав. Нужен привязанный аккаунт сотрудника WebAdmin.";
+    if (auth.isEmpty()) return "Недостаточно прав. Нужен привязанный аккаунт сотрудника панели.";
     WebAdmin admin = auth.get();
     if (i.name().startsWith("lwa:report:claim:")) {
       int id = Integer.parseInt(i.name().substring("lwa:report:claim:".length()));
@@ -317,6 +318,8 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
             .appeals()
             .reduce(id, admin.username(), Math.multiplyExact(minutes, 60), reason);
       }
+      if (parts[2].equals("approve") && staff(i.userId(), Permission.MANAGE_BANS).isEmpty())
+        return "Нужно право управления наказаниями.";
       return plugin.appeals().decide(id, admin.username(), parts[2].equals("approve"), reason);
     }
     if (i.name().equals("игрок")) {
@@ -452,21 +455,25 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
         var report = plugin.getDatabaseManager().getReportById(id);
         if (report.isEmpty() || !report.get().status().equals("PENDING")) return;
         boolean owner = ticket.get().get("discordId").equals(msg.authorId());
-        var admin = staff(msg.authorId(), Permission.MANAGE_REPORTS);
+        var admin = staff(msg.authorId(), Permission.VIEW_REPORTS);
         if (!owner && admin.isEmpty()) return;
+        if (!plugin.getDiscordBridge().ticketDesk().permitsMessage("report", id, msg.authorId()))
+          return;
         String content = conversationText(msg);
         if (content.isBlank()) return;
         plugin
             .getDatabaseManager()
             .addReportDiscussion(
                 id,
-                admin.map(WebAdmin::username).orElse(report.get().reporterName()),
-                admin.isPresent(),
+                owner
+                    ? report.get().reporterName()
+                    : admin.map(WebAdmin::username).orElse(report.get().reporterName()),
+                !owner && admin.isPresent(),
                 content,
                 msg.messageId());
         return;
       }
-    } catch (java.sql.SQLException error) {
+    } catch (Exception error) {
       throw new IllegalStateException(error);
     }
     var found = plugin.getDatabaseManager().getAppealByDiscordChannel(msg.channelId());
@@ -475,8 +482,12 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
     try {
       boolean author =
           plugin.moderation().owner(appeal.id()).filter(msg.authorId()::equals).isPresent();
-      var admin = staff(msg.authorId(), Permission.MANAGE_APPEALS);
+      var admin = staff(msg.authorId(), Permission.VIEW_APPEALS);
       if (!author && admin.isEmpty()) return;
+      if (!plugin
+          .getDiscordBridge()
+          .ticketDesk()
+          .permitsMessage("appeal", appeal.id(), msg.authorId())) return;
       String content = conversationText(msg);
       if (content.isBlank()) return;
       plugin
@@ -484,10 +495,12 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
           .addDiscordAppealMessage(
               appeal.id(),
               msg.messageId(),
-              admin.map(WebAdmin::username).orElse(appeal.playerName()),
-              admin.isPresent(),
+              author
+                  ? appeal.playerName()
+                  : admin.map(WebAdmin::username).orElse(appeal.playerName()),
+              !author && admin.isPresent(),
               content);
-    } catch (java.sql.SQLException e) {
+    } catch (Exception e) {
       throw new IllegalStateException(e);
     }
   }

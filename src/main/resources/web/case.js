@@ -44,6 +44,73 @@ installWorkspace();
       $(target).append(el);
     }
   }
+  let archiveOffset = 0;
+  $("archive-load").onclick = async () => {
+    const button = $("archive-load");
+    button.disabled = true;
+    try {
+      const archive = await api(
+        "GET",
+        "/api/cases/" + kind + "/" + id + "/transcript?offset=" + archiveOffset,
+      );
+      $("archive-status").textContent =
+        ({
+          NONE: "Архива пока нет",
+          OPEN: "Канал ещё открыт",
+          CLOSING: "Сохраняются переписка и файлы; канал пока сохранён",
+          ARCHIVED: "Архив сохранён; удаление канала ожидает подтверждения",
+          CLOSED: "Канал удалён, история сохранена",
+        }[archive.state] || "Архив обращения") +
+        (archive.closeReason
+          ? " · " + archive.closedBy + ": " + archive.closeReason
+          : "");
+      for (const message of archive.messages) {
+        const row = document.createElement("p");
+        row.className = "message";
+        row.textContent =
+          message.author +
+          " · " +
+          new Date(message.createdAt * 1000).toLocaleString("ru-RU") +
+          "\n" +
+          message.text;
+        $("archive-messages").append(row);
+      }
+      $("archive-files").replaceChildren();
+      for (const file of archive.files) {
+        const download = document.createElement("button");
+        download.textContent =
+          "Скачать: " + file.name + " (" + Math.ceil(file.size / 1024) + " КБ)";
+        download.onclick = async () => {
+          download.disabled = true;
+          try {
+            const response = await requestFetch(
+              "/api/cases/" + kind + "/" + id + "/transcript/" + file.id,
+              { headers: { Authorization: "Bearer " + (key || "") } },
+            );
+            if (!response.ok) throw Error("Вложение недоступно");
+            const url = URL.createObjectURL(await response.blob());
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = file.name;
+            link.click();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+          } catch (e) {
+            fail(e);
+          } finally {
+            download.disabled = false;
+          }
+        };
+        $("archive-files").append(download);
+      }
+      archiveOffset = archive.nextOffset;
+      button.textContent =
+        archiveOffset < 0 ? "История загружена" : "Следующие сообщения";
+    } catch (e) {
+      fail(e);
+    } finally {
+      button.disabled = archiveOffset < 0;
+    }
+  };
   async function load() {
     if (!["report", "appeal"].includes(kind) || !/^\d+$/.test(id))
       throw Error("Некорректная ссылка на дело");
@@ -72,7 +139,9 @@ installWorkspace();
             : "У вашей роли нет права изменять это дело";
       }
     for (const name of ["claim", "merge", "approve", "reject", "reduce"]) {
-      $(name).disabled = !manage || (name === "reduce" && !can("MANAGE_BANS"));
+      $(name).disabled =
+        !manage ||
+        (["approve", "reduce"].includes(name) && !can("MANAGE_BANS"));
       $(name).title = $(name).disabled
         ? "Действие недоступно: проверьте права и состояние дела"
         : "";
@@ -143,6 +212,7 @@ installWorkspace();
         ACCEPTED: "Подтверждена",
         EXPIRED: "Истекла",
         MERGED: "Объединена",
+        CLOSED: "Закрыта",
       }[d.status];
     $("details").textContent =
       kind === "report"

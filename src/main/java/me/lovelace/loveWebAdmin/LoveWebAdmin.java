@@ -367,6 +367,16 @@ public class LoveWebAdmin extends JavaPlugin {
     safely("Async scheduler", () -> getServer().getAsyncScheduler().cancelTasks(this));
     if (io != null) io.stop(java.time.Duration.ofSeconds(3));
     if (preview != null) safely("Preview stores", preview::close);
+    if (discordBridge != null)
+      safely(
+          "архив обращений",
+          () -> {
+            try {
+              discordBridge.ticketDeskStore().close();
+            } catch (java.sql.SQLException error) {
+              throw new IllegalStateException(error);
+            }
+          });
     if (moderation != null)
       safely(
           "дела",

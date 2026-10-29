@@ -6,7 +6,7 @@
 
     <groupId>me.lovelace</groupId>
     <artifactId>LoveWebAdmin</artifactId>
-    <version>1.2.0</version>
+    <version>1.3.0</version>
     <packaging>jar</packaging>
 
     <name>LoveWebAdmin</name>
@@ -119,7 +119,7 @@
         <dependency>
             <groupId>com.github.mvr347.LoveCore</groupId>
             <artifactId>lovecore-api</artifactId>
-            <version>1b3dbbdb6408af42d0c3584d7d4a090bb90244c7</version>
+            <version>78290090063bf47272af14a52bc428bd03864bc8</version>
             <scope>provided</scope>
         </dependency>
 

@@ -132,6 +132,132 @@ class PanelIsolationTest {
         java.nio.file.Files.exists(plugin.getDataFolder().toPath().resolve("preview").resolve(id)));
   }
 
+  @Test
+  void ticketTranscriptsNeedCasePermissionsAndFilesCannotCrossCases() throws Exception {
+    var db = plugin.getDatabaseManager();
+    int first =
+        db.createPlayerReport(
+            "author", "Author", "", "target", "Target", List.of(), "Описание", false, 0);
+    int second =
+        db.createPlayerReport(
+            "author2", "Author2", "", "target", "Target", List.of(), "Описание", false, 0);
+    var archive = plugin.getDiscordBridge().ticketDeskStore();
+    archive.register("report", first, "10000");
+    archive.archiveMessage(
+        "report", first, "100000000000000000", "10000", "Игрок", "Личная переписка");
+    archive.archiveFile(
+        "report",
+        first,
+        "100000000000000000",
+        "https://cdn.discordapp.com/attachments/1/2/proof.png",
+        "proof.png",
+        new byte[] {1, 2});
+    var viewer = account("CaseReader", Set.of(Permission.VIEW_REPORTS));
+    var noRights = account("PlayerReader", Set.of(Permission.VIEW_PLAYERS));
+    var handler = new ApiCasesHandler(plugin);
+    assertEquals(
+        403,
+        call(
+                handler,
+                "/api/cases",
+                "/report/" + first + "/transcript",
+                Map.of("Authorization", "Bearer " + noRights.token()))
+            .status);
+    var allowed =
+        call(
+            handler,
+            "/api/cases",
+            "/report/" + first + "/transcript",
+            Map.of("Authorization", "Bearer " + viewer.token()));
+    assertEquals(200, allowed.status);
+    assertTrue(allowed.body.toString().contains("Личная переписка"));
+    int file = ((Number) archive.files("report", first).getFirst().get("id")).intValue();
+    assertEquals(
+        404,
+        call(
+                handler,
+                "/api/cases",
+                "/report/" + second + "/transcript/" + file,
+                Map.of("Authorization", "Bearer " + viewer.token()))
+            .status);
+  }
+
+  @Test
+  void messageRecoveryRequiresIntegrationRights() throws Exception {
+    var archive = plugin.getDiscordBridge().ticketDeskStore();
+    archive.sending("panel:10000", "10000");
+    archive.uncertain("panel:10000", "Сеть недоступна");
+    var staffOnly = account("StaffOnlyDesk", Set.of(Permission.MANAGE_ADMINS));
+    var integrations = account("DeskRecovery", Set.of(Permission.MANAGE_INTEGRATIONS));
+    requestMethod = "POST";
+    requestBody =
+        "{\"slot\":\"panel:10000\",\"messageId\":\"20000\",\"explanation\":\"Сообщение найдено в канале\"}";
+    var handler = new ApiCasesHandler(plugin);
+    assertEquals(
+        403,
+        call(
+                handler,
+                "/api/cases",
+                "/discord-messages/resolve",
+                Map.of("Authorization", "Bearer " + staffOnly.token()))
+            .status);
+    assertEquals(
+        200,
+        call(
+                handler,
+                "/api/cases",
+                "/discord-messages/resolve",
+                Map.of("Authorization", "Bearer " + integrations.token()))
+            .status);
+    assertEquals("20000", archive.message("panel:10000").orElseThrow().get("message"));
+    assertEquals(
+        409,
+        call(
+                handler,
+                "/api/cases",
+                "/discord-messages/resolve",
+                Map.of("Authorization", "Bearer " + integrations.token()))
+            .status);
+  }
+
+  @Test
+  void appealManagementAloneCannotLiftAPunishment() throws Exception {
+    var reviewer = account("Reviewer", Set.of(Permission.MANAGE_APPEALS));
+    var ban =
+        plugin
+            .getDatabaseManager()
+            .saveBan(
+                new WebBan(
+                    0,
+                    "Player",
+                    UUID.randomUUID().toString(),
+                    null,
+                    "Issuer",
+                    "Причина",
+                    "",
+                    "[]",
+                    false,
+                    "ACTIVE",
+                    -1,
+                    100,
+                    -1));
+    int appeal =
+        plugin
+            .getDatabaseManager()
+            .createAppeal(ban.id(), ban.targetUuid(), ban.targetName(), "Проверьте наказание");
+    requestMethod = "POST";
+    requestBody = "{\"verdictMessage\":\"Обоснование решения\"}";
+    assertEquals(
+        403,
+        call(
+                new ApiAppealsHandler(plugin),
+                "/api/appeals",
+                "/" + appeal + "/approve",
+                Map.of("Authorization", "Bearer " + reviewer.token()))
+            .status);
+    assertEquals("ACTIVE", plugin.getDatabaseManager().getBanById(ban.id()).orElseThrow().status());
+  }
+
   static class Response {
     int status = 200;
     StringWriter body = new StringWriter();
