@@ -31,15 +31,16 @@ public final class PreviewService implements AutoCloseable, TicketMessageListene
     this.plugin = plugin;
     root = plugin.getDataFolder().toPath().resolve("preview");
     Files.createDirectories(root);
-    category = plugin.getConfig().getString("preview.discord.category-id", "").trim();
-    channel = plugin.getConfig().getString("preview.discord.channel-id", "").trim();
-    if (!category.isEmpty() && !category.matches("[0-9]{5,25}")
-        || !channel.isEmpty() && !channel.matches("[0-9]{5,25}"))
-      throw new IllegalArgumentException("Preview Discord: укажите числовые ID категории и канала");
-    recipients = Set.copyOf(plugin.getConfig().getStringList("preview.discord.allowed-user-ids"));
-    if (recipients.size() > 10 || recipients.stream().anyMatch(id -> !id.matches("[0-9]{5,25}")))
-      throw new IllegalArgumentException(
-          "Preview Discord: допускается до 10 числовых ID получателей");
+    // A bad Discord section must not take the whole panel down: Preview keeps working without delivery.
+    var discord =
+        PreviewDiscordConfig.parse(
+            plugin.getConfig().getString("preview.discord.category-id", ""),
+            plugin.getConfig().getString("preview.discord.channel-id", ""),
+            plugin.getConfig().getList("preview.discord.allowed-user-ids", List.of()));
+    discord.problems().forEach(problem -> plugin.getLogger().warning("Preview Discord: " + problem));
+    category = discord.category();
+    channel = discord.channel();
+    recipients = discord.recipients();
     // State and hashed credentials survive restart; capabilities are never logged.
     try (var folders = Files.list(root)) {
       for (Path folder :

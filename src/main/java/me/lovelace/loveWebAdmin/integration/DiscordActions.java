@@ -20,6 +20,7 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
   }
 
   public void register() {
+    CoreDiscordExtensions.claimPrefix(service, "lwa:");
     service.registerInteractionListener(this);
     service.registerTicketMessageListenerV2(this);
     service.registerCommand("жалоба", "Подать жалобу на игрока", Map.of());
