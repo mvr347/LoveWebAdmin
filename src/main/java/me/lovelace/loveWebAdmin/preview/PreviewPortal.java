@@ -52,6 +52,8 @@ final class PreviewPortal {
     int id = integer(p[2]);
     if (r.moderation().owner(id).filter(owner::equals).isEmpty())
       throw new Rejected(404, "Обращение не найдено");
+    if (!read && p.length > 3 && p[3].equals("review"))
+      return Map.of("id", r.workflows.requestReview("appeal", id, "discord:" + owner, body));
     if (read) {
       if (p.length == 5 && p[3].equals("evidence")) {
         var bytes =
@@ -65,6 +67,8 @@ final class PreviewPortal {
             Base64.getEncoder().encodeToString(bytes));
       }
       return Map.of(
+          "reviews",
+          r.workflows.publicReviews("appeal", id),
           "messages",
           r.database().getAppealMessages(id),
           "evidence",

@@ -22,6 +22,8 @@ public record PlayerReport(
     int reputationDeducted,
     Integer linkedBanId
 ) {
+  public static final int REVIEW_NO_REPUTATION = -1;
+
     public PlayerReport(
         int id,
         String reporterUuid,

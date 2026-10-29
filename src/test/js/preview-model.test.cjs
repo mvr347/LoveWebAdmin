@@ -257,3 +257,53 @@ test("simulated owner permissions track the actual permission enum", () => {
     .filter(Boolean);
   assert.deepEqual([...permissions].sort(), actual.sort());
 });
+
+test("workflow previews enforce independence and replay one author-visible report decision", () => {
+  const m = create({ clock: () => 1000 });
+  m.scenario("appeal");
+  const a = m.snapshot().appeals[0],
+    path = `/api/cases/appeal/${a.id}`;
+  assert.equal(
+    m.request("POST", path + "/decision-preview", {
+      action: "reject",
+      reason: "Пересмотр собственного наказания",
+    }).status,
+    409,
+  );
+  m.switchRole(2);
+  const draft = call(m, "POST", path + "/decision-preview", {
+    action: "reject",
+    reason: "Материалы не меняют исходное решение",
+  });
+  assert.equal(m.snapshot().appeals[0].status, "PENDING");
+  m.switchRole(1);
+  assert.equal(
+    m.request("POST", path + "/decision-confirm", { key: draft.key }).status,
+    403,
+  );
+  m.switchRole(2);
+  call(m, "POST", path + "/decision-confirm", { key: draft.key });
+  call(m, "POST", path + "/decision-confirm", { key: draft.key });
+  assert.equal(
+    m
+      .snapshot()
+      .appeals[0].messages.filter(
+        (x) => x.message === "Материалы не меняют исходное решение",
+      ).length,
+    1,
+  );
+  m.scenario("report");
+  const report = m.snapshot().reports[0],
+    rpath = `/api/cases/report/${report.id}`;
+  const reason = "Запись подтверждает нарушение правил";
+  const prepared = call(m, "POST", rpath + "/decision-preview", {
+    action: "approve",
+    reason,
+  });
+  call(m, "POST", rpath + "/decision-confirm", { key: prepared.key });
+  call(m, "POST", rpath + "/decision-confirm", { key: prepared.key });
+  assert.equal(
+    call(m, "GET", rpath).discussion.filter((x) => x.body === reason).length,
+    1,
+  );
+});

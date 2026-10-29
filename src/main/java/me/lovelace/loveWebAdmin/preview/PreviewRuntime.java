@@ -22,6 +22,7 @@ public final class PreviewRuntime implements AutoCloseable, AppealService.Contex
   private final DatabaseManager database;
   private final ModerationStore moderation;
   private final AppealService appeals;
+  me.lovelace.loveWebAdmin.workflow.CaseWorkflowEngine workflows;
   final Map<String, Object> state;
   private final String namespace;
   private boolean closed;
@@ -71,8 +72,35 @@ public final class PreviewRuntime implements AutoCloseable, AppealService.Contex
         passwords.put(name, text(savedPasswords, name, INITIAL_HASH));
       }
       savedPasswords.putAll(passwords);
+      workflows =
+          new me.lovelace.loveWebAdmin.workflow.CaseWorkflowEngine(
+              database,
+              moderation,
+              folder.resolve("case-workflows.db"),
+              me.lovelace.loveWebAdmin.workflow.CaseWaitPolicy.defaults(),
+              (kind, id, action, staff, reason, seconds) -> {
+                if (kind.equals("appeal"))
+                  return action.equals("reduce")
+                      ? appeals.reduce(id, staff, seconds, reason)
+                      : appeals.decide(id, staff, action.equals("approve"), reason);
+                if (!database.resolveReport(
+                    id, action.equals("approve") ? "ACCEPTED" : "REJECTED", staff))
+                  throw new Rejected(409, "Жалоба уже рассмотрена");
+                database.recordReportVerdict(id, staff, reason);
+                return "Тестовое решение сохранено";
+              },
+              (kind, id) ->
+                  delivery(
+                      kind.equals("appeal") ? "APPEAL" : "REPORT",
+                      Map.of(kind.equals("appeal") ? "appealId" : "reportId", id)));
       persist();
     } catch (Exception error) {
+      if (workflows != null)
+        try {
+          workflows.close();
+        } catch (Exception close) {
+          error.addSuppressed(close);
+        }
       try {
         operations.close();
       } catch (Exception close) {
@@ -415,6 +443,16 @@ public final class PreviewRuntime implements AutoCloseable, AppealService.Contex
             "base64",
             Base64.getEncoder().encodeToString(bytes));
       }
+      if (!read && action.equals("review")) {
+        if (!author) throw new Rejected(403, "Нужна ссылка автора");
+        return Map.of(
+            "id",
+            workflows.requestReview(
+                "appeal",
+                appealId,
+                "cap:" + ModerationStore.hash(headers.get("x-appeal-token")),
+                body));
+      }
       if (read) {
         var appeal =
             map(
@@ -424,6 +462,7 @@ public final class PreviewRuntime implements AutoCloseable, AppealService.Contex
                         .orElseThrow(() -> new Rejected(404, "Апелляция не найдена"))));
         appeal.put("evidence", moderation.evidence("appeal", appealId, true));
         appeal.put("messages", database.getAppealMessages(appealId));
+        appeal.put("reviews", workflows.publicReviews("appeal", appealId));
         appeal.put("accountVerified", moderation.verified(appealId));
         return appeal;
       }
@@ -503,6 +542,28 @@ public final class PreviewRuntime implements AutoCloseable, AppealService.Contex
                   .getAppealById(caseId)
                   .map(WebBanAppeal::status)
                   .orElseThrow(() -> new Rejected(404, "Дело не найдено"));
+      if (read && parts.length == 5 && verb.equals("review-image")) {
+        var bytes =
+            workflows
+                .store()
+                .reviewImage(kind, caseId, integer(parts[4]))
+                .orElseThrow(() -> new Rejected(404, "Скриншот не найден"));
+        return Map.of(
+            "mime",
+            me.lovelace.loveWebAdmin.managers.CaseEvidence.imageMime(bytes),
+            "base64",
+            Base64.getEncoder().encodeToString(bytes));
+      }
+      if (Set.of(
+              "workflow",
+              "decision-preview",
+              "decision-confirm",
+              "decision-cancel",
+              "reply-template",
+              "reply-template-delete",
+              "review-accept",
+              "review-reject")
+          .contains(verb)) return PreviewWorkflowRoutes.route(this, read, kind, caseId, verb, body);
       if (!read && !status.equals("PENDING")) throw new Rejected(409, "Дело уже закрыто");
       if (read) {
         if (parts.length == 5 && verb.equals("evidence")) {
@@ -1070,6 +1131,9 @@ public final class PreviewRuntime implements AutoCloseable, AppealService.Contex
       persist();
     } finally {
       try {
+        if (workflows != null) workflows.close();
+      } finally {
+      try {
         operations.close();
       } finally {
         try {
@@ -1079,6 +1143,7 @@ public final class PreviewRuntime implements AutoCloseable, AppealService.Contex
           passwords.clear();
         }
       }
+    }
     }
   }
 }

@@ -66,6 +66,7 @@ public final class ApiCasesHandler extends ApiHandlerSupport {
       return;
     }
     try {
+      if (new CaseWorkflowRoutes(plugin).get(req, resp, p, id, auth.get())) return;
       if (p.length >= 4 && p[3].equals("transcript")) {
         resp.setHeader("Cache-Control", "no-store");
         var archive = plugin.getDiscordBridge().ticketDeskStore();
@@ -139,7 +140,7 @@ public final class ApiCasesHandler extends ApiHandlerSupport {
               p[1].equals("report")
                   ? plugin.getDatabaseManager().reportDiscussion(id)
                   : List.of()));
-    } catch (SQLException e) {
+    } catch (Exception e) {
       throw new IllegalStateException(e);
     }
   }
@@ -261,6 +262,16 @@ public final class ApiCasesHandler extends ApiHandlerSupport {
             resp,
             p[1].equals("report") ? Permission.MANAGE_REPORTS : Permission.MANAGE_APPEALS);
     if (auth.isEmpty()) return;
+    try {
+      if (new CaseWorkflowRoutes(plugin).post(req, resp, p, id, auth.get())) return;
+    } catch (me.lovelace.loveWebAdmin.utils.ActionRejectedException error) {
+      throw error;
+    } catch (IllegalArgumentException error) {
+      sendError(resp, 400, error.getMessage());
+      return;
+    } catch (Exception error) {
+      throw new IllegalStateException(error);
+    }
     String actor = auth.get().adminUsername();
     boolean open =
         p[1].equals("report")

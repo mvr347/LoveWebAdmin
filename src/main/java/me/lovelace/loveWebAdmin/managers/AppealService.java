@@ -103,7 +103,13 @@ public final class AppealService {
     boolean completed = false;
     boolean nativeChanged = false;
     try {
-      if (approve && !context.unban(appeal.banId(), actor))
+      if (approve
+          && context
+              .database()
+              .getBanById(appeal.banId())
+              .filter(b -> b.status().equals("ACTIVE"))
+              .isPresent()
+          && !context.unban(appeal.banId(), actor))
         throw new IllegalStateException("Не удалось снять блокировку");
       if (status.equals("REDUCED")) context.reduce(appeal.banId(), actor, remainingSeconds);
       nativeChanged = approve || status.equals("REDUCED");

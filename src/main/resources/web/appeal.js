@@ -1,3 +1,4 @@
+import { mountReviewRequest } from "./js/core/review-request.js";
 import { requestFetch } from "./js/core/requests.js";
 import { installWorkspace, confirmDialog } from "./js/core/workspace.js";
 installWorkspace();
@@ -45,6 +46,15 @@ installWorkspace();
     status.textContent = e.message;
     status.className = "error";
   }
+  const reviewForm = mountReviewRequest(document.querySelector("main"), {
+    api,
+    reload: refresh,
+    fail,
+    onOpenChild: (review) => {
+      location.href = location.pathname + "#" + review.new_id + ":" + access;
+      location.reload();
+    },
+  });
   async function refresh() {
     const a = await api("GET", "/api/appeals/" + id);
     $("create").hidden = true;
@@ -101,6 +111,11 @@ installWorkspace();
       }
       $("evidence").append(row);
     }
+    reviewForm.render({
+      closed: !["PENDING", "DECIDING"].includes(a.status),
+      reviews: a.reviews || [],
+      endpoint: "/api/appeals/" + id + "/review",
+    });
     $("reply-form").hidden = a.status !== "PENDING";
     status.textContent = "Обновлено: " + new Date().toLocaleTimeString("ru-RU");
   }

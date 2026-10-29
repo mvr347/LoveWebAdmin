@@ -1,3 +1,4 @@
+import { installCaseWorkflow } from "./js/core/case-workflow.js";
 import { requestFetch } from "./js/core/requests.js";
 import { installWorkspace, confirmDialog } from "./js/core/workspace.js";
 installWorkspace();
@@ -111,6 +112,12 @@ installWorkspace();
       button.disabled = archiveOffset < 0;
     }
   };
+  const workflow = installCaseWorkflow({
+    api,
+    context: () => ({ kind, id, identity }),
+    reload: load,
+    fail,
+  });
   async function load() {
     if (!["report", "appeal"].includes(kind) || !/^\d+$/.test(id))
       throw Error("Некорректная ссылка на дело");
@@ -141,7 +148,9 @@ installWorkspace();
     for (const name of ["claim", "merge", "approve", "reject", "reduce"]) {
       $(name).disabled =
         !manage ||
-        (["approve", "reduce"].includes(name) && !can("MANAGE_BANS"));
+        (kind === "appeal" &&
+          ["approve", "reduce"].includes(name) &&
+          !can("MANAGE_BANS"));
       $(name).title = $(name).disabled
         ? "Действие недоступно: проверьте права и состояние дела"
         : "";
@@ -251,6 +260,9 @@ installWorkspace();
     }
     $("appeal").hidden = kind !== "appeal";
     if (kind === "appeal") messages("messages", data.messages || []);
+    await workflow.render();
+    $("remaining").hidden = kind !== "appeal";
+    $("reduce").hidden = kind !== "appeal";
     $("status").textContent =
       "Обновлено: " + new Date().toLocaleTimeString("ru-RU");
   }
@@ -288,27 +300,8 @@ installWorkspace();
       .catch(fail);
   };
   for (const action of ["approve", "reject"])
-    $(action).onclick = async () => {
-      if ($("verdict").value.trim().length < 5) {
-        fail(Error("Укажите причину решения"));
-        return;
-      }
-      if (
-        !(await confirmDialog(
-          "\u041F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043D\u0438\u0435 \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u044F",
-          "Применить решение по апелляции №" + id + "?",
-        ))
-      )
-        return;
-      try {
-        await api("POST", "/api/appeals/" + id + "/" + action, {
-          verdictMessage: $("verdict").value,
-        });
-        await load();
-      } catch (e) {
-        fail(e);
-      }
-    };
+    $(action).onclick = () =>
+      workflow.decide(action, $("verdict").value).catch(fail);
   $("clarify-form").onsubmit = (e) => {
     e.preventDefault();
     post("clarify", {
@@ -331,33 +324,10 @@ installWorkspace();
         targetId: target,
       }).catch(fail);
   };
-  $("reduce").onclick = async () => {
-    const minutes = Number($("remaining").value);
-    if (
-      !Number.isInteger(minutes) ||
-      minutes < 1 ||
-      $("verdict").value.trim().length < 5
-    ) {
-      fail(Error("Укажите оставшийся срок и обоснование"));
-      return;
-    }
-    if (
-      !(await confirmDialog(
-        "\u041F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043D\u0438\u0435 \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u044F",
-        "Сократить блокировку по апелляции №" + id + "?",
-      ))
-    )
-      return;
-    try {
-      await api("POST", "/api/appeals/" + id + "/reduce", {
-        remainingSeconds: minutes * 60,
-        verdictMessage: $("verdict").value,
-      });
-      await load();
-    } catch (e) {
-      fail(e);
-    }
-  };
+  $("reduce").onclick = () =>
+    workflow
+      .decide("reduce", $("verdict").value, Number($("remaining").value) * 60)
+      .catch(fail);
   $("evidence-chat").onclick = () => {
     const selected = window.getSelection()?.toString().trim();
     if (!selected) {

@@ -42,6 +42,12 @@ public class LoveWebAdmin extends JavaPlugin {
     return io;
   }
 
+  private me.lovelace.loveWebAdmin.workflow.CaseWorkflowEngine workflows;
+
+  public me.lovelace.loveWebAdmin.workflow.CaseWorkflowEngine workflows() {
+    return workflows;
+  }
+
   private me.lovelace.loveWebAdmin.preview.PreviewService preview;
 
   public me.lovelace.loveWebAdmin.preview.PreviewService preview() {
@@ -216,6 +222,11 @@ public class LoveWebAdmin extends JavaPlugin {
     // Reflection-only bridges to external plugins (Vesuvio & LoveEconomy & LoveCore)
     this.vesuvioBridge = new VesuvioBridge(this);
     this.loveEconomyBridge = new me.lovelace.loveWebAdmin.integration.LoveEconomyBridge(this);
+    try {
+      this.workflows = me.lovelace.loveWebAdmin.workflow.CaseWorkflowEngine.live(this);
+    } catch (Exception error) {
+      throw new IllegalStateException("Не открыты настройки обращений", error);
+    }
     this.discordBridge = new me.lovelace.loveWebAdmin.integration.LoveCoreDiscordBridge(this);
     this.discordBridge.initialize();
     try {
@@ -374,6 +385,16 @@ public class LoveWebAdmin extends JavaPlugin {
             try {
               discordBridge.ticketDeskStore().close();
             } catch (java.sql.SQLException error) {
+              throw new IllegalStateException(error);
+            }
+          });
+    if (workflows != null)
+      safely(
+          "настройки обращений",
+          () -> {
+            try {
+              workflows.close();
+            } catch (Exception error) {
               throw new IllegalStateException(error);
             }
           });

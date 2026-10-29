@@ -341,3 +341,130 @@ test("delivery reconciliation and panel recovery send the required JSON explanat
     "неизвестным результатом нет",
   );
 });
+test("editable templates, decision preview and new-evidence review preserve the previous verdict", async ({
+  page,
+}) => {
+  await page.goto("/preview/");
+  const saved = await page.evaluate(() => {
+    LovePreview.model.scenario("ban");
+    LovePreview.model.scenario("appeal");
+    LovePreview.model.switchRole(2);
+    return { id: LovePreview.model.snapshot().appeals[0].id };
+  });
+  await page.goto(`/preview/case.html?kind=appeal&id=${saved.id}`);
+  await expect(page.locator("#case-wait")).toContainText("Ожидаем сотрудника");
+  await page.locator("#case-workflow summary").click();
+  await page.locator("#template-name").fill("Личное уточнение");
+  await page.locator("#template-text").fill("Уточните время и место ситуации");
+  await page
+    .locator(
+      "#template-form button[type=submit],#template-form button:not([type])",
+    )
+    .first()
+    .click();
+  await expect(page.locator("#case-template")).toContainText(
+    "Личное уточнение",
+  );
+  await page
+    .locator("#verdict")
+    .fill("По исходным материалам недостаточно доказательств");
+  await page.evaluate(() => {
+    document.getElementById("reject").click();
+    document.getElementById("reject").click();
+  });
+  await expect(page.getByRole("dialog")).toHaveCount(1);
+  await expect(page.getByRole("dialog")).toContainText(
+    "Наказание не изменится",
+  );
+  expect(
+    await page.evaluate(
+      (id) =>
+        LovePreview.model.snapshot().appeals.find((a) => a.id === id).status,
+      saved.id,
+    ),
+  ).toBe("PENDING");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Отмена", exact: true })
+    .click();
+  await expect(page.locator("#verdict")).toHaveValue(
+    "По исходным материалам недостаточно доказательств",
+  );
+  await page.locator("#reject").click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Применить решение", exact: true })
+    .click();
+  await expect(page.locator("#summary")).toContainText("Отклонена");
+  const code = await page.evaluate(
+    () => LovePreview.model.scenario("portal").code,
+  );
+  await page.goto("/preview/portal.html#" + code);
+  await page.locator("#cases button").first().click();
+  await page
+    .getByRole("button", { name: "Дополнить закрытое обращение", exact: true })
+    .click();
+  await page
+    .locator("[data-form] textarea")
+    .fill("Новое видео показывает дополнительный контекст");
+  await page.locator("[data-form] button").click();
+  await expect(page.locator("[data-reviews]")).toContainText(
+    "Ожидает рассмотрения",
+  );
+  await page.goto(`/preview/case.html?kind=appeal&id=${saved.id}`);
+  await page
+    .getByRole("button", { name: "Принять к рассмотрению", exact: true })
+    .click();
+  await page
+    .getByRole("dialog")
+    .locator("textarea")
+    .fill("Новые материалы требуют отдельного рассмотрения");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Подтвердить", exact: true })
+    .click();
+  await expect(page.locator("#review-requests")).toContainText(
+    "Открыть новое рассмотрение",
+  );
+  const cases = await page.evaluate(() => LovePreview.model.snapshot().appeals);
+  await page.screenshot({
+    path: "test-results/case-workflow.png",
+    fullPage: true,
+  });
+  expect(cases.find((a) => a.id === saved.id).status).toBe("REJECTED");
+  expect(cases.filter((a) => a.status === "PENDING")).toHaveLength(1);
+});
+
+test("compact moderation actions also require explanation and a pure decision preview", async ({
+  page,
+}) => {
+  await page.goto("/preview/");
+  await page.evaluate(() => LovePreview.model.scenario("report"));
+  const id = await page.evaluate(
+    () => LovePreview.model.snapshot().reports[0].id,
+  );
+  await page.evaluate((id) => {
+    window.handleAcceptReport(id, "Ada123");
+  }, id);
+  await page
+    .getByRole("dialog")
+    .locator("textarea")
+    .fill("Нарушение подтверждается представленными материалами");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Подтвердить", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toContainText("Предпросмотр решения");
+  expect(
+    await page.evaluate(() => LovePreview.model.snapshot().reports[0].status),
+  ).toBe("PENDING");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Применить решение" })
+    .click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => LovePreview.model.snapshot().reports[0].status),
+    )
+    .toBe("ACCEPTED");
+});

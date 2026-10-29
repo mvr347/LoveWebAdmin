@@ -3569,6 +3569,23 @@ public class DatabaseManager {
         }catch(SQLException e){throw new IllegalStateException("Ответ не сохранён",e);}
     }
 
+  /** Public explanation of a completed report; ordinary replies still require an open case. */
+  public synchronized void recordReportVerdict(int id, String staff, String text) {
+    if (text == null || text.trim().length() < 5 || text.length() > 2000)
+      throw new IllegalArgumentException("Объяснение: 5–2000 символов");
+    try (var q =
+        connection.prepareStatement(
+            "INSERT OR IGNORE INTO report_discussion(report_id,author,is_staff,body,event_id,created_at) SELECT id,?,1,?, ?,strftime('%s','now') FROM player_reports WHERE id=? AND status IN ('ACCEPTED','REJECTED')")) {
+      q.setString(1, staff);
+      q.setString(2, text.trim());
+      q.setString(3, "report-verdict:" + id);
+      q.setInt(4, id);
+      q.executeUpdate();
+    } catch (SQLException error) {
+      throw new IllegalStateException("Объяснение решения не сохранено", error);
+    }
+  }
+
     public synchronized java.util.List<java.util.Map<String,Object>> reportDiscussion(int id) {
         var list=new java.util.ArrayList<java.util.Map<String,Object>>();
         try(var q=connection.prepareStatement("SELECT author,is_staff,body,created_at FROM report_discussion WHERE report_id=? ORDER BY id DESC LIMIT 200")) {

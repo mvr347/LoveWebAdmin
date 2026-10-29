@@ -45,6 +45,8 @@ installWorkspace();
           "report-finish": "Закрытие жалобы №",
           "report-reply": "Ответ по жалобе №",
           "desk-close": "Итог обращения · ",
+          wait: "Напоминание об ожидании · ",
+          "review-result": "Результат рассмотрения новых доказательств · ",
           "case-image": "Доказательство · ",
         }[event[0]] || "Операция · ") + event.slice(1, 3).join(" · ");
       text.textContent =
@@ -118,19 +120,41 @@ installWorkspace();
   async function loadMessages() {
     const items = await api("GET", "/api/cases/discord-messages");
     const target = $("discord-messages");
-    target.replaceChildren();
+    const entered = new Map(
+      [...target.querySelectorAll("input[data-slot]")].map((input) => [
+        input.dataset.slot,
+        input.value,
+      ]),
+    );
+    const previousCards = new Map(
+      [...target.querySelectorAll("article[data-slot]")].map((card) => [
+        card.dataset.slot,
+        card,
+      ]),
+    );
+    const nextCards = [];
     for (const item of items.filter((m) => m.state === "UNCERTAIN")) {
+      const signature = JSON.stringify(item),
+        previous = previousCards.get(item.slot);
+      if (previous?.dataset.signature === signature) {
+        nextCards.push(previous);
+        continue;
+      }
       const card = document.createElement("article"),
         title = document.createElement("h3"),
         text = document.createElement("p"),
         input = document.createElement("input"),
         label = document.createElement("label");
+      card.dataset.slot = item.slot;
+      card.dataset.signature = signature;
       title.textContent = item.slot.startsWith("panel:")
         ? "Панель обращений"
         : "Карточка обращения";
       text.textContent =
         "Канал: " + item.channel + ". Результат неизвестен. " + item.error;
       label.textContent = "ID найденного сообщения из Discord";
+      input.dataset.slot = item.slot;
+      input.value = entered.get(item.slot) || "";
       input.inputMode = "numeric";
       input.maxLength = 25;
       label.append(input);
@@ -168,8 +192,9 @@ installWorkspace();
         };
         card.append(button);
       }
-      target.append(card);
+      nextCards.push(card);
     }
+    target.replaceChildren(...nextCards);
     if (!target.children.length)
       target.textContent = "Сообщений с неизвестным результатом нет.";
   }

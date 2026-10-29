@@ -394,8 +394,9 @@ public class ReportManager {
         UUID reporterUuid = UUID.fromString(report.reporterUuid());
 
         if(report.reputationDeducted()==0 && behaviorBridge.isAvailable())behaviorBridge.modifyPoliteness(UUID.fromString(report.targetUuid()),-REPUTATION_DEDUCTION);
-        // Награждаем репортера небольшой репутацией
-        if (behaviorBridge.isAvailable()) {
+    // Награждаем репортера небольшой репутацией
+    if (report.reputationDeducted() != PlayerReport.REVIEW_NO_REPUTATION
+        && behaviorBridge.isAvailable()) {
             behaviorBridge.modifyPoliteness(reporterUuid, REPUTATION_BONUS_REPORTER);
         }
 

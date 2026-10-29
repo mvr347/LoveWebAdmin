@@ -258,6 +258,109 @@ class PanelIsolationTest {
     assertEquals("ACTIVE", plugin.getDatabaseManager().getBanById(ban.id()).orElseThrow().status());
   }
 
+  @Test
+  void decisionPreviewChecksRightsAndDoesNotApplyBeforeConfirmation() throws Exception {
+    var reviewer = account("FlowReviewer", Set.of(Permission.MANAGE_APPEALS));
+    var other = account("OtherFlowReviewer", Set.of(Permission.MANAGE_APPEALS));
+    var ban =
+        plugin
+            .getDatabaseManager()
+            .saveBan(
+                new WebBan(
+                    0,
+                    "Player",
+                    UUID.randomUUID().toString(),
+                    null,
+                    "Issuer",
+                    "Причина",
+                    "",
+                    "[]",
+                    false,
+                    "ACTIVE",
+                    -1,
+                    100,
+                    -1));
+    int appeal =
+        plugin
+            .getDatabaseManager()
+            .createAppeal(ban.id(), ban.targetUuid(), ban.targetName(), "Прошу проверить решение");
+    requestMethod = "POST";
+    requestBody = "{\"action\":\"approve\",\"reason\":\"Уточнённое решение сотрудника\"}";
+    var handler = new ApiCasesHandler(plugin);
+    var headers = Map.of("Authorization", "Bearer " + reviewer.token());
+    assertEquals(
+        403,
+        call(handler, "/api/cases", "/appeal/" + appeal + "/decision-preview", headers).status);
+    assertEquals("ACTIVE", plugin.getDatabaseManager().getBanById(ban.id()).orElseThrow().status());
+    requestBody = "{\"action\":\"reject\",\"reason\":\"Материалов для пересмотра недостаточно\"}";
+    var response = call(handler, "/api/cases", "/appeal/" + appeal + "/decision-preview", headers);
+    assertEquals(200, response.status);
+    @SuppressWarnings("unchecked")
+    var data = (Map<String, Object>) JsonUtils.parseObject(response.body.toString()).get("data");
+    assertEquals(
+        "PENDING", plugin.getDatabaseManager().getAppealById(appeal).orElseThrow().status());
+    requestBody = JsonUtils.toJson(Map.of("key", data.get("key")));
+    assertEquals(
+        400,
+        call(
+                handler,
+                "/api/cases",
+                "/appeal/" + appeal + "/decision-confirm",
+                Map.of("Authorization", "Bearer " + other.token()))
+            .status);
+    assertEquals(
+        200,
+        call(handler, "/api/cases", "/appeal/" + appeal + "/decision-confirm", headers).status);
+    assertEquals(
+        "REJECTED", plugin.getDatabaseManager().getAppealById(appeal).orElseThrow().status());
+    assertEquals("ACTIVE", plugin.getDatabaseManager().getBanById(ban.id()).orElseThrow().status());
+  }
+
+  @Test
+  void newEvidenceRequiresTheOriginalAuthorCapability() throws Exception {
+    var ban =
+        plugin
+            .getDatabaseManager()
+            .saveBan(
+                new WebBan(
+                    0,
+                    "Player",
+                    UUID.randomUUID().toString(),
+                    null,
+                    "Issuer",
+                    "Причина",
+                    "",
+                    "[]",
+                    false,
+                    "ACTIVE",
+                    -1,
+                    100,
+                    -1));
+    int appeal =
+        plugin
+            .getDatabaseManager()
+            .createAppeal(ban.id(), ban.targetUuid(), ban.targetName(), "Прошу проверить решение");
+    String cap = plugin.moderation().createAccess(appeal, null, false);
+    plugin.getDatabaseManager().updateAppealStatus(appeal, "REJECTED");
+    requestMethod = "POST";
+    requestBody = "{\"text\":\"Новые доказательства изменяют контекст\"}";
+    var handler = new ApiAppealsHandler(plugin);
+    assertEquals(
+        403,
+        call(handler, "/api/appeals", "/" + appeal + "/review", Map.of("X-Appeal-Token", "wrong"))
+            .status);
+    assertEquals(
+        200,
+        call(handler, "/api/appeals", "/" + appeal + "/review", Map.of("X-Appeal-Token", cap))
+            .status);
+    assertEquals(
+        409,
+        call(handler, "/api/appeals", "/" + appeal + "/review", Map.of("X-Appeal-Token", cap))
+            .status);
+    assertEquals(
+        "REJECTED", plugin.getDatabaseManager().getAppealById(appeal).orElseThrow().status());
+  }
+
   static class Response {
     int status = 200;
     StringWriter body = new StringWriter();

@@ -42,7 +42,7 @@ class PreviewHandlerTest {
     try (var input = getClass().getResourceAsStream("/web/js/features/moderation.js")) {
       assertNotNull(input);
       String js = new String(input.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
-      assertTrue(js.contains("/api/reports/${id}/accept"));
+      assertTrue(js.contains("/api/appeals/${appealId}/reply"));
       assertFalse(js.contains("me.lovelace:LoveWebAdmin:jar:"));
     }
   }

@@ -34,7 +34,6 @@ public class LoveCoreDiscordBridge implements Listener {
   private final me.lovelace.loveWebAdmin.concurrent.VirtualIoExecutor io;
   private final me.lovelace.loveWebAdmin.concurrent.MainDispatcher main;
   private final DiscordNotificationPolicy notificationPolicy;
-  private long lastEscalationScan;
 
   private boolean initialized = false;
   private dev.lovelace.lovecore.api.discord.TicketMessageListener ticketListener;
@@ -294,6 +293,10 @@ public class LoveCoreDiscordBridge implements Listener {
                         continue;
                       }
                       String event = payload.get("event").toString();
+                      if (event.startsWith("escalate-report:")) {
+                        store.skipDelivery(id, "Заменено на настроенные сроки ожидания");
+                        continue;
+                      }
                       if (event.startsWith("report:") || event.startsWith("escalate-report:")) {
                         int reportId = Integer.parseInt(event.substring(event.indexOf(':') + 1));
                         boolean stale =
@@ -316,7 +319,23 @@ public class LoveCoreDiscordBridge implements Listener {
                       }
                     }
                     CompletableFuture<String> sent;
-                    if ("CASE_IMAGE".equals(payload.get("type"))) {
+                    if ("CASE_REMINDER".equals(payload.get("type"))) {
+                      if (!ticketDesk.reminderAllowed(payload, item.get("recipient").toString())) {
+                        store.skipDelivery(id, "Ожидание, доступ или настройки изменились");
+                        continue;
+                      }
+                      if (Boolean.TRUE.equals(payload.get("staff"))) {
+                        var next = notificationPolicy.nextDelivery(Instant.now());
+                        if (next.isAfter(Instant.now())) {
+                          store.deferDelivery(id, next.getEpochSecond());
+                          continue;
+                        }
+                      }
+                      sent =
+                          service.directMessage(
+                              item.get("recipient").toString(),
+                              JsonUtils.toJson(Map.of("content", payload.get("content"))));
+                    } else if ("CASE_IMAGE".equals(payload.get("type"))) {
                       String kind = payload.get("kind").toString();
                       int caseId = ((Number) payload.get("caseId")).intValue(),
                           imageId = ((Number) payload.get("evidenceId")).intValue();
@@ -499,7 +518,8 @@ public class LoveCoreDiscordBridge implements Listener {
                         "Не удалось обработать доставку");
                   }
                 }
-                escalateUnclaimed(service);
+                // Waiting/escalation now belongs to the durable case workflow, without legacy
+                // duplicates.
               } catch (java.sql.SQLException e) {
                 throw new IllegalStateException(e);
               }
@@ -1231,28 +1251,4 @@ public class LoveCoreDiscordBridge implements Listener {
     }
   }
 
-  private void escalateUnclaimed(DiscordService service) throws java.sql.SQLException {
-    long now = System.currentTimeMillis() / 1000;
-    if (notificationPolicy.escalationMinutes() == 0 || now - lastEscalationScan < 60) return;
-    lastEscalationScan = now;
-    for (var report : database.getAllReports("PENDING", null, 200, 0)) {
-      if (now - report.createdAt() < notificationPolicy.escalationMinutes() * 60L
-          || !store.work("report", report.id()).get("assignee").toString().isBlank()) continue;
-      dispatchAdminDirectMessages(
-          "discordNotifyReports",
-          "escalate-report:" + report.id(),
-          true,
-          new DiscordEmbed(
-              "Жалоба №" + report.id() + " ожидает сотрудника",
-              "Игрок: "
-                  + report.targetName()
-                  + ". Жалоба не назначена более "
-                  + notificationPolicy.escalationMinutes()
-                  + " мин. Откройте дело в панели.",
-              0xE74C3C,
-              List.of(),
-              "Модерация",
-              Instant.now()));
-    }
-  }
 }

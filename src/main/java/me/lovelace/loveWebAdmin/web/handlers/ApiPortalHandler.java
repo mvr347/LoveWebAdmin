@@ -111,6 +111,17 @@ public final class ApiPortalHandler extends ApiHandlerSupport {
         sendError(resp, 404, "Обращение не найдено");
         return;
       }
+      if (mutation && parts.length == 4 && parts[3].equals("review")) {
+        if (!limiter.take(discord)) {
+          sendError(resp, 429, "Слишком много дополнений");
+          return;
+        }
+        int review =
+            plugin.workflows().requestReview(kind, id, "discord:" + discord, readJsonBody(req));
+        sendSuccess(
+            resp, Map.of("id", review, "message", "Новые доказательства переданы на рассмотрение"));
+        return;
+      }
       if (!mutation) {
         if (parts.length == 5 && parts[3].equals("evidence")) {
           var image = plugin.moderation().evidenceBytes(kind, id, Integer.parseInt(parts[4]), true);
@@ -130,6 +141,8 @@ public final class ApiPortalHandler extends ApiHandlerSupport {
         sendSuccess(
             resp,
             Map.of(
+                "reviews",
+                plugin.workflows().publicReviews(kind, id),
                 "messages",
                 kind.equals("appeal")
                     ? plugin.getDatabaseManager().getAppealMessages(id)
@@ -178,7 +191,11 @@ public final class ApiPortalHandler extends ApiHandlerSupport {
         plugin.getDiscordBridge().sendReportConversation(id, report.reporterName(), text);
       }
       sendSuccess(resp, Map.of("message", "Ответ сохранён"));
-    } catch (java.sql.SQLException error) {
+    } catch (me.lovelace.loveWebAdmin.utils.ActionRejectedException error) {
+      throw error;
+    } catch (IllegalArgumentException error) {
+      sendError(resp, 400, error.getMessage());
+    } catch (Exception error) {
       throw new IllegalStateException(error);
     }
   }

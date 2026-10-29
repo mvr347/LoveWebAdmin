@@ -350,6 +350,31 @@ class DiscordTicketDeskTest {
     assertTrue(allowed.get("content").toString().contains("Проверьте обращение"));
   }
 
+  @Test
+  void botDecisionRequiresASeparateConfirmationAndShowsTheRealEffect() throws Exception {
+    int id = createReport();
+    click("20000", "80000", "lwa:desk:claim:report:" + id, Map.of());
+    var preview =
+        click(
+            "20000",
+            "200000",
+            "lwa:desk:submit:reject:report:" + id,
+            Map.of("reason", "Материалов для решения недостаточно"));
+    assertTrue(preview.get("content").toString().contains("Предпросмотр решения"));
+    assertEquals("PENDING", plugin.getDatabaseManager().getReportById(id).orElseThrow().status());
+    @SuppressWarnings("unchecked")
+    var rows = (List<Map<String, Object>>) preview.get("components");
+    @SuppressWarnings("unchecked")
+    var buttons = (List<Map<String, Object>>) rows.getFirst().get("components");
+    String confirm = buttons.getFirst().get("custom_id").toString();
+    var rejected = click("30000", "200000", confirm, Map.of());
+    assertTrue(rejected.get("content").toString().contains("другому"));
+    assertEquals("PENDING", plugin.getDatabaseManager().getReportById(id).orElseThrow().status());
+    var templates =
+        click("20000", "200000", "lwa:flow:templates:CLARIFY:report:" + id + ":0", Map.of());
+    assertTrue(templates.get("content").toString().contains("Выберите текст"));
+  }
+
   static class FakeDiscord {
     final AtomicInteger ids = new AtomicInteger(10000),
         deleted = new AtomicInteger(),

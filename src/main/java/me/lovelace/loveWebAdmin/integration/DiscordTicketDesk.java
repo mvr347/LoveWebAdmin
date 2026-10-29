@@ -28,10 +28,14 @@ public final class DiscordTicketDesk {
   private volatile boolean closed;
   private volatile DiscordService service;
   private DiscordActions actions;
+  private final DiscordCaseWorkflowActions caseWorkflowActions;
+  private final CaseReminderDelivery reminders;
 
   public DiscordTicketDesk(LoveWebAdmin plugin, TicketDeskStore store) {
     this.plugin = plugin;
     this.store = store;
+    this.caseWorkflowActions = new DiscordCaseWorkflowActions(plugin, this);
+    this.reminders = new CaseReminderDelivery(plugin, this);
     var config = plugin.getConfig();
     panelChannel = config.getString("discord.tickets.panel-channel-id", "").trim();
     queueChannel = config.getString("discord.tickets.queue-channel-id", "").trim();
@@ -98,6 +102,8 @@ public final class DiscordTicketDesk {
   public void refreshMessage(String slot) {
     try {
       store.refreshClosedQueue(slot);
+      if (slot.matches("review:[0-9]+"))
+        plugin.workflows().store().noticeDone(Integer.parseInt(slot.substring(7)), "");
     } catch (java.sql.SQLException error) {
       throw new IllegalStateException(error);
     }
@@ -107,6 +113,70 @@ public final class DiscordTicketDesk {
 
   public TicketDeskStore store() {
     return store;
+  }
+
+  DiscordActions workflowActions() {
+    return actions;
+  }
+
+  String queueChannel() {
+    return queueChannel;
+  }
+
+  String publicUrl() {
+    return publicUrl;
+  }
+
+  String workflowPublish(String slot, String channel, Map<String, Object> body) throws Exception {
+    return publish(slot, channel, body);
+  }
+
+  public boolean reminderAllowed(Map<String, Object> payload, String recipient) {
+    try {
+      return reminders.allowed(payload, recipient);
+    } catch (Exception error) {
+      throw new IllegalStateException(error);
+    }
+  }
+
+  boolean workflowChannel(String kind, int id, String channel) throws Exception {
+    return store
+        .get(kind, id)
+        .filter(t -> t.channel().equals(channel) && !channel.isBlank())
+        .isPresent();
+  }
+
+  WebAdmin workflowStaff(DiscordInteraction i, String kind, int id, boolean completed)
+      throws Exception {
+    if (!workflowChannel(kind, id, i.values().getOrDefault("_channelId", "")))
+      throw new IllegalArgumentException("Откройте соответствующее обращение");
+    var admin =
+        actions
+            .staffMember(i.userId(), permission(kind))
+            .orElseThrow(() -> new IllegalArgumentException("Нужны действующие права сотрудника"));
+    var ticket = store.get(kind, id).orElseThrow();
+    if (!completed && (!ticket.state().equals("OPEN") || !domainOpen(ticket)))
+      throw new IllegalArgumentException("Обращение уже закрыто");
+    if (!assignee(ticket).equals(admin.username()) && !supervisor(admin, i.userId()))
+      throw new IllegalArgumentException("Сначала возьмите обращение в работу");
+    conflict(ticket, admin.username());
+    return admin;
+  }
+
+  boolean reviewAuthor(String kind, int id, String user) throws Exception {
+    if (!Set.of("report", "appeal").contains(kind)) return false;
+    if (store.get(kind, id).map(t -> t.owner().equals(user)).orElse(false)) return true;
+    if (kind.equals("appeal") && plugin.moderation().owner(id).filter(user::equals).isPresent())
+      return true;
+    String uuid =
+        kind.equals("appeal")
+            ? plugin.getDatabaseManager().getAppealById(id).map(a -> a.playerUuid()).orElse("")
+            : plugin.getDatabaseManager().getReportById(id).map(r -> r.reporterUuid()).orElse("");
+    return service
+        .getLinkedPlayer(user)
+        .map(UUID::toString)
+        .filter(u -> u.equals(uuid))
+        .isPresent();
   }
 
   static Map<String, Object> button(String label, String id, int style) {
@@ -151,6 +221,13 @@ public final class DiscordTicketDesk {
         components,
         "allowed_mentions",
         Map.of("parse", List.of()));
+  }
+
+  static Map<String, Object> explainedBody(
+      String content, String explanation, List<Map<String, Object>> components) {
+    var response = new LinkedHashMap<String, Object>(body(content, components));
+    response.put("embeds", List.of(Map.of("description", explanation, "color", 0xD8A74B)));
+    return response;
   }
 
   private <T> T call(String method, Class<?>[] types, Object... args) throws Exception {
@@ -246,6 +323,8 @@ public final class DiscordTicketDesk {
                                 + ")");
                   }
                 }
+                reminders.scan();
+                reminders.reviews();
               } catch (Exception error) {
                 plugin.getLogger().warning("Панель обращений: " + error.getClass().getSimpleName());
               } finally {
@@ -281,7 +360,7 @@ public final class DiscordTicketDesk {
             .isPresent();
   }
 
-  private Optional<String> linked(String username) {
+  Optional<String> linked(String username) {
     return plugin
         .getDatabaseManager()
         .getPlayerStats(username)
@@ -337,7 +416,7 @@ public final class DiscordTicketDesk {
         .orElse(false);
   }
 
-  private boolean supervisor(WebAdmin admin, String discord) throws Exception {
+  boolean supervisor(WebAdmin admin, String discord) throws Exception {
     if (plugin.getDatabaseManager().getRoleById(admin.roleId()).map(r -> r.isOwner()).orElse(false))
       return true;
     Set<String> roles = call("getMemberRoleIds", new Class<?>[] {String.class}, discord);
@@ -420,6 +499,15 @@ public final class DiscordTicketDesk {
         ticket.kind().equals("appeal")
             ? plugin.getDatabaseManager().getAppealById(ticket.id()).orElseThrow().reason()
             : plugin.getDatabaseManager().getReportById(ticket.id()).orElseThrow().description();
+    var waiting = plugin.workflows().waiting(ticket.kind(), ticket.id());
+    String waitText =
+        waiting.get("mode").equals("NONE")
+            ? ""
+            : "\nОжидаем "
+                + (waiting.get("mode").equals("PLAYER") ? "игрока" : "сотрудника")
+                + (((Number) waiting.get("deadline")).longValue() > 0
+                    ? " · срок <t:" + waiting.get("deadline") + ":R>"
+                    : "");
     String card =
         publish(
             "case:" + ticket.kind() + ":" + ticket.id(),
@@ -437,6 +525,7 @@ public final class DiscordTicketDesk {
                     + (assigned.isBlank() ? "Не назначен" : assigned)
                     + "\nСостояние: "
                     + state
+                    + waitText
                     + "\n\n"
                     + description.substring(0, Math.min(description.length(), 900))
                     + "\n\nПереписка и вложения сохраняются. Закрытие канала не снимает наказание.",
@@ -492,7 +581,13 @@ public final class DiscordTicketDesk {
     if (ticket.kind().equals("appeal"))
       second.add(button("Сократить срок", "lwa:desk:form:reduce:" + key, 1));
     second.add(button("Закрыть / отозвать", "lwa:desk:form:close:" + key, 2));
-    return List.of(row(first), row(second));
+    return List.of(
+        row(first),
+        row(second),
+        row(
+            List.of(
+                button("Шаблоны уточнений", "lwa:flow:templates:CLARIFY:" + key + ":0", 2),
+                button("Шаблоны решений", "lwa:flow:templates:VERDICT:" + key + ":0", 2))));
   }
 
   public CompletableFuture<String> create(String kind, int id, String owner) {
@@ -576,6 +671,7 @@ public final class DiscordTicketDesk {
   }
 
   public boolean onInteraction(DiscordInteraction interaction) {
+    if (enabled() && caseWorkflowActions.onInteraction(interaction, service, actions)) return true;
     String name = interaction.name();
     if (!name.startsWith("lwa:desk:")
         && !Set.of("жалоба", "апелляция", "мои-обращения").contains(name)
@@ -843,6 +939,8 @@ public final class DiscordTicketDesk {
           "Сначала возьмите обращение; чужим делом управляет ответственный или руководство");
     conflict(ticket, admin.username());
     String reason = reason(i);
+    if (Set.of("approve", "reject", "reduce").contains(action))
+      return caseWorkflowActions.preview(i, kind, id, admin, action, reason);
     String fingerprint =
         me.lovelace.loveWebAdmin.web.MutationRequests.fingerprint(
             "DISCORD",
@@ -1225,13 +1323,19 @@ public final class DiscordTicketDesk {
                 event,
                 ticket.owner(),
                 JsonUtils.toJson(
-                    Map.of(
-                        "content",
+                    explainedBody(
                         "Обращение №"
                             + ticket.id()
-                            + " закрыто. "
-                            + ticket.reason()
-                            + "\nПереписка сохранена. Закрытие канала не меняет наказание.")));
+                            + " закрыто. Переписка сохранена. Закрытие канала не меняет наказание.",
+                        ticket.reason().isBlank() ? "Переписка завершена" : ticket.reason(),
+                        List.of(
+                            row(
+                                List.of(
+                                    button(
+                                        "Есть новые доказательства",
+                                        "lwa:flow:review:new:" + ticket.kind() + ":" + ticket.id(),
+                                        1)))))));
+
       if (!queueChannel.isBlank())
         publish(
             "queue:" + ticket.kind() + ":" + ticket.id(),
