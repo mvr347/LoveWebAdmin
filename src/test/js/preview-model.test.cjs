@@ -125,10 +125,11 @@ test("reports merge without accepting the original twice; clarification has its 
     2,
   );
 });
-test("shift and quiet hours affect staff notifications, not player ban notifications", () => {
+test("quiet hours delay staff notifications without requiring a shift", () => {
   const m = create();
   m.scenario("report");
   m.scenario("ban");
+  m.scenario("quiet");
   m.scenario("deliver");
   assert.equal(
     m.snapshot().deliveries.find((d) => d.type === "staff").state,
@@ -138,8 +139,6 @@ test("shift and quiet hours affect staff notifications, not player ban notificat
     m.snapshot().deliveries.find((d) => d.type === "player").state,
     "DELIVERED",
   );
-  call(m, "POST", "/api/me/shift", { onShift: true });
-  m.scenario("quiet");
   m.scenario("deliver");
   assert.equal(m.snapshot().deliveries[0].state, "PENDING");
   m.scenario("quiet");

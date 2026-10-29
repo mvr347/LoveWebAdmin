@@ -104,6 +104,28 @@ public class ApiBansHandler extends ApiHandlerSupport {
             return;
         }
 
+    if (pathInfo != null && pathInfo.matches("/[0-9]+/correct")) {
+      int id = Integer.parseInt(pathInfo.split("/")[1]);
+      var body = readJsonBody(req);
+      if (!(body.get("revision") instanceof Number revision)) {
+        sendError(resp, 400, "Обновите карточку перед изменением");
+        return;
+      }
+      var ban =
+          plugin
+              .getBanManager()
+              .correct(
+                  id,
+                  sessionOpt.get().adminUsername(),
+                  stringOrNull(body.get("ruleReason")),
+                  java.util.Objects.toString(body.get("description"), ""),
+                  ((Number) body.getOrDefault("remainingSeconds", -1)).longValue(),
+                  stringOrNull(body.get("explanation")),
+                  revision.longValue());
+      sendSuccess(resp, toBanMap(ban));
+      return;
+    }
+
         // Создание или оформление бана
         Map<String, Object> body = readJsonBody(req);
         int banId = 0;
@@ -130,8 +152,11 @@ public class ApiBansHandler extends ApiHandlerSupport {
         String description = stringOrNull(body.get("description"));
         boolean isIpBan = Boolean.TRUE.equals(body.get("isIpBan"));
 
-        // Все баны на сервере бессрочные (permanent)
-        long durationSeconds = -1;
+    long durationSeconds = body.get("durationSeconds") instanceof Number n ? n.longValue() : -1;
+    if (durationSeconds != -1 && (durationSeconds < 60 || durationSeconds > 315360000L)) {
+      sendError(resp, 400, "Срок: от минуты до 10 лет или -1 для бессрочного");
+      return;
+    }
 
         List<String> proofUrls = new ArrayList<>();
         if (body.get("proofUrls") instanceof List<?> list) {
@@ -440,6 +465,8 @@ public class ApiBansHandler extends ApiHandlerSupport {
         // Raw IP is available only through the dedicated player permission.
         map.put("creatorName", ban.creatorName());
         try {
+      map.put("revision", plugin.moderation().revision("ban", ban.id()));
+      map.put("history", plugin.moderation().banHistory(ban.id()));
             var source = plugin.moderation().source(ban.id());
             map.put("source",source);
             map.put("sourceDisplay", new me.lovelace.loveWebAdmin.models.BanOrigin(

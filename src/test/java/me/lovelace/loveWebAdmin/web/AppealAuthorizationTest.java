@@ -65,6 +65,39 @@ class AppealAuthorizationTest {
   }
 
   @Test
+  void authorCannotDownloadInternalEvidence() throws Exception {
+    byte[] image = {(byte) 137, 80, 78, 71, 13, 10, 26, 10};
+    int internal =
+        plugin
+            .moderation()
+            .addEvidence(
+                "appeal", appeal, "Staff", "IMAGE", "internal.png", "STAFF", "image/png", image);
+    assertEquals(
+        404,
+        get("/" + appeal + "/evidence/" + internal, Map.of(), Map.of("X-Appeal-Token", key))
+            .status);
+    assertFalse(
+        get("/" + appeal, Map.of(), Map.of("X-Appeal-Token", key))
+            .body
+            .toString()
+            .contains("internal.png"));
+  }
+
+  @Test
+  void imageRequiresCaseSpecificAuthorToken() throws Exception {
+    byte[] image = {(byte) 137, 80, 78, 71, 13, 10, 26, 10};
+    int shared =
+        plugin
+            .moderation()
+            .addEvidence(
+                "appeal", appeal, "Staff", "IMAGE", "shared.png", "AUTHOR", "image/png", image);
+    assertEquals(403, get("/" + appeal + "/evidence/" + shared, Map.of(), Map.of()).status);
+    assertEquals(
+        200,
+        get("/" + appeal + "/evidence/" + shared, Map.of(), Map.of("X-Appeal-Token", key)).status);
+  }
+
+  @Test
   void knownNicknameCannotReadConversation() throws Exception {
     var result = get("/" + appeal, Map.of("player", "Ada123"), Map.of());
     assertEquals(403, result.status);

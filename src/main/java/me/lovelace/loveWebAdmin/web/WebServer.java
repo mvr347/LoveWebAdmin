@@ -4,6 +4,7 @@ import jakarta.servlet.DispatcherType;
 import me.lovelace.loveWebAdmin.LoveWebAdmin;
 import me.lovelace.loveWebAdmin.web.handlers.ApiAdminsHandler;
 import me.lovelace.loveWebAdmin.web.handlers.ApiAuthHandler;
+import me.lovelace.loveWebAdmin.web.handlers.ApiPreviewHandler;
 import me.lovelace.loveWebAdmin.web.handlers.ApiCommandHandler;
 import me.lovelace.loveWebAdmin.web.handlers.ApiLogsHandler;
 import me.lovelace.loveWebAdmin.web.handlers.ApiRolesHandler;
@@ -131,6 +132,16 @@ public class WebServer {
             context.addServlet(notifHolder, "/api/notifications/*");
 
             context.addServlet(authHolder, "/api/staff/shifts");
+      context.addServlet(
+          new ServletHolder(new me.lovelace.loveWebAdmin.web.handlers.ApiPortalHandler(plugin)),
+          "/api/portal/*");
+      context.addServlet(
+          new ServletHolder(new me.lovelace.loveWebAdmin.web.handlers.ApiOperationsHandler(plugin)),
+          "/api/operations/*");
+      var previewApi = new ServletHolder(new ApiPreviewHandler(plugin));
+      context.addServlet(previewApi, "/api/preview-sessions");
+      context.addServlet(previewApi, "/api/preview-sessions/*");
+      context.addServlet(previewApi, "/preview/api/*");
 
             context.addServlet(new ServletHolder(new me.lovelace.loveWebAdmin.web.handlers.ApiCasesHandler(plugin)), "/api/cases/*");
             var preview=new ServletHolder(new me.lovelace.loveWebAdmin.web.handlers.PreviewHandler(plugin::isPreviewEnabled));

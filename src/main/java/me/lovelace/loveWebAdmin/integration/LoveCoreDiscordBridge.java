@@ -85,6 +85,19 @@ public class LoveCoreDiscordBridge implements Listener {
                                 registeredService = service;
                                 unregisterMethod = resolveUnregister(service);
                               }
+                              try {
+                                for (var ticket : store.tickets())
+                                  if (database
+                                      .getReportById(((Number) ticket.get("id")).intValue())
+                                      .filter(report -> report.status().equals("PENDING"))
+                                      .isPresent())
+                                    service.restoreTicket(
+                                        TicketType.REPORT,
+                                        "report:" + ticket.get("id"),
+                                        ticket.get("channel").toString());
+                              } catch (java.sql.SQLException error) {
+                                throw new IllegalStateException(error);
+                              }
                               for (var appeal : database.getAllAppeals("PENDING", 200, 0))
                                 if (appeal.discordChannelId() != null)
                                   service.restoreTicket(
@@ -237,8 +250,7 @@ public class LoveCoreDiscordBridge implements Listener {
                           || !linkedDiscord(admin.get(), service)
                               .filter(item.get("recipient").toString()::equals)
                               .isPresent()) {
-                        store.skipDelivery(
-                            id, "Смена завершена, привязка изменена или доступ отозван");
+                        store.skipDelivery(id, "Привязка изменена или доступ отозван");
                         continue;
                       }
                       var prefs =
@@ -273,7 +285,121 @@ public class LoveCoreDiscordBridge implements Listener {
                       }
                     }
                     CompletableFuture<String> sent;
-                    if ("APPEAL_TICKET".equals(payload.get("type"))) {
+                    if ("CASE_IMAGE".equals(payload.get("type"))) {
+                      String kind = payload.get("kind").toString();
+                      int caseId = ((Number) payload.get("caseId")).intValue(),
+                          imageId = ((Number) payload.get("evidenceId")).intValue();
+                      String destination =
+                          kind.equals("appeal")
+                              ? database
+                                  .getAppealById(caseId)
+                                  .map(WebBanAppeal::discordChannelId)
+                                  .orElse(null)
+                              : store
+                                  .ticket("report", caseId)
+                                  .map(t -> t.get("channel").toString())
+                                  .orElse(null);
+                      var metadata =
+                          store.evidence(kind, caseId, true).stream()
+                              .filter(e -> ((Number) e.get("id")).intValue() == imageId)
+                              .findFirst();
+                      var bytes = store.evidenceBytes(kind, caseId, imageId, true);
+                      if (metadata.isEmpty() || bytes.isEmpty()) {
+                        store.skipDelivery(
+                            id, "Изображение недоступно; проверьте доказательства в панели");
+                        continue;
+                      }
+                      if (destination == null || destination.isBlank()) {
+                        store.deferDelivery(id, System.currentTimeMillis() / 1000 + 60);
+                        continue;
+                      }
+                      sent =
+                          CoreDiscordExtensions.sendImage(
+                              service,
+                              destination,
+                              "Доказательство №" + imageId + " · " + metadata.get().get("author"),
+                              metadata.get().get("value").toString(),
+                              metadata.get().get("mime").toString(),
+                              bytes.get());
+                    } else if ("REPORT_FINISH".equals(payload.get("type"))) {
+                      int reportId = ((Number) payload.get("reportId")).intValue();
+                      var ticket = store.ticket("report", reportId);
+                      if (ticket.isEmpty() || ticket.get().get("channel").toString().isBlank())
+                        sent = CompletableFuture.completedFuture("closed");
+                      else
+                        sent =
+                            service
+                                .closeTicketChannel(
+                                    ticket.get().get("channel").toString(),
+                                    payload.get("text").toString())
+                                .thenCompose(
+                                    ok ->
+                                        io.supply(
+                                            () -> {
+                                              if (ok)
+                                                try {
+                                                  store.ticketChannel("report", reportId, "");
+                                                } catch (java.sql.SQLException error) {
+                                                  throw new IllegalStateException(error);
+                                                }
+                                              return ok ? "closed" : null;
+                                            }));
+                    } else if ("REPORT_TICKET".equals(payload.get("type"))) {
+                      int reportId = ((Number) payload.get("reportId")).intValue();
+                      var report = database.getReportById(reportId);
+                      var owner = store.ticket("report", reportId);
+                      if (report.isEmpty()
+                          || owner.isEmpty()
+                          || !report.get().status().equals("PENDING"))
+                        sent = CompletableFuture.completedFuture("closed");
+                      else if (!owner.get().get("channel").toString().isBlank())
+                        sent =
+                            CompletableFuture.completedFuture(
+                                owner.get().get("channel").toString());
+                      else
+                        sent =
+                            service
+                                .createTicketChannel(
+                                    TicketType.REPORT,
+                                    "report:" + reportId,
+                                    report.get().reporterName(),
+                                    report.get().description(),
+                                    owner.get().get("discordId").toString())
+                                .thenCompose(
+                                    channel ->
+                                        io.supply(
+                                            () -> {
+                                              if (channel != null && !closed)
+                                                try {
+                                                  store.ticketChannel("report", reportId, channel);
+                                                } catch (java.sql.SQLException error) {
+                                                  throw new IllegalStateException(error);
+                                                }
+                                              return channel;
+                                            }));
+                    } else if ("REPORT_MESSAGE".equals(payload.get("type"))) {
+                      int reportId = ((Number) payload.get("reportId")).intValue();
+                      var ticket = store.ticket("report", reportId);
+                      if (ticket.isEmpty() || ticket.get().get("channel").toString().isBlank()) {
+                        store.skipDelivery(
+                            id, "Приватный тикет жалобы недоступен; ответ сохранён в панели");
+                        continue;
+                      }
+                      sent =
+                          service.sendMessage(
+                              ticket.get().get("channel").toString(),
+                              JsonUtils.toJson(
+                                  Map.of(
+                                      "content",
+                                      payload.get("text"),
+                                      "nonce",
+                                      payload.get("nonce"),
+                                      "enforce_nonce",
+                                      true,
+                                      "allowed_mentions",
+                                      Map.of("parse", List.of()))),
+                              null);
+                    } else if ("APPEAL_TICKET".equals(payload.get("type"))) {
                       int appealId = ((Number) payload.get("appealId")).intValue();
                       var appeal = database.getAppealById(appealId);
                       if (appeal.isEmpty() || !"PENDING".equals(appeal.get().status()))
@@ -323,6 +449,12 @@ public class LoveCoreDiscordBridge implements Listener {
                                     io.run(
                                         () -> {
                                           try {
+                                            if (error != null || message == null) {
+                                              store.uncertainDelivery(
+                                                  id,
+                                                  "Discord не подтвердил результат. Сверьте канал или личные сообщения перед повтором");
+                                              return;
+                                            }
                                             store.delivered(
                                                 id,
                                                 error == null && message != null,
@@ -353,9 +485,110 @@ public class LoveCoreDiscordBridge implements Listener {
         .whenComplete((v, e) -> delivering.set(false));
   }
 
+  public void notifyCaseEvidence(String kind, int caseId, int evidenceId) {
+    try {
+      var evidence =
+          store.evidence(kind, caseId, true).stream()
+              .filter(e -> ((Number) e.get("id")).intValue() == evidenceId)
+              .findFirst();
+      if (evidence.isEmpty()) return;
+      if (kind.equals("report") && store.ticket("report", caseId).isEmpty()) {
+        var report = database.getReportById(caseId);
+        if (report.isPresent()) {
+          var owner =
+              discord()
+                  .flatMap(
+                      service ->
+                          service.getLinkedDiscordId(
+                              java.util.UUID.fromString(report.get().reporterUuid())));
+          if (owner.isPresent()) {
+            store.ticketOwner("report", caseId, owner.get());
+            createReportTicket(report.get());
+          }
+        }
+      }
+      if (evidence.get().get("type").equals("IMAGE"))
+        store.enqueue(
+            "case-image:" + kind + ":" + evidenceId,
+            kind.equals("appeal") ? "ticket:" + caseId : "report-ticket:" + caseId,
+            JsonUtils.toJson(
+                Map.of(
+                    "type",
+                    "CASE_IMAGE",
+                    "kind",
+                    kind,
+                    "caseId",
+                    caseId,
+                    "evidenceId",
+                    evidenceId)));
+      else {
+        String text =
+            "Доказательство · " + evidence.get().get("author") + ": " + evidence.get().get("value");
+        if (kind.equals("appeal"))
+          database
+              .getAppealById(caseId)
+              .ifPresent(
+                  appeal ->
+                      sendTicketReply(
+                          appeal,
+                          evidence.get().get("author").toString(),
+                          true,
+                          text,
+                          "evidence:" + evidenceId));
+        else sendReportConversation(caseId, evidence.get().get("author").toString(), text);
+      }
+    } catch (java.sql.SQLException error) {
+      throw new IllegalStateException(
+          "Доказательство сохранено, но доставка требует проверки", error);
+    }
+  }
+
+  public void createReportTicket(PlayerReport report) {
+    try {
+      store.enqueue(
+          "report-ticket:" + report.id(),
+          "report-ticket:" + report.id(),
+          JsonUtils.toJson(Map.of("type", "REPORT_TICKET", "reportId", report.id())));
+    } catch (java.sql.SQLException error) {
+      throw new IllegalStateException(error);
+    }
+  }
+
+  public void sendReportConversation(int id, String actor, String text) {
+    try {
+      if (store.ticket("report", id).isEmpty()) return;
+      String key = "report-reply:" + id + ":" + java.util.UUID.randomUUID();
+      int index = 0;
+      for (String part : conversationParts(actor + ": " + text)) {
+        String event = key + ":" + index++;
+        store.enqueue(
+            event,
+            "report-ticket:" + id,
+            JsonUtils.toJson(
+                Map.of(
+                    "type",
+                    "REPORT_MESSAGE",
+                    "reportId",
+                    id,
+                    "text",
+                    part,
+                    "nonce",
+                    me.lovelace
+                        .loveWebAdmin
+                        .database
+                        .ModerationStore
+                        .hash(event)
+                        .substring(0, 24))));
+      }
+    } catch (java.sql.SQLException error) {
+      throw new IllegalStateException(error);
+    }
+  }
+
   /** Only the reporter's verified Core link is used; the text never contains staff notes. */
   public void requestReportClarification(
       PlayerReport report, int messageId, String actor, String text) {
+    sendReportConversation(report.id(), actor, text);
     var service = discord();
     var recipient =
         service.flatMap(
@@ -449,7 +682,33 @@ public class LoveCoreDiscordBridge implements Listener {
   public void onReportResolved(
       me.lovelace.loveWebAdmin.api.events.PlayerReportResolvedEvent event) {
     // Refresh from persisted state rather than trusting a client-provided status.
-    database.getReportById(event.getReportId()).ifPresent(this::notifyReportCreated);
+    database
+        .getReportById(event.getReportId())
+        .ifPresent(
+            report -> {
+              notifyReportCreated(report);
+              try {
+                if (store.ticket("report", report.id()).isPresent())
+                  store.enqueue(
+                      "report-finish:" + report.id(),
+                      "report-ticket:" + report.id(),
+                      JsonUtils.toJson(
+                          Map.of(
+                              "type",
+                              "REPORT_FINISH",
+                              "reportId",
+                              report.id(),
+                              "text",
+                              "Жалоба №"
+                                  + report.id()
+                                  + ": "
+                                  + report.status()
+                                  + ". Сотрудник: "
+                                  + java.util.Objects.toString(report.resolvedBy(), "Система"))));
+              } catch (java.sql.SQLException error) {
+                throw new IllegalStateException(error);
+              }
+            });
   }
 
   public void notifyReportCreated(PlayerReport report) {
@@ -865,9 +1124,7 @@ public class LoveCoreDiscordBridge implements Listener {
     if (escalation
         && !role.get().isOwner()
         && !notificationPolicy.escalationRoles().contains(role.get().name())) return false;
-    return !notificationPolicy.onlyOnShift()
-        || database.getStaffOnShift().stream()
-            .anyMatch(a -> ((Number) a.get("id")).intValue() == admin.id());
+    return true;
   }
 
   private void dispatchAdminDirectMessages(

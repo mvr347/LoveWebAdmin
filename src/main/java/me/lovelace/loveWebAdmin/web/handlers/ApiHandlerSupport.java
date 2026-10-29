@@ -25,16 +25,76 @@ public abstract class ApiHandlerSupport extends HttpServlet {
         this.plugin = plugin;
     }
 
-    /**
-     * Ловит некорректный ввод (битый JSON тела запроса через {@link JsonUtils#parseObject},
-     * нечисловые path-параметры вроде id и т.п.), который иначе всплывал бы как
-     * необработанное исключение до контейнера — тот отдаёт свою страницу ошибки по умолчанию
-     * (potentially раскрывая stacktrace) вместо аккуратного JSON 400/500 и не логировался бы
-     * через plugin.getLogger(). Не меняет поведение при корректных запросах — проверки прав/сессии
-     * внутри doGet/doPost/... выполняются как раньше, до разбора тела.
-     */
-    @Override
-    protected void service(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+  /**
+   * Ловит некорректный ввод (битый JSON тела запроса через {@link JsonUtils#parseObject},
+   * нечисловые path-параметры вроде id и т.п.), который иначе всплывал бы как необработанное
+   * исключение до контейнера — тот отдаёт свою страницу ошибки по умолчанию (potentially раскрывая
+   * stacktrace) вместо аккуратного JSON 400/500 и не логировался бы через plugin.getLogger(). Не
+   * меняет поведение при корректных запросах — проверки прав/сессии внутри doGet/doPost/...
+   * выполняются как раньше, до разбора тела.
+   */
+  @Override
+  protected void service(HttpServletRequest req, HttpServletResponse resp)
+      throws ServletException, IOException {
+    boolean mutation = java.util.Set.of("POST", "PUT", "PATCH", "DELETE").contains(req.getMethod());
+    String path = req.getRequestURI();
+    if (mutation && path.matches("/api/appeals/[0-9]+/reply") && plugin.operations() != null) {
+      String author = req.getHeader("X-Appeal-Token");
+      int id = Integer.parseInt(path.split("/")[3]);
+      var staff = authenticate(req);
+      boolean manager = staff.isPresent() && hasPermission(staff.get(), Permission.MANAGE_APPEALS);
+      try {
+        if (!manager && plugin.moderation().author(id, author)) {
+          me.lovelace.loveWebAdmin.web.MutationRequests.execute(
+              plugin.operations(),
+              "appeal-author:" + me.lovelace.loveWebAdmin.database.ModerationStore.hash(author),
+              req,
+              resp,
+              permission -> false,
+              this::invokeSafely);
+          return;
+        }
+      } catch (java.sql.SQLException error) {
+        throw new ServletException(error);
+      }
+    }
+    if (mutation
+        && !path.equals("/api/appeals")
+        && !path.equals("/api/appeals/")
+        && !path.startsWith("/api/auth")
+        && plugin.operations() != null) {
+      var session = authenticate(req);
+      if (session.isPresent()) {
+        var current = plugin.getDatabaseManager().getAdminById(session.get().adminId());
+        if (session.get().adminId() > 0
+            && (current.isEmpty() || !"ACTIVE".equals(current.get().status()))) {
+          sendError(resp, 403, "Аккаунт сотрудника недоступен");
+          return;
+        }
+        me.lovelace.loveWebAdmin.web.MutationRequests.execute(
+            plugin.operations(),
+            operationActor(session.get()),
+            req,
+            resp,
+            permission ->
+                java.util.Arrays.stream(permission.split(","))
+                    .allMatch(
+                        value ->
+                            value.isBlank()
+                                || hasPermission(session.get(), Permission.valueOf(value))),
+            this::invokeSafely);
+        return;
+      }
+    }
+    invokeSafely(req, resp);
+  }
+
+  protected String operationActor(WebSession session) {
+    return session.adminId() == -999 ? "key:" + session.token() : "staff:" + session.adminId();
+  }
+
+  private void invokeSafely(HttpServletRequest req, HttpServletResponse resp)
+      throws ServletException, IOException {
         try {
             super.service(req, resp);
         } catch (PayloadTooLargeException e) {
@@ -142,6 +202,10 @@ public abstract class ApiHandlerSupport extends HttpServlet {
             sendError(resp, 403, "Недостаточно прав");
             return Optional.empty();
         }
+    String previous = (String) req.getAttribute("lwa.permission");
+    req.setAttribute(
+        "lwa.permission",
+        previous == null ? permission.name() : previous + "," + permission.name());
         return sessionOpt;
     }
 

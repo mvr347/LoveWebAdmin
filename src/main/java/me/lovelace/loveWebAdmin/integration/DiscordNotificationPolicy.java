@@ -22,7 +22,7 @@ public record DiscordNotificationPolicy(
   public static DiscordNotificationPolicy from(ConfigurationSection config) {
     String p = "discord.notifications.";
     return new DiscordNotificationPolicy(
-        config.getBoolean(p + "only-on-shift", true),
+        false,
         config.getBoolean(p + "quiet-hours.enabled", false),
         config.getInt(p + "quiet-hours.start-hour", 23),
         config.getInt(p + "quiet-hours.end-hour", 8),

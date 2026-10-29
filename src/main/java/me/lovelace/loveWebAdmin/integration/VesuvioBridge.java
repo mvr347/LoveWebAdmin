@@ -1,7 +1,6 @@
 package me.lovelace.loveWebAdmin.integration;
 
 import org.bukkit.Bukkit;
-import org.bukkit.plugin.ServicesManager;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -13,25 +12,60 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Reflection-only bridge to Vesuvio's public API (net.lovelace.vesuvio.api.VesuvioAPI),
- * discovered at runtime through Bukkit's ServicesManager.
+ * Reflection-only bridge to Vesuvio's public API (net.lovelace.vesuvio.api.VesuvioAPI), discovered
+ * at runtime through Bukkit's ServicesManager.
  *
- * LoveWebAdmin deliberately does NOT take a compile-time dependency on Vesuvio: the two
- * plugins are built from separate repositories with no shared Maven repository between them,
- * so a compile dependency would either break CI (unresolvable artifact) or require publishing
- * infrastructure this ecosystem doesn't have. Reflection keeps the integration truly optional -
- * if Vesuvio isn't installed (or is an incompatible version missing a method), every call here
- * fails soft with {@link VesuvioUnavailableException} instead of a NoClassDefFoundError at
- * plugin load time.
+ * <p>LoveWebAdmin deliberately does NOT take a compile-time dependency on Vesuvio: the two plugins
+ * are built from separate repositories with no shared Maven repository between them, so a compile
+ * dependency would either break CI (unresolvable artifact) or require publishing infrastructure
+ * this ecosystem doesn't have. Reflection keeps the integration truly optional - if Vesuvio isn't
+ * installed (or is an incompatible version missing a method), every call here fails soft with
+ * {@link VesuvioUnavailableException} instead of a NoClassDefFoundError at plugin load time.
  *
- * Vesuvio's API returns Java records (see Vesuvio's WebPanelModels). {@link #call} converts
- * whatever comes back into plain Map/List/String/Number/Boolean structures via
- * {@link #toJsonSafe}, ready to hand straight to JsonUtils - callers never need to know the
- * concrete record types.
+ * <p>Vesuvio's API returns Java records (see Vesuvio's WebPanelModels). {@link #call} converts
+ * whatever comes back into plain Map/List/String/Number/Boolean structures via {@link #toJsonSafe},
+ * ready to hand straight to JsonUtils - callers never need to know the concrete record types.
  *
- * Author: Lovelace
+ * <p>Author: Lovelace
  */
-public final class VesuvioBridge {
+public final class VesuvioBridge implements org.bukkit.event.Listener, AutoCloseable {
+  private record Binding(Object provider, Class<?> type) {}
+
+  private volatile Binding binding;
+
+  public VesuvioBridge() {}
+
+  public VesuvioBridge(org.bukkit.plugin.Plugin plugin) {
+    bind();
+    Bukkit.getPluginManager().registerEvents(this, plugin);
+  }
+
+  private void bind() {
+    Binding next = null;
+    for (Class<?> type : Bukkit.getServicesManager().getKnownServices()) {
+      if (!type.getName().equals(API_CLASS_NAME)) continue;
+      var registration = Bukkit.getServicesManager().getRegistration(type);
+      if (registration != null && registration.getPlugin().isEnabled())
+        next = new Binding(registration.getProvider(), type);
+    }
+    binding = next;
+  }
+
+  @org.bukkit.event.EventHandler
+  public void registered(org.bukkit.event.server.ServiceRegisterEvent event) {
+    if (event.getProvider().getService().getName().equals(API_CLASS_NAME)) bind();
+  }
+
+  @org.bukkit.event.EventHandler
+  public void unregistered(org.bukkit.event.server.ServiceUnregisterEvent event) {
+    if (event.getProvider().getService().getName().equals(API_CLASS_NAME)) bind();
+  }
+
+  @Override
+  public void close() {
+    org.bukkit.event.HandlerList.unregisterAll(this);
+    binding = null;
+  }
 
     private static final String API_CLASS_NAME = "net.lovelace.vesuvio.api.VesuvioAPI";
 
@@ -50,14 +84,8 @@ public final class VesuvioBridge {
     }
 
     private Object findApiInstance() {
-        ServicesManager sm = Bukkit.getServicesManager();
-        for (Class<?> svc : sm.getKnownServices()) {
-            if (svc.getName().equals(API_CLASS_NAME)) {
-                var reg = sm.getRegistration(svc);
-                return (reg != null) ? reg.getProvider() : null;
-            }
-        }
-        return null;
+    var current = binding;
+    return current == null ? null : current.provider();
     }
 
     /**
@@ -69,18 +97,33 @@ public final class VesuvioBridge {
     }
 
     public Object call(String method, Class<?>[] paramTypes, Object... args) {
-        Object api = findApiInstance();
-        if (api == null) {
+    var current = binding;
+    if (current == null) {
             throw new VesuvioUnavailableException("Vesuvio не установлен или ещё не загружен на сервере");
         }
         try {
-            Method m = api.getClass().getMethod(method, paramTypes);
-            Object result = m.invoke(api, args);
+      Method m = current.type().getMethod(method, paramTypes);
+      Object result = m.invoke(current.provider(), args);
+      if (result instanceof java.util.concurrent.CompletionStage<?> future) {
+        try {
+          result = future.toCompletableFuture().get(20, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (InterruptedException interrupted) {
+          Thread.currentThread().interrupt();
+          throw new VesuvioUnavailableException("Запрос прерван", interrupted);
+        } catch (java.util.concurrent.ExecutionException
+            | java.util.concurrent.TimeoutException error) {
+          throw new VesuvioUnavailableException(
+              "Операция Vesuvio не завершена: " + error.getClass().getSimpleName(), error);
+        }
+      }
             return toJsonSafe(result);
         } catch (NoSuchMethodException e) {
             throw new VesuvioUnavailableException(
                     "Установленная версия Vesuvio несовместима (нет метода " + method + ")", e);
         } catch (InvocationTargetException e) {
+      if (e.getCause() instanceof UnsupportedOperationException)
+        throw new VesuvioUnavailableException(
+            "Обновите Vesuvio: установленная версия не поддерживает это действие", e.getCause());
             throw new RuntimeException("Ошибка вызова Vesuvio API (" + method + "): " + e.getCause(), e.getCause());
         } catch (IllegalAccessException e) {
             throw new RuntimeException(e);

@@ -16,7 +16,7 @@ http
       return;
     }
     const name = url.pathname.slice("/preview/".length) || "index.html";
-    if (!/^[a-z0-9.-]+$/.test(name)) {
+    if ((!/^[a-z0-9.-]+$/.test(name) && !/^js\/[a-zA-Z0-9_/-]+\.js$/.test(name)) || name.includes("..")) {
       res.writeHead(404);
       res.end();
       return;
@@ -33,7 +33,7 @@ http
       return;
     }
     let text = fs.readFileSync(path.join(root, file), "utf8");
-    if (name === "app.js")
+    if (name.endsWith(".js"))
       text = text.replaceAll(
         /https:\/\/mc-heads\.net\/(avatar|body|head|player)\//g,
         "/preview/avatar.svg?name=",
@@ -61,7 +61,7 @@ http
     );
     res.setHeader(
       "Content-Security-Policy",
-      "default-src 'self'; connect-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; frame-src 'none'; form-action 'none'; base-uri 'none'; worker-src 'none'",
+      "default-src 'self'; connect-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; frame-src 'none'; form-action 'none'; base-uri 'none'; worker-src 'none'",
     );
     res.end(text);
   })

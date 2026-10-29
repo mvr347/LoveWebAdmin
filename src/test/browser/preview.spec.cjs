@@ -68,6 +68,10 @@ test("real screens use synthetic state and leave production storage and network 
   );
   page.once("dialog", (d) => d.accept());
   await page.locator("#preview-reset").click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Подтвердить", exact: true })
+    .click();
   await expect(page.locator("#app")).toContainText("PreviewOwner");
   expect(
     await page.evaluate(() => LovePreview.model.snapshot().bans.length),
@@ -96,14 +100,13 @@ test("preview login uses the existing password and 2FA screens", async ({
   await page.locator("#form-2fa button[type=submit]").click();
   await expect(page.locator("#app")).toContainText("PreviewOwner");
 });
-test("navigation, ban form, and shift toggle work through the normal interface", async ({
+test("navigation and ban form work; removed shifts are not exposed", async ({
   page,
 }) => {
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/preview/");
-  await page.locator("#topbar-shift-btn").click();
-  await expect(page.locator("#shift-btn-text")).toContainText("НА СМЕНЕ");
+  await expect(page.locator("#topbar-shift-btn")).toHaveCount(0);
   await page.evaluate(() => window.openQuickBanModal("Ada123"));
   await page.locator("#ban-reason-select").selectOption({ label: "Читы" });
   await page.locator("#ban-submit-btn").click();
@@ -132,4 +135,86 @@ test("navigation, ban form, and shift toggle work through the normal interface",
     path: "test-results/preview-dashboard.png",
     fullPage: true,
   });
+});
+test("case evidence, ban correction and player portal share the workspace on mobile", async ({
+  page,
+}) => {
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/preview/");
+  const ids = await page.evaluate(() => {
+    LovePreview.model.scenario("ban");
+    LovePreview.model.scenario("report");
+    LovePreview.model.scenario("appeal");
+    const s = LovePreview.model.snapshot();
+    return { ban: s.bans[0].id, report: s.reports[0].id };
+  });
+  await page.goto("/preview/case.html?kind=report&id=" + ids.report);
+  await expect(page.locator("#summary")).toContainText("Ada123");
+  await page
+    .locator("#evidence-value")
+    .fill("Внутренний контекст для проверки");
+  await page
+    .getByRole("button", { name: "Добавить доказательство", exact: true })
+    .click();
+  await expect(page.locator("#evidence-list")).toContainText(
+    "Внутренний контекст",
+  );
+  await page.goto("/preview/ban.html?id=" + ids.ban);
+  await expect(page.locator("#heading")).toContainText("Ada123");
+  await page.locator("#reason").fill("Исправленная тестовая причина");
+  await page
+    .locator("#explanation")
+    .fill("Проверили контекст и исправили причину");
+  await page.locator("#correction button").click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Подтвердить", exact: true })
+    .click();
+  await expect(page.locator("#history")).toContainText("Проверили контекст");
+  const code = await page.evaluate(
+    () => LovePreview.model.scenario("portal").code,
+  );
+  await page.goto("/preview/portal.html#" + code);
+  await expect(page.locator("#cases")).toContainText("Апелляция");
+  await page.locator("#cases button").first().click();
+  await expect(page.locator("#conversation")).toBeVisible();
+  await page.locator("#reply-form button").scrollIntoViewIfNeeded();
+  await expect(page.locator("#reply-form button")).toBeInViewport();
+  await expect(page.locator("#conversation")).not.toContainText(
+    "Внутренний контекст",
+  );
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth + 1,
+    ),
+  ).toBe(true);
+  expect(errors).toEqual([]);
+  await page.screenshot({
+    path: "test-results/preview-mobile-portal.png",
+    fullPage: true,
+  });
+});
+test("late dashboard responses cannot replace a newer section", async ({
+  page,
+}) => {
+  await page.goto("/preview/");
+  await expect(page.locator("#app")).toContainText("PreviewOwner");
+  await page.evaluate(() => {
+    const transport = window.fetch;
+    window.fetch = async (input, options) => {
+      if (String(input).includes("/api/stats"))
+        await new Promise((resolve) => setTimeout(resolve, 400));
+      return transport(input, options);
+    };
+  });
+  await page.locator('[data-nav="dashboard"]').click();
+  await page.locator('[data-nav="staff"]').click();
+  await expect(page.locator("#topbar-page-title")).toContainText("Персонал");
+  await page.waitForTimeout(650);
+  await expect(page.locator("#content-area")).not.toContainText(
+    "Открыт другой раздел",
+  );
+  await expect(page.locator("#content-area")).toContainText("ПЕРСОНАЛ");
 });

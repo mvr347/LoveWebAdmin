@@ -42,6 +42,18 @@ public class LoveWebAdmin extends JavaPlugin {
     return io;
   }
 
+  private me.lovelace.loveWebAdmin.preview.PreviewService preview;
+
+  public me.lovelace.loveWebAdmin.preview.PreviewService preview() {
+    return preview;
+  }
+
+  private me.lovelace.loveWebAdmin.database.OperationStore operations;
+
+  public me.lovelace.loveWebAdmin.database.OperationStore operations() {
+    return operations;
+  }
+
   private me.lovelace.loveWebAdmin.database.ModerationStore moderation;
 
   public me.lovelace.loveWebAdmin.database.ModerationStore moderation() {
@@ -103,6 +115,7 @@ public class LoveWebAdmin extends JavaPlugin {
   private me.lovelace.loveWebAdmin.managers.NotificationManager notificationManager;
   private me.lovelace.loveWebAdmin.api.LoveWebAdminAPIImpl loveWebAdminApi;
   private volatile boolean maintenanceMode = false;
+  private volatile boolean previewEnabled;
   private volatile String maintenanceMessage =
       "Ведутся плановые технические работы. Панель временно доступна только руководству.";
   private long startTimeMillis;
@@ -136,6 +149,7 @@ public class LoveWebAdmin extends JavaPlugin {
 
     startTimeMillis = System.currentTimeMillis();
     saveDefaultConfig();
+    previewEnabled = getConfig().getBoolean("preview.enabled", false);
     if(getConfig().contains("debug-mode")||getConfig().contains("security.debug-mode")) {
       getConfig().set("debug-mode",null);getConfig().set("security.debug-mode",null);saveConfig();
     }
@@ -144,6 +158,9 @@ public class LoveWebAdmin extends JavaPlugin {
     this.databaseManager = new DatabaseManager(this);
     this.databaseManager.initialize();
     try {
+      this.operations =
+          new me.lovelace.loveWebAdmin.database.OperationStore(
+              getDataFolder().toPath().resolve("operations.db"));
       this.moderation =
           new me.lovelace.loveWebAdmin.database.ModerationStore(
               getDataFolder().toPath().resolve("moderation.db"));
@@ -197,10 +214,15 @@ public class LoveWebAdmin extends JavaPlugin {
     this.banArchiveManager.start();
 
     // Reflection-only bridges to external plugins (Vesuvio & LoveEconomy & LoveCore)
-    this.vesuvioBridge = new VesuvioBridge();
+    this.vesuvioBridge = new VesuvioBridge(this);
     this.loveEconomyBridge = new me.lovelace.loveWebAdmin.integration.LoveEconomyBridge(this);
     this.discordBridge = new me.lovelace.loveWebAdmin.integration.LoveCoreDiscordBridge(this);
     this.discordBridge.initialize();
+    try {
+      this.preview = new me.lovelace.loveWebAdmin.preview.PreviewService(this);
+    } catch (Exception error) {
+      throw new IllegalStateException("Не удалось открыть Preview", error);
+    }
 
     this.playerProfileManager = new PlayerProfileManager(this);
 
@@ -327,7 +349,9 @@ public class LoveWebAdmin extends JavaPlugin {
   @Override
   public void onDisable() {
     if (main != null) main.close();
+    if (preview != null) safely("Preview admission", preview::stop);
     onlineIds.clear();
+    if (vesuvioBridge != null) safely("Vesuvio", vesuvioBridge::close);
     if (discordBridge != null) safely("Discord", discordBridge::close);
     if (webServer != null) safely("HTTP", webServer::stop);
     if (banArchiveManager != null) safely("архив", banArchiveManager::stop);
@@ -342,6 +366,7 @@ public class LoveWebAdmin extends JavaPlugin {
     safely("Bukkit scheduler", () -> getServer().getScheduler().cancelTasks(this));
     safely("Async scheduler", () -> getServer().getAsyncScheduler().cancelTasks(this));
     if (io != null) io.stop(java.time.Duration.ofSeconds(3));
+    if (preview != null) safely("Preview stores", preview::close);
     if (moderation != null)
       safely(
           "дела",
@@ -350,6 +375,16 @@ public class LoveWebAdmin extends JavaPlugin {
               moderation.close();
             } catch (java.sql.SQLException e) {
               throw new IllegalStateException(e);
+            }
+          });
+    if (operations != null)
+      safely(
+          "операции",
+          () -> {
+            try {
+              operations.close();
+            } catch (java.sql.SQLException error) {
+              throw new IllegalStateException(error);
             }
           });
     if (databaseManager != null) safely("SQLite", databaseManager::close);
@@ -362,7 +397,21 @@ public class LoveWebAdmin extends JavaPlugin {
   /** Retained for binary compatibility; authentication bypass has been removed. */
   @Deprecated public boolean isDebugMode() {return false;}
 
-  public boolean isPreviewEnabled() {return getConfig().getBoolean("preview.enabled",false);}
+  public boolean isPreviewEnabled() {
+    return previewEnabled;
+  }
+
+  @Override
+  public void reloadConfig() {
+    super.reloadConfig();
+    previewEnabled = getConfig().getBoolean("preview.enabled", false);
+  }
+
+  @Override
+  public void saveConfig() {
+    super.saveConfig();
+    previewEnabled = getConfig().getBoolean("preview.enabled", false);
+  }
 
   public DatabaseManager getDatabaseManager() {
     return databaseManager;
@@ -414,7 +463,7 @@ public class LoveWebAdmin extends JavaPlugin {
 
   public VesuvioBridge getVesuvioBridge() {
     if (vesuvioBridge == null) {
-      vesuvioBridge = new VesuvioBridge();
+      vesuvioBridge = new VesuvioBridge(this);
     }
     return vesuvioBridge;
   }

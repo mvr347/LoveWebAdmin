@@ -8,7 +8,6 @@ import me.lovelace.loveWebAdmin.models.Permission;
 import me.lovelace.loveWebAdmin.models.WebSession;
 import me.lovelace.loveWebAdmin.utils.JsonUtils;
 import org.bukkit.Bukkit;
-import org.bukkit.OfflinePlayer;
 
 import java.io.IOException;
 import java.util.List;
@@ -62,7 +61,7 @@ public class ApiVesuvioHandler extends ApiHandlerSupport {
         }
 
         if ("/punishments".equals(pathInfo)) {
-            int limit = parseIntOrDefault(req.getParameter("limit"), 100);
+      int limit = Math.clamp(parseIntOrDefault(req.getParameter("limit"), 100), 1, 200);
             handleBasic(req, resp, () -> {
                 Object result = bridge.call("getRecentPunishments", new Class<?>[]{int.class}, limit);
                 if (filterLower != null && result instanceof List<?> list) {
@@ -74,7 +73,7 @@ public class ApiVesuvioHandler extends ApiHandlerSupport {
         }
 
         if ("/violations".equals(pathInfo)) {
-            int limit = parseIntOrDefault(req.getParameter("limit"), 200);
+      int limit = Math.clamp(parseIntOrDefault(req.getParameter("limit"), 200), 1, 200);
             handleAdvanced(req, resp, () -> {
                 Object result = bridge.call("getRecentViolations", new Class<?>[]{int.class}, limit);
                 if (filterLower != null && result instanceof List<?> list) {
@@ -85,6 +84,17 @@ public class ApiVesuvioHandler extends ApiHandlerSupport {
             return;
         }
 
+    if ("/reviews".equals(pathInfo)) {
+      handleAdvanced(
+          req,
+          resp,
+          () ->
+              bridge.call(
+                  "getPendingReviews",
+                  new Class<?>[] {int.class},
+                  Math.clamp(parseIntOrDefault(req.getParameter("limit"), 50), 1, 200)));
+      return;
+    }
         if ("/engine".equals(pathInfo)) {
             handleAdvanced(req, resp, () -> bridge.call("getEngineStatus"));
             return;
@@ -120,19 +130,68 @@ public class ApiVesuvioHandler extends ApiHandlerSupport {
             return UUID.fromString(input);
         } catch (IllegalArgumentException ignored) {}
 
-        var online = Bukkit.getPlayerExact(input);
-        if (online != null) return online.getUniqueId();
+    var online =
+        plugin
+            .main()
+            .call(
+                () ->
+                    Bukkit.getPlayerExact(input) == null
+                        ? null
+                        : Bukkit.getPlayerExact(input).getUniqueId())
+            .join();
+    if (online != null) return online;
+    var stats = plugin.getDatabaseManager().getPlayerStats(input);
+    if (stats.isPresent())
+      try {
+        return UUID.fromString(String.valueOf(stats.get().get("uuid")));
+      } catch (IllegalArgumentException ignored) {
+      }
 
-        OfflinePlayer offline = Bukkit.getOfflinePlayer(input);
-        if (offline.hasPlayedBefore() || offline.getName() != null) {
-            return offline.getUniqueId();
-        }
         return null;
     }
 
     @Override
     protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws IOException {
         String pathInfo = req.getPathInfo();
+    if (pathInfo != null
+        && (pathInfo.equals("/models/reload") || pathInfo.startsWith("/review/"))) {
+      var session =
+          requirePermission(
+              req,
+              resp,
+              pathInfo.equals("/models/reload")
+                  ? Permission.MANAGE_VESUVIO_MODELS
+                  : Permission.REVIEW_VESUVIO_SAMPLES);
+      if (session.isEmpty()) return;
+      try {
+        Object result;
+        if (pathInfo.equals("/models/reload")) result = bridge.call("reloadModels");
+        else {
+          var body = readJsonBody(req);
+          String verdict = String.valueOf(body.get("verdict"));
+          if (!java.util.Set.of("cheat", "legit").contains(verdict)) {
+            sendError(resp, 400, "Укажите вердикт");
+            return;
+          }
+          result =
+              bridge.call(
+                  "submitReview",
+                  new Class<?>[] {String.class, String.class, String.class},
+                  pathInfo.substring("/review/".length()),
+                  verdict,
+                  session.get().adminUsername());
+        }
+        if (!Boolean.TRUE.equals(result)) {
+          sendError(resp, 409, "Образец уже рассмотрен, истёк или операция не выполнена");
+          return;
+        }
+        plugin.getLogManager().logWebAction(session.get().adminUsername(), "Vesuvio: " + pathInfo);
+        sendSuccess(resp, result);
+      } catch (VesuvioBridge.VesuvioUnavailableException error) {
+        sendError(resp, 503, error.getMessage());
+      }
+      return;
+    }
         if (pathInfo == null || !pathInfo.startsWith("/player/")) {
             sendError(resp, 404, "Не найдено");
             return;
@@ -160,7 +219,10 @@ public class ApiVesuvioHandler extends ApiHandlerSupport {
         try {
             switch (action) {
                 case "reset-vl" -> {
+          var body = readJsonBody(req);
                     bridge.call("resetViolationLevel", new Class<?>[]{UUID.class}, uuid);
+          if (Boolean.TRUE.equals(body.get("reduceRisk")))
+            bridge.call("adjustRisk", new Class<?>[] {UUID.class, double.class}, uuid, -30d);
                     plugin.getLogManager().logWebAction(session.adminUsername(), "Античит: сброс VL игроку " + uuid);
                     sendSuccess(resp, null);
                 }
@@ -182,7 +244,19 @@ public class ApiVesuvioHandler extends ApiHandlerSupport {
     private void handleStatus(HttpServletRequest req, HttpServletResponse resp) throws IOException {
         Optional<WebSession> sessionOpt = requireSession(req, resp);
         if (sessionOpt.isEmpty()) return;
-        sendSuccess(resp, Map.of("available", bridge.isAvailable()));
+    boolean available = bridge.isAvailable();
+    var data = new java.util.LinkedHashMap<String, Object>();
+    data.put("available", available);
+    if (available) {
+      try {
+        data.put("version", bridge.call("getIntegrationVersion"));
+        data.put("capabilities", bridge.call("getCapabilities"));
+      } catch (VesuvioBridge.VesuvioUnavailableException old) {
+        data.put("version", 1);
+        data.put("capabilities", List.of("overview", "players", "violations"));
+      }
+    }
+    sendSuccess(resp, data);
     }
 
     private void handleBasic(HttpServletRequest req, HttpServletResponse resp, BridgeCall call) throws IOException {

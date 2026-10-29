@@ -16,6 +16,10 @@ public final class PreviewHandler extends HttpServlet {
           "qrcode.min.js",
           "vendor-qr.js",
           "moderation.css",
+          "portal.html",
+          "portal.js",
+          "ban.html",
+          "ban.js",
           "case.html",
           "case.js",
           "appeal.html",
@@ -45,7 +49,7 @@ public final class PreviewHandler extends HttpServlet {
     // document.
     resp.setHeader(
         "Content-Security-Policy",
-        "default-src 'self'; connect-src 'none'; script-src 'self' 'unsafe-inline'; style-src"
+        "default-src 'self'; connect-src 'self'; script-src 'self' 'unsafe-inline'; style-src"
             + " 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; frame-src"
             + " 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'self'; worker-src"
             + " 'none'");
@@ -59,7 +63,7 @@ public final class PreviewHandler extends HttpServlet {
     }
     String path = req.getPathInfo();
     String name = path == null || path.equals("/") ? "index.html" : path.substring(1);
-    if (!ASSETS.contains(name)) {
+    if (!ASSETS.contains(name) && !name.matches("js/[a-zA-Z0-9_/-]+\\.js")) {
       resp.sendError(404);
       return;
     }
@@ -73,7 +77,7 @@ public final class PreviewHandler extends HttpServlet {
         return;
       }
       String text = new String(in.readAllBytes(), StandardCharsets.UTF_8);
-      if (name.equals("app.js"))
+      if (name.endsWith(".js"))
         text =
             text.replaceAll(
                 "https://mc-heads\\.net/(avatar|body|head|player)/", "/preview/avatar.svg?name=");

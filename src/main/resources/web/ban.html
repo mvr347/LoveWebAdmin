@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Блокировка</title>
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/moderation.css" />
+  </head>
+  <body class="workspace-page">
+    <main>
+      <a href="/" data-workspace-back>В панель</a>
+      <h1 id="heading">Блокировка</h1>
+      <p id="status" role="status"></p>
+      <section>
+        <h2>Контекст</h2>
+        <p id="summary"></p>
+        <p id="source"></p>
+      </section>
+      <section>
+        <h2>Исправить действующую блокировку</h2>
+        <p class="muted">
+          Автор и исходный источник сохраняются. Изменение причины и срока
+          попадает в историю с вашим объяснением.
+        </p>
+        <form id="correction">
+          <label>Причина<input id="reason" required maxlength="500" /></label
+          ><label
+            >Описание<textarea
+              id="description"
+              maxlength="4000"
+            ></textarea></label
+          ><label
+            >Оставшийся срок, минуты (−1 — бессрочно)<input
+              type="number"
+              id="remaining"
+              min="-1"
+              max="5256000"
+              required /></label
+          ><label
+            >Объяснение изменения<textarea
+              id="explanation"
+              minlength="5"
+              maxlength="2000"
+              required
+            ></textarea></label
+          ><button>Применить изменение</button>
+        </form>
+      </section>
+      <section>
+        <h2>История исправлений</h2>
+        <div id="history"></div>
+      </section>
+    </main>
+    <script type="module" src="/ban.js"></script>
+  </body>
+</html>

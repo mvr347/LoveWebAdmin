@@ -435,6 +435,142 @@ public class BanManager {
     }
   }
 
+  /** Journal first, native change on main, conditional SQLite update, rollback on failure. */
+  public synchronized WebBan correct(
+      int id,
+      String actor,
+      String reason,
+      String description,
+      long remainingSeconds,
+      String explanation,
+      long revision) {
+    var before =
+        plugin
+            .getDatabaseManager()
+            .getBanById(id)
+            .orElseThrow(() -> new IllegalArgumentException("Блокировка не найдена"));
+    if (!before.status().equals("ACTIVE"))
+      throw new me.lovelace.loveWebAdmin.utils.ActionRejectedException(
+          "Изменять можно только действующую блокировку");
+    if (reason == null
+        || reason.isBlank()
+        || reason.length() > 500
+        || description == null
+        || description.length() > 4000
+        || remainingSeconds != -1 && (remainingSeconds < 60 || remainingSeconds > 315360000L))
+      throw new IllegalArgumentException("Проверьте причину, описание и срок");
+    long expiry = remainingSeconds < 0 ? -1 : System.currentTimeMillis() / 1000 + remainingSeconds;
+    var after =
+        new WebBan(
+            id,
+            before.targetName(),
+            before.targetUuid(),
+            before.targetIp(),
+            before.creatorName(),
+            reason.trim(),
+            description,
+            before.proofUrls(),
+            before.isIpBan(),
+            before.status(),
+            remainingSeconds,
+            before.createdAt(),
+            expiry,
+            before.linkedReportId());
+    int history;
+    try {
+      if ("SECURITY".equals(plugin.moderation().source(id).get("kind")))
+        throw new IllegalArgumentException("Ограничение безопасности изменяется через LoveAuth");
+      if (!plugin.moderation().reserveRevision("ban", id, revision))
+        throw new me.lovelace.loveWebAdmin.utils.ActionRejectedException(
+            "Блокировка изменена; обновите её. Черновик сохранён");
+      history =
+          plugin
+              .moderation()
+              .prepareBanCorrection(
+                  id, actor, explanation, JsonUtils.toJson(before), JsonUtils.toJson(after));
+    } catch (java.sql.SQLException error) {
+      throw new IllegalStateException(error);
+    }
+    boolean nativeChanged = false, stored = false;
+    try {
+      plugin
+          .main()
+          .call(
+              () -> {
+                applyBanInBukkit(
+                    after.targetName(),
+                    after.targetUuid(),
+                    after.targetIp(),
+                    after.ruleReason(),
+                    after.description(),
+                    after.expiresAt(),
+                    after.isIpBan(),
+                    before.creatorName());
+                return null;
+              })
+          .join();
+      nativeChanged = true;
+      if (!plugin.getDatabaseManager().correctActiveBan(before, after))
+        throw new IllegalStateException("Блокировка изменена одновременно; обновите данные");
+      stored = true;
+      plugin.moderation().finishBanCorrection(history, "APPLIED");
+    } catch (Exception error) {
+      boolean restored = !nativeChanged;
+      if (nativeChanged && !stored)
+        try {
+          plugin
+              .main()
+              .call(
+                  () -> {
+                    var current =
+                        plugin
+                            .getDatabaseManager()
+                            .getBanById(id)
+                            .orElseThrow(
+                                () ->
+                                    new IllegalStateException(
+                                        "Нельзя установить итоговое состояние блокировки"));
+                    if (current.status().equals("ACTIVE"))
+                      applyBanInBukkit(
+                          current.targetName(),
+                          current.targetUuid(),
+                          current.targetIp(),
+                          current.ruleReason(),
+                          current.description(),
+                          current.expiresAt(),
+                          current.isIpBan(),
+                          current.creatorName());
+                    else {
+                      Bukkit.getBanList(BanList.Type.NAME).pardon(current.targetName());
+                      if (current.isIpBan() && current.targetIp() != null)
+                        Bukkit.getBanList(BanList.Type.IP).pardon(current.targetIp());
+                    }
+                    return null;
+                  })
+              .join();
+          restored = true;
+        } catch (Exception restore) {
+          error.addSuppressed(restore);
+        }
+      try {
+        plugin
+            .moderation()
+            .finishBanCorrection(history, restored && !stored ? "ROLLED_BACK" : "UNCERTAIN");
+      } catch (Exception journal) {
+        error.addSuppressed(journal);
+      }
+      throw new IllegalStateException("Не удалось изменить блокировку; проверьте историю", error);
+    }
+    plugin.getLogManager().logWebAction(actor, "Исправил блокировку №" + id + ": " + explanation);
+    plugin
+        .getDiscordBridge()
+        .notifyBanned(
+            after,
+            new me.lovelace.loveWebAdmin.models.BanOrigin(
+                me.lovelace.loveWebAdmin.models.BanOrigin.Kind.STAFF, actor, null));
+    return after;
+  }
+
   /** A reduction never extends a finite ban or changes its source. */
   public boolean reduceDuration(int banId, String actor, long remainingSeconds) {
     if (!Bukkit.isPrimaryThread())

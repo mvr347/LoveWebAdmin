@@ -1,1 +1,221 @@
-body{background:#121019;color:#ece6fa;font:16px system-ui;margin:0}main{max-width:1000px;margin:auto;padding:28px}h1{font-size:26px}section,.card{background:#211b2d;border:1px solid #493759;border-radius:14px;padding:20px;margin:16px 0}label{display:block;margin:14px 0 6px}input,textarea,select,button{font:inherit;padding:10px;border-radius:8px;border:1px solid #6b5480;background:#30263e;color:inherit}input,textarea{box-sizing:border-box;width:100%}textarea{min-height:100px}button{cursor:pointer;margin:8px 8px 0 0}button:disabled{opacity:.5}a{color:#c6a6ff}.muted{color:#bdb0cb}.error{color:#ffa0ae;white-space:pre-wrap}.message{border-left:3px solid #aa83e5;padding:12px;white-space:pre-wrap}.row{display:flex;gap:12px;flex-wrap:wrap}.row>*{flex:1}pre{white-space:pre-wrap;overflow-wrap:anywhere}small{color:#bdb0cb}#status{min-height:24px}
+/* Workspace layout uses the same tokens and controls as the main panel. */
+body.workspace-page {
+  display: block;
+  height: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg-base);
+  color: var(--text-main);
+  font-family: Inter, system-ui, sans-serif;
+}
+.workspace-page main {
+  max-width: 1160px;
+  margin: auto;
+  padding: 24px;
+  box-sizing: border-box;
+}
+.workspace-page h1 {
+  font-size: 24px;
+  margin: 20px 0;
+}
+.workspace-page h2 {
+  font-size: 18px;
+}
+.workspace-page h3 {
+  margin-top: 24px;
+}
+.workspace-page section,
+.workspace-page .card,
+.workspace-grid > section {
+  background: var(--card-bg, var(--bg-surface));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  padding: 20px;
+  margin: 16px 0;
+}
+.workspace-page label {
+  display: block;
+  margin: 14px 0 6px;
+  color: var(--text-secondary);
+}
+.workspace-page input,
+.workspace-page textarea,
+.workspace-page select {
+  font: inherit;
+  color: var(--text-main);
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  padding: 10px;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.workspace-page input,
+.workspace-page textarea {
+  width: 100%;
+}
+.workspace-page textarea {
+  min-height: 110px;
+  resize: vertical;
+}
+.workspace-page button {
+  margin: 8px 8px 0 0;
+}
+.workspace-page a {
+  color: var(--accent-light);
+}
+.workspace-page .muted,
+.workspace-page small {
+  color: var(--text-muted);
+}
+.workspace-page .error {
+  color: var(--red);
+  white-space: pre-wrap;
+}
+.workspace-page .message {
+  border-left: 3px solid var(--accent);
+  padding: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--card-inner-bg, transparent);
+}
+.workspace-page .row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.workspace-page .row > * {
+  flex: 1;
+  min-width: 160px;
+}
+.workspace-page pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 360px;
+  overflow: auto;
+}
+.workspace-page #status {
+  min-height: 24px;
+}
+.workspace-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+.workspace-grid > section {
+  margin: 0;
+}
+.workspace-dialog {
+  max-width: 480px;
+  width: calc(100% - 40px);
+  padding: 24px;
+  background: var(--card-bg, #171426);
+  color: var(--text-main, #eee);
+  border: 1px solid var(--border, #55466e);
+  border-radius: var(--radius-md, 8px);
+}
+.workspace-dialog::backdrop {
+  background: #000a;
+}
+.workspace-dialog .row {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+button[aria-busy="true"] {
+  cursor: progress;
+  opacity: 0.65;
+}
+:focus-visible {
+  outline: 2px solid var(--accent-light, #b794f4);
+  outline-offset: 3px;
+}
+@media (max-width: 700px) {
+  .workspace-page main {
+    padding: 14px;
+  }
+  .workspace-page section {
+    padding: 14px;
+  }
+  .workspace-page .row {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+  .workspace-page button {
+    min-height: 42px;
+  }
+  .workspace-page table {
+    display: block;
+    overflow-x: auto;
+  }
+  .workspace-page .message {
+    padding: 10px;
+  }
+}
+
+.modal-overlay:has(.workspace-drawer) {
+  justify-content: flex-end;
+  padding: 0;
+}
+.modal.workspace-drawer {
+  height: 100dvh;
+  max-height: 100dvh;
+  border-radius: 0;
+  width: min(780px, 100vw);
+  margin: 0;
+  overflow: auto;
+}
+.workspace-drawer .modal-body {
+  overflow: auto;
+}
+@media (max-width: 640px) {
+  .workspace-page main {
+    width: 100%;
+    padding: 12px;
+  }
+  .workspace-page .row {
+    flex-direction: column;
+  }
+  .workspace-page input,
+  .workspace-page select,
+  .workspace-page textarea {
+    min-width: 0;
+    width: 100%;
+  }
+}
+
+.table-columns {
+  margin: 8px 0;
+  color: var(--text-muted);
+}
+.table-columns summary {
+  cursor: pointer;
+}
+.table-columns label {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  margin: 8px 12px 8px 0;
+}
+
+.operation-status {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 12000;
+  max-width: min(440px, calc(100vw - 32px));
+  padding: 16px;
+  background: var(--bg-surface);
+  color: var(--text-main);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 8px 30px #0005;
+}
+.operation-status p {
+  margin: 0 0 10px;
+}
+.operation-status button {
+  margin-right: 8px;
+}

@@ -35,7 +35,7 @@ public class ApiAuthHandler extends ApiHandlerSupport {
 
     if ("/api/staff/shifts".equals(servletPath)
         || ("/api/staff".equals(servletPath) && "/shifts".equals(pathInfo))) {
-      handleStaffShifts(req, resp);
+      sendError(resp, 410, "Механика смен удалена");
       return;
     }
 
@@ -49,7 +49,7 @@ public class ApiAuthHandler extends ApiHandlerSupport {
         return;
       }
       if ("/shift".equals(pathInfo)) {
-        handleMyShift(req, resp);
+        sendError(resp, 410, "Механика смен удалена");
         return;
       }
       sendError(resp, 404, "Не найдено");
@@ -99,7 +99,7 @@ public class ApiAuthHandler extends ApiHandlerSupport {
         return;
       }
       if ("/shift".equals(pathInfo)) {
-        handleToggleShift(req, resp);
+        sendError(resp, 410, "Механика смен удалена");
         return;
       }
       if ("/backup-codes/regenerate".equals(pathInfo)) {
@@ -824,51 +824,11 @@ public class ApiAuthHandler extends ApiHandlerSupport {
     sendSuccess(resp, Map.of("message", "Пароль успешно изменён"));
   }
 
-  private void handleToggleShift(HttpServletRequest req, HttpServletResponse resp)
-      throws IOException {
-    Optional<WebSession> sessionOpt = requireSession(req, resp);
-    if (sessionOpt.isEmpty()) return;
 
-    Map<String, Object> body = readJsonBody(req);
-    boolean onShift = Boolean.TRUE.equals(body.get("onShift"));
-    plugin.getDatabaseManager().setAdminShiftStatus(sessionOpt.get().adminId(), onShift);
-    plugin
-        .getLogManager()
-        .logWebAction(
-            sessionOpt.get().adminUsername(), onShift ? "Заступил на смену" : "Завершил смену");
-    sendSuccess(
-        resp,
-        Map.of(
-            "onShift",
-            onShift,
-            "message",
-            onShift ? "Вы заступили на смену" : "Вы завершили смену"));
-  }
 
-  private void handleMyShift(HttpServletRequest req, HttpServletResponse resp) throws IOException {
-    Optional<WebSession> sessionOpt = requireSession(req, resp);
-    if (sessionOpt.isEmpty()) return;
 
-    List<Map<String, Object>> list = plugin.getDatabaseManager().getStaffOnShift();
-    boolean onShift =
-        list.stream()
-            .anyMatch(
-                m ->
-                    sessionOpt
-                        .get()
-                        .adminUsername()
-                        .equalsIgnoreCase(String.valueOf(m.get("username"))));
-    sendSuccess(resp, Map.of("onShift", onShift));
-  }
 
-  private void handleStaffShifts(HttpServletRequest req, HttpServletResponse resp)
-      throws IOException {
-    Optional<WebSession> sessionOpt = requireSession(req, resp);
-    if (sessionOpt.isEmpty()) return;
 
-    List<Map<String, Object>> staffOnShift = plugin.getDatabaseManager().getStaffOnShift();
-    sendSuccess(resp, staffOnShift);
-  }
 
   private void handleAllSessions(HttpServletRequest req, HttpServletResponse resp)
       throws IOException {

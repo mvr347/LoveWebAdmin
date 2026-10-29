@@ -18,6 +18,11 @@ owner-setup: true
 # Не меняет вход и 2FA в настоящую панель.
 preview:
   enabled: false
+  discord:
+    # Только отдельные тестовые каналы. Пустые значения отключают настоящую тестовую отправку.
+    category-id: ""
+    channel-id: ""
+    allowed-user-ids: []
 
 # Экономика (2026-10-03: пересчёт под номиналы LoveCore 1 / 100 / 2 000 / 20 000).
 economy:
@@ -92,8 +97,7 @@ discord:
   reports-channel-id: ""
   appeals-channel-id: ""
   notifications:
-    # Личные служебные уведомления только сотрудникам с активной сменой и нужными правами.
-    only-on-shift: true
+    # Личные уведомления учитывают права, предпочтения и тихие часы.
     quiet-hours:
       enabled: false
       start-hour: 23

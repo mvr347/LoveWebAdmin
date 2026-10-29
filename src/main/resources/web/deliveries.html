@@ -1,1 +1,25 @@
-<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Доставка Discord</title><link rel="stylesheet" href="/moderation.css"><main><a href="/">В панель</a><h1>Доставка Discord</h1><p class="muted">Уведомления о блокировках и создание тикетов. Временные ошибки повторяются автоматически. Завершённые операции нельзя отправить повторно.</p><p id="status" role="status"></p><button id="refresh">Обновить</button><div id="deliveries"></div></main><script src="/deliveries.js" defer></script></html>
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Доставка Discord</title>
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/moderation.css" />
+  </head>
+  <body class="workspace-page">
+    <main>
+      <a href="/">В панель</a>
+      <h1>Доставка Discord</h1>
+      <p class="muted">
+        Уведомления о блокировках и создание тикетов. Временные ошибки
+        повторяются автоматически. Завершённые операции нельзя отправить
+        повторно.
+      </p>
+      <p id="status" role="status"></p>
+      <button id="refresh">Обновить</button>
+      <div id="deliveries"></div>
+    </main>
+    <script type="module" src="/deliveries.js"></script>
+  </body>
+</html>

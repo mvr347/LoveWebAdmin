@@ -22,10 +22,12 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
   public void register() {
     service.registerInteractionListener(this);
     service.registerTicketMessageListenerV2(this);
+    service.registerCommand("жалоба", "Подать жалобу на игрока", Map.of());
+    service.registerCommand("мои-обращения", "Личная ссылка на ваши обращения", Map.of());
     service.registerCommand("апелляция", "Обжаловать блокировку Minecraft", Map.of());
     service.registerCommand("дело", "Открыть дело", Map.of("номер", "Номер апелляции"));
-    service.registerCommand("жалобы", "Мои жалобы в работе", Map.of());
-    service.registerCommand("смена", "Включить или выключить смену", Map.of());
+    CoreDiscordExtensions.unregister(service, "жалобы");
+    CoreDiscordExtensions.unregister(service, "смена");
     service.registerCommand("игрок", "Сводка игрока для персонала", Map.of("ник", "Ник игрока"));
   }
 
@@ -64,8 +66,24 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
   public boolean onInteraction(DiscordInteraction i) {
     if (closed) return false;
     if (!i.name().startsWith("lwa:")
-        && !Set.of("апелляция", "дело", "жалобы", "смена", "игрок").contains(i.name()))
+        && !Set.of("апелляция", "жалоба", "мои-обращения", "дело", "игрок").contains(i.name()))
       return false;
+    if (i.name().equals("жалоба")) {
+      response(
+          i,
+          9,
+          Map.of(
+              "custom_id",
+              "lwa:report:submit",
+              "title",
+              "Жалоба на игрока",
+              "components",
+              List.of(
+                  input("target", "Ник игрока-нарушителя", true, 1),
+                  input("nick", "Ваш ник, если аккаунт не привязан", false, 1),
+                  input("reason", "Что произошло?", true, 2))));
+      return true;
+    }
     if (i.name().equals("апелляция") || i.name().startsWith("lwa:appeal:new:")) {
       String ban =
           i.name().startsWith("lwa:") ? i.name().substring("lwa:appeal:new:".length()) : "0";
@@ -85,6 +103,19 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
       return true;
     }
     if (i.name().startsWith("lwa:clarify:new:")) {
+      try {
+        int id = Integer.parseInt(i.name().substring("lwa:clarify:new:".length()));
+        if (!reportAuthor(id, i.userId())) {
+          response(
+              i, 4, Map.of("flags", 64, "content", "Ответить может только автор этого обращения"));
+          return true;
+        }
+      } catch (Exception error) {
+        response(i, 4, Map.of("flags", 64, "content", "Обращение недоступно"));
+        return true;
+      }
+    }
+    if (i.name().startsWith("lwa:clarify:new:")) {
       response(
           i,
           9,
@@ -95,6 +126,13 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
               "Ответ по жалобе",
               "components",
               List.of(input("text", "Уточнение для сотрудника", true, 2))));
+      return true;
+    }
+    if (i.name().startsWith("lwa:decision:")
+        && (staff(i.userId(), Permission.MANAGE_APPEALS).isEmpty()
+            || i.name().contains(":reduce:")
+                && staff(i.userId(), Permission.MANAGE_BANS).isEmpty())) {
+      response(i, 4, Map.of("flags", 64, "content", "Недостаточно прав для решения по апелляции"));
       return true;
     }
     if (i.name().startsWith("lwa:decision:")) {
@@ -124,7 +162,7 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
                       () -> {
                         String result;
                         try {
-                          result = execute(i);
+                          result = executeOnce(i);
                         } catch (me.lovelace.loveWebAdmin.utils.ActionRejectedException e) {
                           result = e.getMessage();
                         } catch (Exception e) {
@@ -163,15 +201,71 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
                 style == 1 ? 16 : 2000)));
   }
 
+  private boolean reportAuthor(int id, String user) throws java.sql.SQLException {
+    var report = plugin.getDatabaseManager().getReportById(id);
+    if (report.isEmpty() || !report.get().status().equals("PENDING")) return false;
+    return service
+            .getLinkedPlayer(user)
+            .map(UUID::toString)
+            .filter(report.get().reporterUuid()::equals)
+            .isPresent()
+        || plugin
+            .moderation()
+            .ticket("report", id)
+            .filter(ticket -> user.equals(ticket.get("discordId")))
+            .isPresent();
+  }
+
+  private String executeOnce(DiscordInteraction interaction) throws Exception {
+    if (interaction.name().equals("мои-обращения")) return execute(interaction);
+    String actor = "discord:" + interaction.userId(), key = interaction.id();
+    String fingerprint =
+        me.lovelace.loveWebAdmin.web.MutationRequests.fingerprint(
+            "DISCORD",
+            interaction.name(),
+            JsonUtils.toJson(interaction.values())
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    if (!plugin.operations().allow(actor)) return "Слишком много действий. Повторите через минуту.";
+    var previous = plugin.operations().reserve(actor, key, interaction.name(), fingerprint);
+    if (previous != null)
+      return previous.state().equals("COMPLETE")
+          ? "Действие уже обработано. Обновите состояние обращения в панели."
+          : "Результат действия требует проверки; повторно оно не выполнено.";
+    try {
+      String result = execute(interaction);
+      plugin.operations().complete(actor, key, 200, "Обработано", null);
+      return result;
+    } catch (Exception error) {
+      plugin.operations().uncertain(actor, key);
+      throw error;
+    }
+  }
+
   private String execute(DiscordInteraction i) throws Exception {
     if (closed) throw new java.util.concurrent.CancellationException("Интеграция остановлена");
+    if (i.name().equals("мои-обращения")) {
+      if (!submissions.take(i.userId())) return "Слишком много запросов. Повторите позже.";
+      String link =
+          plugin
+              .moderation()
+              .portalLink(
+                  i.userId(), service.getLinkedPlayer(i.userId()).map(UUID::toString).orElse(null));
+      return url().isBlank()
+          ? "Для личного кабинета администратор должен настроить web.public-url."
+          : "Личная одноразовая ссылка, действует 5 минут: "
+              + url()
+              + "/portal.html#"
+              + link
+              + "\nНе передавайте её другим людям.";
+    }
+    if (i.name().equals("lwa:report:submit")) return createReport(i);
     if (i.name().startsWith("lwa:appeal:submit:")) return createAppeal(i);
     if (i.name().startsWith("lwa:clarify:submit:")) {
       if (!submissions.take(i.userId())) return "Слишком много попыток. Повторите позже.";
       int id = Integer.parseInt(i.name().substring("lwa:clarify:submit:".length()));
       var report = plugin.getDatabaseManager().getReportById(id).orElseThrow();
       var author = service.getLinkedPlayer(i.userId());
-      if (author.isEmpty() || !author.get().toString().equals(report.reporterUuid()))
+      if (!reportAuthor(id, i.userId()))
         return "Ответить может только автор жалобы с подтверждённой привязкой Minecraft.";
       int message =
           plugin
@@ -183,15 +277,11 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
           : "Ответ уже был сохранён.";
     }
     Permission permission =
-        i.name().equals("смена")
-            ? null
-            : i.name().equals("дело")
-                ? Permission.VIEW_APPEALS
-                : i.name().startsWith("lwa:report:") || i.name().equals("жалобы")
-                    ? Permission.MANAGE_REPORTS
-                    : i.name().equals("игрок")
-                        ? Permission.VIEW_PLAYERS
-                        : Permission.MANAGE_APPEALS;
+        i.name().equals("дело")
+            ? Permission.VIEW_APPEALS
+            : i.name().startsWith("lwa:report:") || i.name().equals("жалобы")
+                ? Permission.MANAGE_REPORTS
+                : i.name().equals("игрок") ? Permission.VIEW_PLAYERS : Permission.MANAGE_APPEALS;
     var auth = staff(i.userId(), permission);
     if (auth.isEmpty()) return "Недостаточно прав. Нужен привязанный аккаунт сотрудника WebAdmin.";
     WebAdmin admin = auth.get();
@@ -228,29 +318,6 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
       }
       return plugin.appeals().decide(id, admin.username(), parts[2].equals("approve"), reason);
     }
-    if (i.name().equals("смена")) {
-      boolean on =
-          plugin.getDatabaseManager().getStaffOnShift().stream()
-              .anyMatch(a -> ((Number) a.get("id")).intValue() == admin.id());
-      plugin.getDatabaseManager().setAdminShiftStatus(admin.id(), !on);
-      return on ? "Смена завершена." : "Смена начата.";
-    }
-    if (i.name().equals("жалобы")) {
-      var list = plugin.getDatabaseManager().getAllReports("PENDING", null, 200, 0);
-      var text = new StringBuilder("Ваши жалобы в работе:\n");
-      for (var report : list)
-        if (plugin
-            .moderation()
-            .work("report", report.id())
-            .get("assignee")
-            .equals(admin.username()))
-          text.append("№")
-              .append(report.id())
-              .append(" — ")
-              .append(report.targetName())
-              .append('\n');
-      return text.toString();
-    }
     if (i.name().equals("игрок")) {
       String nick = i.values().get("ник");
       if (nick == null) return "Укажите ник.";
@@ -266,6 +333,60 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
           + java.net.URLEncoder.encode(nick, java.nio.charset.StandardCharsets.UTF_8);
     }
     return "Открыть дело: " + url() + "/#appeal=" + i.values().getOrDefault("номер", "");
+  }
+
+  private String createReport(DiscordInteraction interaction) throws Exception {
+    if (!submissions.take(interaction.userId())) return "Слишком много обращений. Повторите позже.";
+    String target = interaction.values().getOrDefault("target", "").trim(),
+        reason = interaction.values().getOrDefault("reason", "").trim();
+    if (!target.matches("[A-Za-z0-9_]{1,16}") || reason.length() < 5 || reason.length() > 2000)
+      return "Укажите корректный ник нарушителя и описание от 5 до 2000 символов.";
+    var identity = service.getLinkedPlayer(interaction.userId());
+    String reporter =
+        identity
+            .flatMap(uuid -> plugin.getDatabaseManager().getPlayerStats(uuid.toString()))
+            .map(record -> record.get("name").toString())
+            .orElse(interaction.values().getOrDefault("nick", "Игрок Discord"));
+    var targetRecord = plugin.getDatabaseManager().getPlayerStats(target);
+    if (targetRecord.isEmpty()) return "Игрок не найден в истории сервера.";
+    String uuid =
+        identity
+            .map(UUID::toString)
+            .orElseGet(
+                () ->
+                    UUID.nameUUIDFromBytes(
+                            ("discord:" + interaction.userId())
+                                .getBytes(java.nio.charset.StandardCharsets.UTF_8))
+                        .toString());
+    int id =
+        plugin
+            .getDatabaseManager()
+            .createPlayerReport(
+                uuid,
+                reporter,
+                "Discord",
+                targetRecord.get().get("uuid").toString(),
+                target,
+                List.of("Обращение в Discord"),
+                reason,
+                false,
+                0);
+    if (id < 1) return "Жалоба не сохранена. Проверьте ранее созданные обращения.";
+    plugin.moderation().ticketOwner("report", id, interaction.userId());
+    plugin
+        .getDatabaseManager()
+        .getReportById(id)
+        .ifPresent(
+            report -> {
+              plugin.getDiscordBridge().notifyReportCreated(report);
+              plugin.getDiscordBridge().createReportTicket(report);
+            });
+    return "Жалоба №"
+        + id
+        + " сохранена. Приватный тикет создаётся. "
+        + (identity.isPresent()
+            ? "Аккаунт Minecraft подтверждён."
+            : "Ник пока не подтверждён; сотрудник может запросить проверку.");
   }
 
   private String createAppeal(DiscordInteraction i) throws Exception {
@@ -319,6 +440,34 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
   @Override
   public void onTicketMessage(TicketMessage msg) {
     if (closed) return;
+    try {
+      var ticket =
+          plugin.moderation().tickets().stream()
+              .filter(
+                  t -> t.get("kind").equals("report") && t.get("channel").equals(msg.channelId()))
+              .findFirst();
+      if (ticket.isPresent()) {
+        int id = ((Number) ticket.get().get("id")).intValue();
+        var report = plugin.getDatabaseManager().getReportById(id);
+        if (report.isEmpty() || !report.get().status().equals("PENDING")) return;
+        boolean owner = ticket.get().get("discordId").equals(msg.authorId());
+        var admin = staff(msg.authorId(), Permission.MANAGE_REPORTS);
+        if (!owner && admin.isEmpty()) return;
+        String content = conversationText(msg);
+        if (content.isBlank()) return;
+        plugin
+            .getDatabaseManager()
+            .addReportDiscussion(
+                id,
+                admin.map(WebAdmin::username).orElse(report.get().reporterName()),
+                admin.isPresent(),
+                content,
+                msg.messageId());
+        return;
+      }
+    } catch (java.sql.SQLException error) {
+      throw new IllegalStateException(error);
+    }
     var found = plugin.getDatabaseManager().getAppealByDiscordChannel(msg.channelId());
     if (found.isEmpty() || !found.get().status().equals("PENDING")) return;
     var appeal = found.get();
@@ -327,10 +476,8 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
           plugin.moderation().owner(appeal.id()).filter(msg.authorId()::equals).isPresent();
       var admin = staff(msg.authorId(), Permission.MANAGE_APPEALS);
       if (!author && admin.isEmpty()) return;
-      StringBuilder content = new StringBuilder(msg.content());
-      for (var attachment : msg.attachments())
-        content.append("\n").append(attachment.name()).append(": ").append(attachment.url());
-      if (content.isEmpty()) return;
+      String content = conversationText(msg);
+      if (content.isBlank()) return;
       plugin
           .getDatabaseManager()
           .addDiscordAppealMessage(
@@ -338,9 +485,22 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
               msg.messageId(),
               admin.map(WebAdmin::username).orElse(appeal.playerName()),
               admin.isPresent(),
-              content.toString());
+              content);
     } catch (java.sql.SQLException e) {
       throw new IllegalStateException(e);
     }
+  }
+
+  private static String conversationText(TicketMessage message) {
+    StringBuilder content = new StringBuilder(message.content() == null ? "" : message.content());
+    for (var attachment : message.attachments().stream().limit(5).toList()) {
+      try {
+        var uri = java.net.URI.create(attachment.url());
+        if (!"https".equals(uri.getScheme()) || uri.getHost() == null) continue;
+        content.append("\n").append(attachment.name()).append(": ").append(uri);
+      } catch (IllegalArgumentException ignored) {
+      }
+    }
+    return content.length() > 4000 ? content.substring(0, 4000) : content.toString();
   }
 }

@@ -100,6 +100,7 @@ public class ApiPlayersHandler extends ApiHandlerSupport {
     }
 
     if (cleanPath.contains("/notes")) {
+      req.setAttribute("lwa.permission", Permission.MANAGE_PLAYERS.name());
       String playerName = cleanPath.substring(0, cleanPath.indexOf("/notes"));
       List<Map<String, Object>> notes = plugin.getDatabaseManager().getPlayerStaffNotes(playerName);
       sendSuccess(resp, notes);
@@ -155,6 +156,7 @@ public class ApiPlayersHandler extends ApiHandlerSupport {
         sendError(resp, 403, "Нет права добавления заметок");
         return;
       }
+      req.setAttribute("lwa.permission", Permission.MANAGE_PLAYERS.name());
       String playerName = cleanPath.substring(0, cleanPath.indexOf("/notes"));
       Map<String, Object> body = readJsonBody(req);
       String note = stringOrNull(body.get("note"));
@@ -214,6 +216,7 @@ public class ApiPlayersHandler extends ApiHandlerSupport {
       sendError(resp, 403, "Недостаточно прав для этого действия");
       return;
     }
+    req.setAttribute("lwa.permission", needed.name());
     try {
       switch (action.toLowerCase()) {
         case "heal" -> {
