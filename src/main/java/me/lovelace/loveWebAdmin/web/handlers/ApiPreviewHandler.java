@@ -91,12 +91,18 @@ public final class ApiPreviewHandler extends ApiHandlerSupport {
         sendError(resp, 405, "Используйте GET");
         return;
       }
-      Object result =
-          route.equals("/api/snapshot")
-              ? session.runtime().snapshot()
-              : route.equals("/api/delivery-status")
-                  ? session.runtime().deliveryStatus()
-                  : session.runtime().execute(req.getMethod(), route, body, headers);
+      Object result;
+      if (route.equals("/api/discord-lab") && req.getMethod().equals("GET"))
+        result = plugin.preview().discordStatus(session);
+      else if (route.equals("/api/discord-lab/run") && req.getMethod().equals("POST"))
+        result = plugin.preview().discordCheck(session, Objects.toString(body.get("action"), ""));
+      else
+        result =
+            route.equals("/api/snapshot")
+                ? session.runtime().snapshot()
+                : route.equals("/api/delivery-status")
+                    ? session.runtime().deliveryStatus()
+                    : session.runtime().execute(req.getMethod(), route, body, headers);
       var response = new LinkedHashMap<String, Object>();
       response.put("success", true);
       response.put("data", result);
@@ -109,7 +115,7 @@ public final class ApiPreviewHandler extends ApiHandlerSupport {
     } catch (PayloadTooLargeException error) {
       sendError(resp, 413, "Тело запроса слишком велико");
     } catch (IllegalArgumentException error) {
-      sendError(resp, 400, "Некорректные данные Preview");
+      sendError(resp, 400, Objects.toString(error.getMessage(), "Некорректные данные Preview"));
     } catch (Exception error) {
       plugin.getLogger().warning("Preview: " + error.getClass().getSimpleName());
       sendError(resp, 500, "Не удалось выполнить действие песочницы");

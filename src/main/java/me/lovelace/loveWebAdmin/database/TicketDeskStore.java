@@ -393,7 +393,9 @@ public final class TicketDeskStore implements AutoCloseable {
                     "message",
                     Objects.toString(r.getString("message"), ""),
                     "state",
-                    r.getString("state")))
+                    r.getString("state"),
+                    "error",
+                    Objects.toString(r.getString("error"), "")))
             : Optional.empty();
       }
     }
@@ -402,7 +404,7 @@ public final class TicketDeskStore implements AutoCloseable {
   public synchronized boolean sending(String slot, String channel) throws SQLException {
     try (var q =
         db.prepareStatement(
-            "INSERT INTO desk_messages(slot,channel,state) VALUES(?,?,'SENDING') ON CONFLICT(slot) DO UPDATE SET state='SENDING',channel=excluded.channel WHERE desk_messages.state='READY'")) {
+            "INSERT INTO desk_messages(slot,channel,state) VALUES(?,?,'SENDING') ON CONFLICT(slot) DO UPDATE SET state='SENDING',message=CASE WHEN desk_messages.channel=excluded.channel THEN desk_messages.message ELSE NULL END,channel=excluded.channel WHERE desk_messages.state IN ('READY','FAILED')")) {
       q.setString(1, slot);
       q.setString(2, channel);
       return q.executeUpdate() == 1;
@@ -414,6 +416,16 @@ public final class TicketDeskStore implements AutoCloseable {
         db.prepareStatement(
             "UPDATE desk_messages SET state='READY',message=?,error=NULL WHERE slot=?")) {
       q.setString(1, message);
+      q.setString(2, slot);
+      q.executeUpdate();
+    }
+  }
+
+  public synchronized void failed(String slot, String error) throws SQLException {
+    try (var q =
+        db.prepareStatement(
+            "UPDATE desk_messages SET state='FAILED',error=? WHERE slot=? AND state='SENDING'")) {
+      q.setString(1, error);
       q.setString(2, slot);
       q.executeUpdate();
     }

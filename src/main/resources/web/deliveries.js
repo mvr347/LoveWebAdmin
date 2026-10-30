@@ -117,6 +117,43 @@ installWorkspace();
     $("status").textContent =
       "Обновлено: " + new Date().toLocaleTimeString("ru-RU");
   }
+  async function loadPanel() {
+    const data = await api("GET", "/api/cases/discord-panel");
+    $("panel-status").textContent =
+      ({
+        NOT_CONFIGURED: "Канал не настроен",
+        BOT_UNAVAILABLE: "Бот недоступен",
+        NOT_PUBLISHED: "Сообщение ещё не опубликовано",
+        INVALID_CHANNEL: "Указан не текстовый канал",
+        READY: "Сообщение опубликовано",
+        SENDING: "Выполняется отправка",
+        FAILED: "Discord отклонил отправку",
+        UNCERTAIN: "Результат неизвестен — нужна сверка",
+      }[data.state] || "Статус панели не получен") +
+      (data.explanation ? ". " + data.explanation : "");
+    $("panel-channel").textContent =
+      (data.channelId
+        ? "Канал: " +
+          data.channelId +
+          (data.messageId ? " · Сообщение: " + data.messageId : "")
+        : "Настройка: discord.tickets.panel-channel-id в config.yml") +
+      (data.inspection ? " · " + data.inspection : "");
+    $("panel-publish").disabled =
+      !data.botAvailable ||
+      !data.channelId ||
+      ["SENDING", "UNCERTAIN", "INVALID_CHANNEL"].includes(data.state);
+  }
+  $("panel-publish").onclick = async () => {
+    const button = $("panel-publish");
+    button.disabled = true;
+    try {
+      await api("POST", "/api/cases/discord-panel/publish", {});
+      await Promise.all([loadPanel(), loadMessages()]);
+    } catch (error) {
+      fail(error);
+      await loadPanel().catch(fail);
+    }
+  };
   async function loadMessages() {
     const items = await api("GET", "/api/cases/discord-messages");
     const target = $("discord-messages");
@@ -206,10 +243,13 @@ installWorkspace();
     else
       $("deliveries").textContent =
         "Для очереди уведомлений нужно право управления API.";
-    if (can("MANAGE_INTEGRATIONS")) tasks.push(loadMessages());
-    else
+    if (can("MANAGE_INTEGRATIONS")) tasks.push(loadMessages(), loadPanel());
+    else {
       $("discord-messages").textContent =
         "Для сверки сообщений нужно право управления интеграциями.";
+      $("panel-status").textContent =
+        "Настройки панели доступны с правом управления интеграциями.";
+    }
     const results = await Promise.allSettled(tasks);
     for (const result of results)
       if (result.status === "rejected") fail(result.reason);

@@ -186,7 +186,6 @@
         maintenanceEnabled: false,
         maintenanceMessage: "Тестовый режим технических работ",
         webhooksEnabled: false,
-        telegramEnabled: false,
       },
       whitelist: { enabled: false, players: [] },
       ops: [],
@@ -209,6 +208,9 @@
     } catch {
       state = seed(clock());
     }
+    state.config ||= {};
+    for (const key of Object.keys(state.config))
+      if (key.toLowerCase().startsWith("telegram")) delete state.config[key];
     const save = () => options.save?.(clone(state));
     const id = () => state.nextId++;
     const viewer = () =>
@@ -753,6 +755,198 @@
       review.new_id = child.id;
       state.reviewParents[kind + ":" + child.id] = { kind, id: c.id };
       return { state: "ACCEPTED", kind, id: child.id };
+    }
+    const configGroups = {
+      MANAGE_PANEL_SETTINGS: [
+        "webEnabled",
+        "webHost",
+        "webPort",
+        "webPublicUrl",
+        "sessionLifetimeMinutes",
+        "keepLogCount",
+      ],
+      MANAGE_SECURITY_SETTINGS: [
+        "strictIp",
+        "minPasswordLength",
+        "loginMaxAttempts",
+        "loginLockoutMinutes",
+        "commandBlacklist",
+        "corsAllowedOrigins",
+      ],
+      MANAGE_PREVIEW: [
+        "previewEnabled",
+        "previewCategoryId",
+        "previewChannelId",
+        "previewAllowedUserIds",
+      ],
+      MANAGE_INTEGRATIONS: [
+        "discordPanelChannelId",
+        "discordQueueChannelId",
+        "discordSupervisorRoleIds",
+        "discordStaffReminderMinutes",
+        "discordStaffEscalationMinutes",
+        "discordPlayerReminderMinutes",
+        "discordReportsTransport",
+        "discordReportsChannelId",
+        "discordAppealsChannelId",
+        "discordQuietEnabled",
+        "discordQuietStartHour",
+        "discordQuietEndHour",
+        "discordQuietTimezone",
+        "webhooksEnabled",
+        "discordWebhookUrl",
+        "clearDiscordWebhookUrl",
+        "discordWebhookConfigured",
+        "webhookNotifyNewIp",
+        "webhookNotifyAllLogins",
+        "webhookNotifyBruteForce",
+        "webhookNotifyRegistration",
+        "webhookNotifyCommands",
+        "webhookNotifyDestructive",
+      ],
+      MANAGE_MAINTENANCE: ["maintenanceEnabled", "maintenanceMessage"],
+    };
+    const settingsPermission = (field) =>
+      Object.keys(configGroups).find((key) =>
+        configGroups[key].includes(field),
+      );
+    function configView() {
+      const result = {};
+      for (const [key, value] of Object.entries(state.config))
+        if (
+          settingsPermission(key) &&
+          (has("VIEW_SERVER_SETTINGS") || has(settingsPermission(key))) &&
+          key !== "discordWebhookUrl" &&
+          key !== "clearDiscordWebhookUrl"
+        )
+          result[key] = clone(value);
+      if (has("MANAGE_INTEGRATIONS"))
+        result.discordWebhookConfigured =
+          !!state.config.discordWebhookUrl ||
+          state.config.discordWebhookConfigured === true;
+      return result;
+    }
+    function configPatch(body) {
+      const patch = {},
+        ints = {
+          webPort: [1, 65535],
+          sessionLifetimeMinutes: [5, 43200],
+          keepLogCount: [500, 50000],
+          minPasswordLength: [12, 32],
+          loginMaxAttempts: [1, 20],
+          loginLockoutMinutes: [1, 1440],
+          discordStaffReminderMinutes: [0, 43200],
+          discordStaffEscalationMinutes: [0, 43200],
+          discordPlayerReminderMinutes: [0, 43200],
+          discordQuietStartHour: [0, 23],
+          discordQuietEndHour: [0, 23],
+        };
+      for (const [key, value] of Object.entries(body)) {
+        const permission = settingsPermission(key);
+        if (!permission || key === "discordWebhookConfigured")
+          fail(400, "Неизвестная настройка: " + key);
+        requirePermission(permission);
+        if (key === "discordWebhookUrl" && !value) continue;
+        if (
+          ints[key] &&
+          (!Number.isInteger(value) ||
+            value < ints[key][0] ||
+            value > ints[key][1])
+        )
+          fail(400, "Некорректное значение «" + key + "»");
+        if (key.endsWith("ChannelId") || key === "previewCategoryId") {
+          if (
+            typeof value !== "string" ||
+            (value && !/^[0-9]{5,25}$/.test(value))
+          )
+            fail(400, "Нужен числовой Discord ID");
+        }
+        if (
+          ["discordSupervisorRoleIds", "previewAllowedUserIds"].includes(key) &&
+          (!Array.isArray(value) ||
+            value.length > (key === "previewAllowedUserIds" ? 10 : 20) ||
+            value.some((x) => typeof x !== "string" || !/[0-9]{5,25}/.test(x)))
+        )
+          fail(400, "Нужны Discord ID по одному на строку");
+        if (key === "discordWebhookUrl") {
+          let u;
+          try {
+            u = new URL(value);
+          } catch {
+            fail(400, "Нужен адрес Discord webhook");
+          }
+          if (
+            u.protocol !== "https:" ||
+            !["discord.com", "discordapp.com"].includes(u.hostname) ||
+            !/^\/api\/webhooks\/[0-9]{5,25}\/[A-Za-z0-9._-]+$/.test(
+              u.pathname,
+            ) ||
+            u.search ||
+            u.hash ||
+            u.username ||
+            u.password
+          )
+            fail(400, "Нужен HTTPS-адрес Discord webhook");
+        }
+        patch[key] = clone(value);
+      }
+      if (patch.clearDiscordWebhookUrl) {
+        if (patch.discordWebhookUrl)
+          fail(400, "Нельзя одновременно заменить и удалить адрес вебхука");
+        patch.discordWebhookUrl = "";
+        patch.webhooksEnabled = false;
+        patch.discordWebhookConfigured = false;
+      }
+      delete patch.clearDiscordWebhookUrl;
+      const merged = {
+        discordStaffReminderMinutes: 20,
+        discordStaffEscalationMinutes: 60,
+        ...state.config,
+        ...patch,
+      };
+      for (const [a, b] of [
+        ["previewCategoryId", "previewChannelId"],
+        ["discordPanelChannelId", "discordQueueChannelId"],
+        ...[
+          "discordPanelChannelId",
+          "discordQueueChannelId",
+          "discordReportsChannelId",
+          "discordAppealsChannelId",
+        ].map((k) => ["previewChannelId", k]),
+      ])
+        if (merged[a] && merged[a] === merged[b])
+          fail(
+            400,
+            "Категория, тестовый канал и рабочие каналы должны иметь разные ID",
+          );
+      if (
+        merged.discordStaffReminderMinutes > 0 &&
+        merged.discordStaffEscalationMinutes > 0 &&
+        merged.discordStaffEscalationMinutes <
+          merged.discordStaffReminderMinutes
+      )
+        fail(
+          400,
+          "Напоминание руководству не может быть раньше напоминания сотруднику",
+        );
+      const restart = Object.keys(patch).filter(
+        (k) =>
+          [
+            "webEnabled",
+            "webHost",
+            "webPort",
+            "webPublicUrl",
+            "previewCategoryId",
+            "previewChannelId",
+            "previewAllowedUserIds",
+            "discordPanelChannelId",
+            "discordQueueChannelId",
+            "discordSupervisorRoleIds",
+          ].includes(k) &&
+          JSON.stringify(patch[k]) !== JSON.stringify(state.config[k]),
+      );
+      Object.assign(state.config, patch);
+      return { ...configView(), restartRequiredFields: restart };
     }
     function route(method, url, body, headers) {
       const p = url.pathname.replace(/^\/preview(?=\/api)/, ""),
@@ -1566,21 +1760,22 @@
         return {};
       }
       if (parts[1] === "server") {
-        requirePermission(
-          n === "config"
-            ? method === "GET"
-              ? "VIEW_SERVER_SETTINGS"
-              : "MANAGE_SERVER_SETTINGS"
-            : n === "maintenance"
-              ? "MANAGE_MAINTENANCE"
-              : n === "ops"
-                ? "MANAGE_OPERATORS"
-                : "MANAGE_WHITELIST",
-        );
         if (n === "config") {
-          if (method === "POST") Object.assign(state.config, body);
-          return clone(state.config);
+          if (method === "POST") return configPatch(body);
+          if (
+            !has("VIEW_SERVER_SETTINGS") &&
+            !Object.keys(configGroups).some(has)
+          )
+            fail(403, "Нет права просмотра настроек");
+          return configView();
         }
+        requirePermission(
+          n === "maintenance"
+            ? "MANAGE_MAINTENANCE"
+            : n === "ops"
+              ? "MANAGE_OPERATORS"
+              : "MANAGE_WHITELIST",
+        );
         if (n === "maintenance") {
           if (method === "POST") {
             state.config.maintenanceEnabled = !!body.enabled;
@@ -1876,7 +2071,11 @@
       request,
       scenario,
       switchRole,
-      snapshot: () => clone(state),
+      snapshot: () => {
+        const value = clone(state);
+        value.config = configView();
+        return value;
+      },
       permissions,
     };
   }

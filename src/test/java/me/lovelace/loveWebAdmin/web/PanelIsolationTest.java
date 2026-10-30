@@ -43,6 +43,115 @@ class PanelIsolationTest {
   }
 
   @Test
+  void integrationOnlyRoleCanReadAndSaveChannelsButCannotChangePanelAddress() throws Exception {
+    var actor = account("OnlyIntegrations", Set.of(Permission.MANAGE_INTEGRATIONS));
+    var headers = Map.of("Authorization", "Bearer " + actor.token());
+    var handler = new ApiServerOpsHandler(plugin);
+    var get = call(handler, "/api/server", "/config", headers);
+    assertEquals(200, get.status);
+    assertTrue(get.body.toString().contains("discordPanelChannelId"));
+    assertFalse(get.body.toString().contains("webPort"));
+    requestMethod = "POST";
+    requestBody = "{\"discordPanelChannelId\":\"123456789012345678\"}";
+    var saved = call(handler, "/api/server", "/config", headers);
+    assertEquals(200, saved.status);
+    assertEquals(
+        "123456789012345678", plugin.getConfig().getString("discord.tickets.panel-channel-id"));
+    assertTrue(saved.body.toString().contains("restartRequiredFields"));
+    requestBody = "{\"webPort\":9090}";
+    assertEquals(403, call(handler, "/api/server", "/config", headers).status);
+  }
+
+  @Test
+  void invalidSettingsBatchLeavesBothFileAndLiveValuesUntouched() throws Exception {
+    var actor =
+        account(
+            "BothSettings", Set.of(Permission.MANAGE_PANEL_SETTINGS, Permission.MANAGE_PREVIEW));
+    var file = plugin.getDataFolder().toPath().resolve("config.yml");
+    String before = java.nio.file.Files.readString(file);
+    int port = plugin.getConfig().getInt("web.port");
+    requestMethod = "POST";
+    requestBody =
+        "{\"webPort\":9090,\"previewCategoryId\":\"123456789\",\"previewChannelId\":\"123456789\"}";
+    assertEquals(
+        400,
+        call(
+                new ApiServerOpsHandler(plugin),
+                "/api/server",
+                "/config",
+                Map.of("Authorization", "Bearer " + actor.token()))
+            .status);
+    assertEquals(before, java.nio.file.Files.readString(file));
+    assertEquals(port, plugin.getConfig().getInt("web.port"));
+  }
+
+  @Test
+  void settingsSecretIsRetainedByBlankAndClearedOnlyByExplicitAction() throws Exception {
+    var actor = account("WebhookSettings", Set.of(Permission.MANAGE_INTEGRATIONS));
+    var headers = Map.of("Authorization", "Bearer " + actor.token());
+    var handler = new ApiServerOpsHandler(plugin);
+    requestMethod = "POST";
+    requestBody =
+        "{\"discordWebhookUrl\":\"https://discord.com/api/webhooks/123456789/test-secret\",\"webhooksEnabled\":true}";
+    var first = call(handler, "/api/server", "/config", headers);
+    assertEquals(200, first.status);
+    assertFalse(first.body.toString().contains("test-secret"));
+    requestBody = "{\"discordWebhookUrl\":\"\"}";
+    assertEquals(200, call(handler, "/api/server", "/config", headers).status);
+    assertTrue(
+        plugin
+            .getConfig()
+            .getString("security.webhooks.discord.webhook-url")
+            .endsWith("test-secret"));
+    requestBody = "{\"clearDiscordWebhookUrl\":true}";
+    assertEquals(200, call(handler, "/api/server", "/config", headers).status);
+    assertEquals("", plugin.getConfig().getString("security.webhooks.discord.webhook-url"));
+    assertFalse(plugin.getConfig().getBoolean("security.webhooks.enabled"));
+  }
+
+  @Test
+  void panelDiagnosticAndPublishingRequireIntegrationRights() throws Exception {
+    var staff = account("OnlyCaseRights", Set.of(Permission.MANAGE_REPORTS));
+    var headers = Map.of("Authorization", "Bearer " + staff.token());
+    var handler = new ApiCasesHandler(plugin);
+    assertEquals(403, call(handler, "/api/cases", "/discord-panel", headers).status);
+    requestMethod = "POST";
+    requestBody = "{}";
+    assertEquals(403, call(handler, "/api/cases", "/discord-panel/publish", headers).status);
+    var manager = account("PanelIntegration", Set.of(Permission.MANAGE_INTEGRATIONS));
+    headers = Map.of("Authorization", "Bearer " + manager.token());
+    requestMethod = "GET";
+    var status = call(handler, "/api/cases", "/discord-panel", headers);
+    assertEquals(200, status.status);
+    assertTrue(status.body.toString().contains("NOT_CONFIGURED"));
+    requestMethod = "POST";
+    assertEquals(409, call(handler, "/api/cases", "/discord-panel/publish", headers).status);
+    assertTrue(plugin.getDiscordBridge().ticketDeskStore().messages().isEmpty());
+  }
+
+  @Test
+  void previewDiscordApiRunsModelsButDoesNotPretendToDeliverWithoutConfiguration()
+      throws Exception {
+    var owner = account("PreviewLabOwner", Set.of(Permission.MANAGE_PREVIEW));
+    var created = plugin.preview().create(owner.adminId());
+    String id = created.get("id").toString();
+    var headers = Map.of("X-Preview-Session", created.get("token").toString());
+    var handler = new ApiPreviewHandler(plugin);
+    var status = call(handler, "/preview/api", "/" + id + "/discord-lab", headers);
+    assertEquals(200, status.status);
+    assertTrue(status.body.toString().contains("\"configured\":false"));
+    requestMethod = "POST";
+    requestBody = "{\"action\":\"model\"}";
+    var models = call(handler, "/preview/api", "/" + id + "/discord-lab/run", headers);
+    assertEquals(200, models.status);
+    assertTrue(models.body.toString().contains("TRANSPORT_MODEL"));
+    assertFalse(models.body.toString().contains("\"passed\":false"));
+    requestBody = "{\"action\":\"panel\"}";
+    assertEquals(400, call(handler, "/preview/api", "/" + id + "/discord-lab/run", headers).status);
+    assertTrue(plugin.getDiscordBridge().ticketDeskStore().messages().isEmpty());
+  }
+
+  @Test
   void managingStaffDoesNotGrantPanelSettings() throws Exception {
     var staff = account("OnlyStaff", Set.of(Permission.MANAGE_ADMINS));
     assertEquals(

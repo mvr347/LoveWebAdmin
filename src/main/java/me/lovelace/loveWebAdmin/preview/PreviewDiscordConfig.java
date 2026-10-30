@@ -24,6 +24,9 @@ record PreviewDiscordConfig(String category, String channel, Set<String> recipie
     if (!channelId.isEmpty() && !channelId.matches(ID))
       problems.add("channel-id должен быть числовым ID (5–25 цифр), получено «" + channelId + "»");
 
+    if (!categoryId.isEmpty() && categoryId.equals(channelId))
+      problems.add(
+          "category-id и channel-id совпадают: у категории и текстового канала должны быть разные ID");
     var ids = new LinkedHashSet<String>();
     if (allowedUserIds != null)
       for (Object raw : allowedUserIds) {
@@ -32,6 +35,8 @@ record PreviewDiscordConfig(String category, String channel, Set<String> recipie
         if (!id.matches(ID)) problems.add("allowed-user-ids: «" + id + "» не числовой Discord ID (5–25 цифр)");
         else ids.add(id);
       }
+    if ((!categoryId.isEmpty() || !channelId.isEmpty()) && ids.isEmpty())
+      problems.add("Добавьте Discord ID хотя бы одного тестировщика в allowed-user-ids");
     if (ids.size() > MAX_RECIPIENTS)
       problems.add("allowed-user-ids: " + ids.size() + " ID, допускается не больше " + MAX_RECIPIENTS);
 

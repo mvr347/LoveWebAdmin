@@ -155,6 +155,25 @@ public class LoveWebAdmin extends JavaPlugin {
 
     startTimeMillis = System.currentTimeMillis();
     saveDefaultConfig();
+    try (var template = getResource("config.yml")) {
+      if (template == null) throw new IllegalStateException("Отсутствует шаблон config.yml");
+      var migration =
+          me.lovelace.loveWebAdmin.config.ConfigUpgrade.upgrade(
+              getDataFolder().toPath().resolve("config.yml"),
+              new String(template.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));
+      if (migration.changed()) {
+        reloadConfig();
+        getLogger()
+            .info(
+                "Конфиг дополнен актуальными настройками"
+                    + (migration.backup() != null
+                        ? ". Исходник: " + migration.backup().getFileName()
+                        : ""));
+      }
+    } catch (Exception error) {
+      throw new IllegalStateException(
+          "Не удалось обновить config.yml; исходный файл сохранён", error);
+    }
     previewEnabled = getConfig().getBoolean("preview.enabled", false);
     if(getConfig().contains("debug-mode")||getConfig().contains("security.debug-mode")) {
       getConfig().set("debug-mode",null);getConfig().set("security.debug-mode",null);saveConfig();

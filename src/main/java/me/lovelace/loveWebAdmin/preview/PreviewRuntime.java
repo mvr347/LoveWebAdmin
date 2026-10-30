@@ -62,6 +62,13 @@ public final class PreviewRuntime implements AutoCloseable, AppealService.Contex
                   java.nio.charset.StandardCharsets.UTF_8);
         }
       state = JsonUtils.parseObject(saved);
+      var storedConfig = map(state.get("config"));
+      storedConfig
+          .keySet()
+          .removeIf(key -> key.toLowerCase(java.util.Locale.ROOT).startsWith("telegram"));
+      var mergedConfig = me.lovelace.loveWebAdmin.config.PanelSettings.defaults();
+      mergedConfig.putAll(storedConfig);
+      state.put("config", mergedConfig);
       state.put("pendingLogin", null);
       totpSecret = text(state, "_totpSecret", TotpUtils.generateSecret());
       state.put("_totpSecret", totpSecret);
@@ -87,6 +94,7 @@ public final class PreviewRuntime implements AutoCloseable, AppealService.Contex
                     id, action.equals("approve") ? "ACCEPTED" : "REJECTED", staff))
                   throw new Rejected(409, "Жалоба уже рассмотрена");
                 database.recordReportVerdict(id, staff, reason);
+                delivery("REPORT_DECISION", Map.of("reportId", id, "reason", reason));
                 return "Тестовое решение сохранено";
               },
               (kind, id) ->
@@ -155,6 +163,11 @@ public final class PreviewRuntime implements AutoCloseable, AppealService.Contex
     syncCases();
     var value = JsonUtils.parseObject(JsonUtils.toJson(state));
     value.keySet().removeIf(key -> key.startsWith("_"));
+    value.put(
+        "config",
+        me.lovelace.loveWebAdmin.config.PanelSettings.view(
+            map(state.get("config")),
+            permission -> state.get("viewer") != null && has(permission.name())));
     return value;
   }
 
@@ -643,29 +656,31 @@ public final class PreviewRuntime implements AutoCloseable, AppealService.Contex
       }
     }
     if (scope.equals("server")) {
-      if (!id.equals("config") || read)
-        require(
-            id.equals("config")
-                ? "VIEW_SERVER_SETTINGS"
-                : id.equals("maintenance")
-                    ? "MANAGE_MAINTENANCE"
-                    : id.equals("ops") ? "MANAGE_OPERATORS" : "MANAGE_WHITELIST");
       var config = map(state.get("config"));
       if (id.equals("config")) {
+        if (read
+            && !me.lovelace.loveWebAdmin.config.PanelSettings.canRead(
+                permission -> has(permission.name())))
+          throw new Rejected(403, "Нет права просмотра настроек");
+        java.util.List<String> restart = java.util.List.of();
         if (!read) {
           for (String field : body.keySet())
-            require(
-                me.lovelace
-                    .loveWebAdmin
-                    .web
-                    .handlers
-                    .ApiServerOpsHandler
-                    .configPermission(field)
-                    .name());
-          config.putAll(body);
+            require(me.lovelace.loveWebAdmin.config.PanelSettings.permission(field).name());
+          var patch = me.lovelace.loveWebAdmin.config.PanelSettings.normalize(body, config);
+          restart = me.lovelace.loveWebAdmin.config.PanelSettings.restartFields(patch, config);
+          config.putAll(patch);
         }
-        return config;
+        var result =
+            new LinkedHashMap<String, Object>(
+                me.lovelace.loveWebAdmin.config.PanelSettings.view(
+                    config, permission -> has(permission.name())));
+        if (!read) result.put("restartRequiredFields", restart);
+        return result;
       }
+      require(
+          id.equals("maintenance")
+              ? "MANAGE_MAINTENANCE"
+              : id.equals("ops") ? "MANAGE_OPERATORS" : "MANAGE_WHITELIST");
       if (id.equals("maintenance")) {
         if (!read) {
           config.put("maintenanceEnabled", body.get("enabled"));
@@ -776,7 +791,9 @@ public final class PreviewRuntime implements AutoCloseable, AppealService.Contex
       if (!name.matches("[A-Za-z0-9_]{3,24}") || passwords.containsKey(name))
         throw new Rejected(400, "Неверный или занятый ник");
       String password = text(body, "password", "");
-      String invalid = PasswordUtils.validateStrength(password);
+      String invalid =
+          PasswordUtils.validateStrength(
+              password, ((Number) map(state.get("config")).get("minPasswordLength")).intValue());
       if (invalid != null) throw new Rejected(400, invalid);
       int id = nextId();
       var user =
@@ -827,7 +844,9 @@ public final class PreviewRuntime implements AutoCloseable, AppealService.Contex
   }
 
   void setPassword(String username, String password) {
-    String invalid = PasswordUtils.validateStrength(password);
+    String invalid =
+        PasswordUtils.validateStrength(
+            password, ((Number) map(state.get("config")).get("minPasswordLength")).intValue());
     if (invalid != null) throw new Rejected(400, invalid);
     passwords.put(username, PasswordUtils.hash(password));
     map(state.get("_passwordHashes")).put(username, passwords.get(username));
@@ -990,7 +1009,9 @@ public final class PreviewRuntime implements AutoCloseable, AppealService.Contex
       throw new Rejected(400, "Неверный тестовый пароль или код 2FA");
     if (id.equals("password")) {
       String next = text(body, "newPassword", "");
-      String invalid = PasswordUtils.validateStrength(next);
+      String invalid =
+          PasswordUtils.validateStrength(
+              next, ((Number) map(state.get("config")).get("minPasswordLength")).intValue());
       if (invalid != null) throw new Rejected(400, invalid);
       passwords.put(username, PasswordUtils.hash(next));
       map(state.get("_passwordHashes")).put(username, passwords.get(username));
@@ -1034,6 +1055,64 @@ public final class PreviewRuntime implements AutoCloseable, AppealService.Contex
     return String.valueOf(
         map(state.computeIfAbsent("discordTickets", k -> new LinkedHashMap<>()))
             .getOrDefault(kind + ":" + id, ""));
+  }
+
+  Path folder() {
+    return folder;
+  }
+
+  public synchronized int discordCase(String kind, String nick, String text, String owner)
+      throws Exception {
+    if (closed) throw new Rejected(410, "Песочница закрыта");
+    if (!Set.of("report", "appeal").contains(kind)
+        || !nick.matches("[A-Za-z0-9_]{3,16}")
+        || text.trim().length() < 5
+        || text.length() > 2000)
+      throw new IllegalArgumentException("Тестовый ник: 3–16 символов, описание: 5–2000 символов");
+    String uuid =
+        java.util
+            .UUID
+            .nameUUIDFromBytes((namespace + nick).getBytes(java.nio.charset.StandardCharsets.UTF_8))
+            .toString();
+    int id;
+    if (kind.equals("report")) {
+      id =
+          database.createPlayerReport(
+              "preview-discord:" + owner,
+              "Тестовый автор",
+              "127.0.0.1",
+              uuid,
+              nick,
+              List.of("Тестовая жалоба"),
+              text,
+              false,
+              0);
+      moderation.ticketOwner(kind, id, owner);
+    } else {
+      var ban =
+          database.saveBan(
+              new WebBan(
+                  0,
+                  nick,
+                  uuid,
+                  null,
+                  "Система",
+                  "Тестовая блокировка",
+                  "",
+                  "[]",
+                  false,
+                  "ACTIVE",
+                  3600,
+                  now(),
+                  now() + 3600));
+      moderation.source(ban.id(), "CONSOLE", "Система", null);
+      id = database.createAppeal(ban.id(), uuid, nick, text);
+      moderation.createAccess(id, owner, false);
+      database.addAppealMessage(id, nick, false, text);
+    }
+    if (id < 1) throw new IllegalStateException("Тестовое дело не сохранено");
+    persist();
+    return id;
   }
 
   public synchronized boolean isClosed() {

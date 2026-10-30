@@ -4,7 +4,6 @@ import me.lovelace.loveWebAdmin.LoveWebAdmin;
 import me.lovelace.loveWebAdmin.utils.JsonUtils;
 
 import java.net.URI;
-import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -13,11 +12,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 
-/**
- * Асинхронный сервис отправки тревожных уведомлений безопасности в Discord и Telegram.
- */
+/** Асинхронный сервис отправки тревожных уведомлений безопасности в Discord. */
 public class SecurityWebhookService {
 
     private final LoveWebAdmin plugin;
@@ -35,11 +31,11 @@ public class SecurityWebhookService {
     }
 
     public void sendLoginAlert(String username, String ip, String userAgent, boolean isNewIp) {
-        if (!isNewIp && !plugin.getConfig().getBoolean("security.webhooks.notify-on.all-logins", false)) {
-            return;
-        }
+    if (!(plugin.getConfig().getBoolean("security.webhooks.notify-on.all-logins", false)
+        || (isNewIp && plugin.getConfig().getBoolean("security.webhooks.notify-on.new-ip", true))))
+      return;
 
-        String title = isNewIp ? "⚠️ Вход администратора с нового IP" : "🔐 Успешный вход в WebAdmin";
+    String title = isNewIp ? "⚠️ Вход администратора с нового IP" : "🔐 Успешный вход в панели";
         String ua = (userAgent != null && !userAgent.isBlank()) ? userAgent : "Неизвестный браузер";
         String desc = "**Сотрудник:** `" + username + "`\n**IP-адрес:** `" + ip + "`\n**Устройство:** `" + ua + "`\n**Время:** " + Instant.now();
         int color = isNewIp ? 0xf59e0b : 0x10b981; // Оранжевый или зеленый
@@ -48,6 +44,7 @@ public class SecurityWebhookService {
     }
 
     public void notifyBruteForce(String ip, String username, int attempts) {
+    if (!plugin.getConfig().getBoolean("security.webhooks.notify-on.brute-force", true)) return;
         String title = "🚨 Защита: Блокировка перебора паролей (Brute-Force)";
         String desc = "**IP-адрес:** `" + ip + "`\n**Атакованный аккаунт:** `" + username + "`\n**Неудачных попыток:** " + attempts;
         sendAlert(title, desc, 0xef4444); // Красный
@@ -62,7 +59,8 @@ public class SecurityWebhookService {
     }
 
     public void sendRegistrationAlert(String username, String role) {
-        String title = "👤 Новая заявка на регистрацию в WebAdmin";
+    if (!plugin.getConfig().getBoolean("security.webhooks.notify-on.registration", true)) return;
+    String title = "👤 Новая заявка на регистрацию в панели";
         String desc = "**Кандидат:** `" + username + "`\n**Желаемая роль:** `" + role + "`\nТребуется подтверждение Управляющего в панели управления.";
         sendAlert(title, desc, 0x8b5cf6); // Фиолетовый
     }
@@ -76,7 +74,9 @@ public class SecurityWebhookService {
     }
 
     public void notifyDestructiveAction(String actor, String actionDetails) {
-        String title = "⚡ Деструктивное действие в WebAdmin";
+    if (!plugin.getConfig().getBoolean("security.webhooks.notify-on.destructive-actions", true))
+      return;
+    String title = "⚡ Деструктивное действие в панели";
         String desc = "**Администратор:** `" + actor + "`\n**Действие:** " + actionDetails;
         sendAlert(title, desc, 0xdc2626); // Темно-красный
     }
@@ -86,32 +86,29 @@ public class SecurityWebhookService {
         if (!enabled) return;
 
         String discordUrl = plugin.getConfig().getString("security.webhooks.discord.webhook-url", plugin.getConfig().getString("security.webhooks.discord-url", ""));
-        String tgToken = plugin.getConfig().getString("security.webhooks.telegram.bot-token");
-        String tgChatId = plugin.getConfig().getString("security.webhooks.telegram.chat-id");
-
-        if (discordUrl != null && !discordUrl.isBlank() && discordUrl.startsWith("http")) {
-            sendDiscord(discordUrl, title, description, colorHex);
-        }
-
-        if (tgToken != null && !tgToken.isBlank() && tgChatId != null && !tgChatId.isBlank()) {
-            sendTelegram(tgToken, tgChatId, title, description);
-        }
+    if (discordUrl != null
+        && me.lovelace.loveWebAdmin.config.PanelSettings.validWebhook(discordUrl))
+      sendDiscord(discordUrl, title, description, colorHex);
     }
 
     private void sendDiscord(String webhookUrl, String title, String description, int colorHex) {
         try {
-            Map<String, Object> embed = Map.of(
-                "title", title,
-                "description", description,
-                "color", colorHex,
-                "timestamp", Instant.now().toString(),
-                "footer", Map.of("text", "LoveWebAdmin Security")
-            );
+      Map<String, Object> embed =
+          Map.of(
+              "title", title,
+              "description", description,
+              "color", colorHex,
+              "timestamp", Instant.now().toString(),
+              "footer", Map.of("text", "Система безопасности"));
 
-            Map<String, Object> payload = Map.of(
-                "username", "WebAdmin Security",
-                "embeds", List.of(embed)
-            );
+      Map<String, Object> payload =
+          Map.of(
+              "username",
+              "Система безопасности",
+              "embeds",
+              List.of(embed),
+              "allowed_mentions",
+              Map.of("parse", List.of()));
 
             String json = JsonUtils.toJson(payload);
             HttpRequest request = HttpRequest.newBuilder()
@@ -127,34 +124,8 @@ public class SecurityWebhookService {
                     return null;
                 });
         } catch (Exception e) {
-            plugin.getLogger().warning("Ошибка отправки Discord вебхука: " + e.getMessage());
+      plugin.getLogger().warning("Не удалось отправить уведомление безопасности Discord");
         }
     }
 
-    private void sendTelegram(String botToken, String chatId, String title, String description) {
-        try {
-            String text = "*" + escapeTg(title) + "*\n\n" + description;
-            String url = "https://api.telegram.org/bot" + botToken + "/sendMessage?chat_id=" +
-                URLEncoder.encode(chatId, StandardCharsets.UTF_8) +
-                "&parse_mode=Markdown&text=" + URLEncoder.encode(text, StandardCharsets.UTF_8);
-
-            HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .timeout(Duration.ofSeconds(6))
-                .GET()
-                .build();
-
-            httpClient.sendAsync(request, HttpResponse.BodyHandlers.discarding())
-                .exceptionally(ex -> {
-                    plugin.getLogger().warning("Ошибка отправки Telegram уведомления");
-                    return null;
-                });
-        } catch (Exception e) {
-            plugin.getLogger().warning("Ошибка отправки Telegram уведомления: " + e.getMessage());
-        }
-    }
-
-    private String escapeTg(String s) {
-        return s.replace("_", "\\_").replace("*", "\\*").replace("[", "\\[");
-    }
 }

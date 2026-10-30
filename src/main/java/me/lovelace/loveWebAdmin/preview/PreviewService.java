@@ -7,13 +7,15 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import me.lovelace.loveWebAdmin.LoveWebAdmin;
 import me.lovelace.loveWebAdmin.integration.CoreDiscordExtensions;
+import me.lovelace.loveWebAdmin.integration.DiscordMessagePublisher;
 import me.lovelace.loveWebAdmin.models.Permission;
 import me.lovelace.loveWebAdmin.utils.JsonUtils;
 
 /**
  * Bounded isolated sessions and their real Discord delivery workers. Never dispatches game actions.
  */
-public final class PreviewService implements AutoCloseable, TicketMessageListenerV2 {
+public final class PreviewService
+    implements AutoCloseable, TicketMessageListenerV2, DiscordInteractionListener {
   public record Session(
       String id, String secretHash, int owner, PreviewRuntime runtime, long created) {}
 
@@ -21,6 +23,11 @@ public final class PreviewService implements AutoCloseable, TicketMessageListene
   private final Path root;
   private final ConcurrentHashMap<String, Session> sessions = new ConcurrentHashMap<>();
   private final AtomicBoolean pumping = new AtomicBoolean();
+  private final ConcurrentHashMap<String, PreviewDiscordLab> labs = new ConcurrentHashMap<>();
+  private final List<String> discordProblems;
+  private final boolean routingSafe;
+  private final java.util.concurrent.atomic.AtomicInteger interactionPending =
+      new java.util.concurrent.atomic.AtomicInteger();
   private final String category, channel;
   private final Set<String> recipients;
   private final org.bukkit.scheduler.BukkitTask task;
@@ -38,6 +45,20 @@ public final class PreviewService implements AutoCloseable, TicketMessageListene
             plugin.getConfig().getString("preview.discord.channel-id", ""),
             plugin.getConfig().getList("preview.discord.allowed-user-ids", List.of()));
     discord.problems().forEach(problem -> plugin.getLogger().warning("Preview Discord: " + problem));
+    routingSafe =
+        List.of(
+                "discord.tickets.panel-channel-id",
+                "discord.tickets.queue-channel-id",
+                "discord.reports-channel-id",
+                "discord.appeals-channel-id")
+            .stream()
+            .noneMatch(
+                key ->
+                    !discord.channel().isBlank()
+                        && discord.channel().equals(plugin.getConfig().getString(key, "")));
+    var problems = new ArrayList<String>(discord.problems());
+    if (!routingSafe) problems.add("Тестовый канал совпадает с рабочим каналом обращений");
+    discordProblems = List.copyOf(problems);
     category = discord.category();
     channel = discord.channel();
     recipients = discord.recipients();
@@ -198,7 +219,15 @@ public final class PreviewService implements AutoCloseable, TicketMessageListene
   }
 
   public synchronized void remove(Session session) throws Exception {
+    var lab = labs.get(session.id());
+    if (lab != null && !lab.busy.compareAndSet(false, true))
+      throw new PreviewRuntime.Rejected(
+          409, "Дождитесь окончания проверки Discord перед удалением песочницы");
     sessions.remove(session.id(), session);
+    if (lab != null) {
+      labs.remove(session.id(), lab);
+      lab.close();
+    }
     Files.deleteIfExists(root.resolve(session.id()).resolve("session.json"));
     var discord = bound;
     if (discord != null) {
@@ -220,9 +249,16 @@ public final class PreviewService implements AutoCloseable, TicketMessageListene
             : plugin.getDiscordBridge().discord();
     var current = service.orElse(null);
     if (current != bound) {
-      if (bound != null) bound.unregisterTicketMessageListenerV2(this);
+      if (bound != null) {
+        bound.unregisterTicketMessageListenerV2(this);
+        bound.unregisterInteractionListener(this);
+      }
       bound = current;
-      if (current != null) current.registerTicketMessageListenerV2(this);
+      if (current != null) {
+        current.registerTicketMessageListenerV2(this);
+        CoreDiscordExtensions.claimPrefix(current, "lwa:preview:");
+        current.registerInteractionListener(this);
+      }
     }
     if (!pumping.compareAndSet(false, true)) return;
     plugin
@@ -285,6 +321,8 @@ public final class PreviewService implements AutoCloseable, TicketMessageListene
         || !service.isEnabled()
         || category.isBlank()
         || channel.isBlank()
+        || recipients.isEmpty()
+        || !routingSafe
         || session.runtime().simulatedDiscordFailure())
       return CompletableFuture.completedFuture(false);
     String event = String.valueOf(payload.get("event"));
@@ -320,14 +358,15 @@ public final class PreviewService implements AutoCloseable, TicketMessageListene
       if (!existing.isBlank()) destination = CompletableFuture.completedFuture(existing);
       else
         destination =
-            CoreDiscordExtensions.createPreviewTicket(
+            CoreDiscordExtensions.managedPreviewTicket(
                     service,
                     kind.equals("appeal") ? TicketType.BAN_APPEAL : TicketType.REPORT,
                     "preview:" + session.id() + ":" + kind + ":" + id,
                     String.valueOf(data.getOrDefault("playerName", "Preview")),
-                    "[ТЕСТ] Обращение LoveWebAdmin",
                     recipients.stream().sorted().findFirst().orElse(null),
-                    category)
+                    category,
+                    new ArrayList<>(recipients),
+                    "test-mine-ticket-" + id + (kind.equals("appeal") ? "-a" : "-r"))
                 .thenApply(
                     created -> {
                       if (created != null)
@@ -338,6 +377,12 @@ public final class PreviewService implements AutoCloseable, TicketMessageListene
                             throw new IllegalStateException("Песочница закрыта");
                           }
                           session.runtime().channel(kind, id, created);
+                          lab(session)
+                              .registerExisting(
+                                  kind,
+                                  id,
+                                  recipients.stream().sorted().findFirst().orElse(null),
+                                  created);
                         } catch (Exception error) {
                           throw new CompletionException(error);
                         }
@@ -400,10 +445,24 @@ public final class PreviewService implements AutoCloseable, TicketMessageListene
                                                         }))
                                         .toArray(CompletableFuture[]::new))
                                 .thenApply(ignored -> true);
-                          if (event.equals("APPEAL_DECISION"))
-                            return service.closeTicketChannel(
-                                session.runtime().channel(kind, id),
-                                "[ТЕСТ] Апелляция рассмотрена");
+                          if (event.equals("APPEAL_DECISION") || event.equals("REPORT_DECISION"))
+                            return plugin
+                                .io()
+                                .supply(
+                                    () -> {
+                                      try {
+                                        var lab = lab(session);
+                                        if (lab.hasChannel(kind, id, target))
+                                          return lab.finishKnown(kind, id, service);
+                                        return service
+                                            .closeTicketChannel(
+                                                session.runtime().channel(kind, id),
+                                                "[ТЕСТ] Рассмотрение завершено")
+                                            .get(30, TimeUnit.SECONDS);
+                                      } catch (Exception error) {
+                                        throw new CompletionException(error);
+                                      }
+                                    });
                           return CompletableFuture.completedFuture(true);
                         }));
   }
@@ -447,10 +506,145 @@ public final class PreviewService implements AutoCloseable, TicketMessageListene
             });
   }
 
+  private synchronized PreviewDiscordLab lab(Session session) throws Exception {
+    var found = labs.get(session.id());
+    if (found != null) return found;
+    if (sessions.get(session.id()) != session || !ownerAllowed(session))
+      throw new PreviewRuntime.Rejected(403, "Доступ к Preview отозван");
+    found =
+        new PreviewDiscordLab(
+            session,
+            category,
+            channel,
+            recipients,
+            () ->
+                !closed
+                    && plugin.isPreviewEnabled()
+                    && sessions.get(session.id()) == session
+                    && ownerAllowed(session));
+    labs.put(session.id(), found);
+    return found;
+  }
+
+  public Map<String, Object> discordStatus(Session session) throws Exception {
+    var result = new LinkedHashMap<String, Object>(lab(session).status());
+    result.put("categoryId", category);
+    result.put("channelId", channel);
+    result.put("recipientCount", recipients.size());
+    result.put("problems", discordProblems);
+    result.put("botAvailable", bound != null && bound.isEnabled());
+    result.put(
+        "configured",
+        !category.isBlank()
+            && !channel.isBlank()
+            && !recipients.isEmpty()
+            && discordProblems.isEmpty());
+    return result;
+  }
+
+  public Map<String, Object> discordCheck(Session session, String action) throws Exception {
+    if (!Set.of("model", "diagnose", "panel", "dm", "roundtrip").contains(action))
+      throw new IllegalArgumentException("Неизвестная проверка Discord");
+    if (!action.equals("model")) {
+      if (!discordProblems.isEmpty())
+        throw new IllegalArgumentException(String.join("; ", discordProblems));
+    }
+    return lab(session).run(action, bound);
+  }
+
+  @Override
+  public boolean onInteraction(DiscordInteraction interaction) {
+    if (!interaction.name().startsWith("lwa:preview:")) return false;
+    var service = bound;
+    if (service == null || closed) return true;
+    if (!plugin.isPreviewEnabled()) {
+      service.respond(
+          interaction,
+          JsonUtils.toJson(
+              Map.of(
+                  "type",
+                  4,
+                  "data",
+                  Map.of("flags", 64, "content", "Серверный Preview отключён"))));
+      return true;
+    }
+    String[] parts = interaction.name().split(":");
+    if (parts.length < 4) return true;
+    var session = sessions.get(parts[2]);
+    if (session == null
+        || !ownerAllowed(session)
+        || !recipients.contains(interaction.userId())
+        || !interaction.guildId().equals(CoreDiscordExtensions.guild(service))) {
+      service.respond(
+          interaction,
+          JsonUtils.toJson(
+              Map.of(
+                  "type",
+                  4,
+                  "data",
+                  Map.of(
+                      "flags",
+                      64,
+                      "content",
+                      "Тестовая панель недоступна этому аккаунту или сессия завершена"))));
+      return true;
+    }
+    if (interactionPending.incrementAndGet() > 16) {
+      interactionPending.decrementAndGet();
+      service.respond(
+          interaction,
+          JsonUtils.toJson(
+              Map.of(
+                  "type",
+                  4,
+                  "data",
+                  Map.of("flags", 64, "content", "Дождитесь завершения предыдущих проверок"))));
+      return true;
+    }
+    plugin
+        .io()
+        .run(
+            () -> {
+              try {
+                lab(session).interact(interaction, service);
+              } catch (Exception error) {
+                String message =
+                    error instanceof IllegalArgumentException
+                        ? error.getMessage()
+                        : DiscordMessagePublisher.explanation(error);
+                service
+                    .respond(
+                        interaction,
+                        JsonUtils.toJson(
+                            Map.of("type", 4, "data", Map.of("flags", 64, "content", message))))
+                    .thenAccept(
+                        ok -> {
+                          if (!ok)
+                            CoreDiscordExtensions.managed(
+                                service,
+                                "editInteractionResponse",
+                                new Class<?>[] {DiscordInteraction.class, String.class},
+                                interaction,
+                                JsonUtils.toJson(
+                                    Map.of(
+                                        "content",
+                                        message,
+                                        "allowed_mentions",
+                                        Map.of("parse", List.of()))));
+                        });
+              }
+            })
+        .whenComplete((value, error) -> interactionPending.decrementAndGet());
+    return true;
+  }
+
   public synchronized void stop() {
     closed = true;
     task.cancel();
-    if (bound != null) bound.unregisterTicketMessageListenerV2(this);
+    if (bound != null) {
+      bound.unregisterTicketMessageListenerV2(this);
+      bound.unregisterInteractionListener(this);
+    }
   }
 
   @Override
@@ -464,6 +658,15 @@ public final class PreviewService implements AutoCloseable, TicketMessageListene
             .getLogger()
             .warning("Не удалось закрыть хранилище Preview: " + error.getClass().getSimpleName());
       }
+    for (var lab : labs.values())
+      try {
+        lab.close();
+      } catch (Exception error) {
+        plugin
+            .getLogger()
+            .warning("Не закрыты проверки Discord: " + error.getClass().getSimpleName());
+      }
+    labs.clear();
     sessions.clear();
   }
 }

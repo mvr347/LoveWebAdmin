@@ -203,7 +203,27 @@
     tools.id = "love-preview-tools";
     tools.hidden = true;
     tools.innerHTML =
-      '<h2>Проверка механик</h2><p>Демопароль: <code>PreviewOnly!25</code>, локальный код 2FA: <code>123456</code>. Серверный режим использует настоящий TOTP из тестового секрета. <output id="preview-totp"></output></p><div id="preview-scenario-buttons"></div><p id="preview-feedback" role="status"></p><h3>Тестовый Discord</h3><div id="preview-discord-feed"></div>';
+      '<h2>Проверка механик</h2><p>Демопароль: <code>PreviewOnly!25</code>, локальный код 2FA: <code>123456</code>. Серверный режим использует настоящий TOTP из тестового секрета. <output id="preview-totp"></output></p><div id="preview-scenario-buttons"></div><p id="preview-feedback" role="status"></p><h3>Очередь тестовых уведомлений</h3><div id="preview-discord-feed"></div>';
+    import("/preview/js/core/discord-lab.js")
+      .then(({ installDiscordLab }) =>
+        installDiscordLab(tools, {
+          server: () => !!context,
+          request: async (method, path, body) => {
+            const { response, value } = await serverRequest(method, path, body);
+            if (!response.ok)
+              throw Error(value.error || "Проверка Discord не выполнена");
+            return value.data;
+          },
+          fail: (error) =>
+            (document.getElementById("preview-feedback").textContent =
+              error.message),
+        }),
+      )
+      .catch(
+        (error) =>
+          (document.getElementById("preview-feedback").textContent =
+            error.message),
+      );
     document.body.prepend(tools);
     document.body.prepend(banner);
     document.body.classList.add("love-preview");

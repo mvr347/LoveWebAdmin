@@ -307,3 +307,45 @@ test("workflow previews enforce independence and replay one author-visible repor
     1,
   );
 });
+
+test("settings keep domain permissions, reject invalid batches and never return webhook secrets", () => {
+  const state = create().snapshot();
+  state.roles.find((r) => r.id === 2).permissions = ["MANAGE_INTEGRATIONS"];
+  state.viewer = 2;
+  const m = create({ load: () => state });
+  call(m, "GET", "/api/server/config");
+  assert.equal(
+    m.request("POST", "/api/server/config", { webPort: 9090 }).status,
+    403,
+  );
+  assert.equal(
+    m.request("POST", "/api/server/config", {
+      discordPanelChannelId: "123456789",
+      discordQueueChannelId: "123456789",
+    }).status,
+    400,
+  );
+  const secret = "https://discord.com/api/webhooks/123456789/preview-secret";
+  const saved = call(m, "POST", "/api/server/config", {
+    discordWebhookUrl: secret,
+    webhooksEnabled: true,
+  });
+  assert.equal(JSON.stringify(saved).includes("preview-secret"), false);
+  assert.equal(saved.discordWebhookConfigured, true);
+  assert.equal(JSON.stringify(m.snapshot()).includes("preview-secret"), false);
+  assert.equal(
+    call(m, "POST", "/api/server/config", { discordWebhookUrl: "" })
+      .discordWebhookConfigured,
+    true,
+  );
+  assert.equal(
+    call(m, "POST", "/api/server/config", { clearDiscordWebhookUrl: true })
+      .discordWebhookConfigured,
+    false,
+  );
+  assert.equal(
+    m.request("POST", "/api/server/config", { telegramBotToken: "removed" })
+      .status,
+    400,
+  );
+});
