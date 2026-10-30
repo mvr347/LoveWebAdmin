@@ -264,8 +264,7 @@
     "corsAllowedOrigins": [],
     "maintenanceEnabled": false,
     "maintenanceMessage": "Тестовый режим технических работ",
-    "webhooksEnabled": false,
-    "telegramEnabled": false
+    "webhooksEnabled": false
   },
   "whitelist": {
     "enabled": false,

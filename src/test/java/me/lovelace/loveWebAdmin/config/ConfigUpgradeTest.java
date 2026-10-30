@@ -16,6 +16,24 @@ class ConfigUpgradeTest {
   }
 
   @Test
+  void removalOfOldMessagingSecretsKeepsAnExactBackupAndOtherSettings() throws Exception {
+    var file = dir.resolve("config.yml");
+    String original =
+        "config-version: 2\nweb:\n  port: 9090\nsecurity:\n  webhooks:\n    enabled: true\n    telegram:\n      bot-token: old-secret\n      chat-id: '12345'\n    discord-url: https://discord.com/api/webhooks/123456789/legacy-secret\n";
+    Files.writeString(file, original);
+    var migration = ConfigUpgrade.upgrade(file, template());
+    assertEquals(original, Files.readString(migration.backup()));
+    var after = YamlConfiguration.loadConfiguration(file.toFile());
+    assertFalse(after.isSet("security.webhooks.telegram"));
+    assertFalse(Files.readString(file).contains("old-secret"));
+    assertEquals(9090, after.getInt("web.port"));
+    assertEquals(
+        "https://discord.com/api/webhooks/123456789/legacy-secret",
+        after.getString("security.webhooks.discord.webhook-url"));
+    assertTrue(after.getBoolean("security.webhooks.enabled"));
+  }
+
+  @Test
   void missingBlocksAreAddedButExplicitValuesSecretsListsAndUnknownKeysSurvive() throws Exception {
     var path = dir.resolve("config.yml");
     String original =
@@ -40,7 +58,7 @@ class ConfigUpgradeTest {
     assertTrue(result.changed());
     assertEquals(original, Files.readString(result.backup()));
     var after = YamlConfiguration.loadConfiguration(path.toFile());
-    assertEquals(2, after.getInt("config-version"));
+    assertEquals(3, after.getInt("config-version"));
     assertEquals(9090, after.getInt("web.port"));
     assertTrue(after.getBoolean("preview.enabled"));
     assertEquals("1548780207941615707", after.getString("preview.discord.channel-id"));
@@ -105,6 +123,6 @@ class ConfigUpgradeTest {
     assertEquals("", config.getString("discord.tickets.panel-channel-id"));
     assertEquals("", config.getString("preview.discord.channel-id"));
     assertTrue(config.getStringList("preview.discord.allowed-user-ids").isEmpty());
-    assertEquals(2, config.getInt("config-version"));
+    assertEquals(3, config.getInt("config-version"));
   }
 }

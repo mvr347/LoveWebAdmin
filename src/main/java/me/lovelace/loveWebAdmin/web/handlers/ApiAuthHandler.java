@@ -276,7 +276,9 @@ public class ApiAuthHandler extends ApiHandlerSupport {
       return;
     }
 
-    String pwdErr = PasswordUtils.validateStrength(password);
+    String pwdErr =
+        PasswordUtils.validateStrength(
+            password, plugin.getConfig().getInt("security.password.min-length", 12));
     if (pwdErr != null) {
       sendError(resp, 400, pwdErr);
       return;
@@ -401,7 +403,9 @@ public class ApiAuthHandler extends ApiHandlerSupport {
       return;
     }
 
-    String strengthErr = PasswordUtils.validateStrength(password);
+    String strengthErr =
+        PasswordUtils.validateStrength(
+            password, plugin.getConfig().getInt("security.password.min-length", 12));
     if (strengthErr != null) {
       sendError(resp, 400, strengthErr);
       return;

@@ -49,65 +49,10 @@
 
 ## Конфигурация (`config.yml`)
 
-```yaml
-web:
-  port: 8080
-  # "0.0.0.0" биндит панель на все сетевые интерфейсы.
-  # Рекомендуется "127.0.0.1", если панель работает локально или за reverse proxy (nginx/Caddy с TLS).
-  host: "0.0.0.0"
-  session-lifetime-minutes: 60
+Полный актуальный [config.yml с описанием каждого раздела](src/main/resources/config.yml). Пошаговая настройка через сайт, права и момент применения изменений — [docs/SETTINGS.md](docs/SETTINGS.md).
 
-# Первый открывший панель настраивает аккаунт Управляющего (owner).
-owner-setup: true
+Рабочие обращения Discord, Preview, личные ЛС и вебхук безопасности настраиваются отдельно. Бот/токен находятся в LoveCore. При обновлении схема конфигурации дополняется с резервной копией и сохранением действующих значений.
 
-# Отдельная песочница интерфейса на синтетических данных: /preview/.
-# Не меняет вход и 2FA в настоящую панель.
-preview:
-  enabled: false
-
-logs:
-  # Сколько последних записей логов хранить в БД SQLite
-  keep-count: 5000
-
-luckperms:
-  # Синхронизация ролей веб-панели с группами LuckPerms
-  sync-enabled: true
-  owner-lp-group: "owner"
-
-security:
-  login:
-    # Максимум неудачных попыток входа до блокировки
-    max-attempts: 5
-    # Длительность блокировки после превышения попыток (в минутах)
-    lockout-minutes: 15
-  cors:
-    # Список разрешенных origin для CORS (по умолчанию пусто — same-origin)
-    allowed-origins: []
-  # Команды, запрещенные к выполнению через веб-консоль
-  command-blacklist:
-    - stop
-    - restart
-    - end
-    - op
-    - deop
-    - ban
-    - ban-ip
-    - pardon
-    - pardon-ip
-    - whitelist
-    - plugman
-    - pl
-    - reload
-  webhooks:
-    enabled: false
-    discord:
-      enabled: false
-      webhook-url: ""
-    telegram:
-      enabled: false
-      bot-token: ""
-      chat-id: ""
-```
 
 ---
 

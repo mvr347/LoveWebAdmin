@@ -1,3 +1,7 @@
+import {
+  renderSettingsSection,
+  renderPersonalNotifications,
+} from "./settings-sections.js";
 import { noticeDialog } from "../core/dialogs.js";
 import { state } from "../state.js";
 import {
@@ -33,21 +37,27 @@ export async function openAdminSettingsModal(initialTab = "general") {
   let serverConfig = {
     webPort: 8080,
     webHost: "0.0.0.0",
-    sessionLifetimeMinutes: 1440,
-    keepLogCount: 2000,
-    strictIp: true,
+    sessionLifetimeMinutes: 60,
+    keepLogCount: 5000,
+    strictIp: false,
     loginMaxAttempts: 5,
     loginLockoutMinutes: 15,
-    minPasswordLength: 8,
+    minPasswordLength: 12,
     previewEnabled: false,
     commandBlacklist: ["stop", "restart", "op", "deop", "sudo", "pex", "lp"],
     webhooksEnabled: false,
     discordWebhookUrl: "",
-    telegramBotToken: "",
-    telegramChatId: "",
   };
+  let configError = "";
+  const drafts = {};
   try {
-    const fetchedConfig = hasPerm("VIEW_SERVER_SETTINGS")
+    const fetchedConfig = [
+      "VIEW_SERVER_SETTINGS",
+      "MANAGE_PANEL_SETTINGS",
+      "MANAGE_INTEGRATIONS",
+      "MANAGE_SECURITY_SETTINGS",
+      "MANAGE_PREVIEW",
+    ].some(hasPerm)
       ? await api("GET", "/api/server/config")
       : {};
     if (fetchedConfig && typeof fetchedConfig === "object") {
@@ -56,7 +66,9 @@ export async function openAdminSettingsModal(initialTab = "general") {
         ...fetchedConfig,
       };
     }
-  } catch (_) {}
+  } catch (error) {
+    configError = error.message;
+  }
   let currentTab = initialTab || "general";
   const tabs = [
     {
@@ -81,7 +93,22 @@ export async function openAdminSettingsModal(initialTab = "general") {
     },
     {
       id: "webhooks",
-      label: "Уведомления и связь",
+      label: "Уведомления безопасности",
+      icon: renderSvgIcon("bell", "violet", 16),
+    },
+    {
+      id: "discord",
+      label: "Бот и обращения",
+      icon: renderSvgIcon("bell", "violet", 16),
+    },
+    {
+      id: "preview",
+      label: "Preview и тесты",
+      icon: renderSvgIcon("server", "violet", 16),
+    },
+    {
+      id: "notifications",
+      label: "Мои уведомления",
       icon: renderSvgIcon("bell", "violet", 16),
     },
     {
@@ -98,6 +125,9 @@ export async function openAdminSettingsModal(initialTab = "general") {
     (tab) =>
       ({
         server: hasPerm("MANAGE_PANEL_SETTINGS"),
+        discord: hasPerm("MANAGE_INTEGRATIONS"),
+        webhooks: hasPerm("MANAGE_INTEGRATIONS"),
+        preview: hasPerm("MANAGE_PREVIEW"),
         blacklist: hasPerm("MANAGE_SECURITY_SETTINGS"),
         maintenance: hasPerm("MANAGE_MAINTENANCE"),
         danger: state.me.isOwner,
@@ -247,92 +277,29 @@ export async function openAdminSettingsModal(initialTab = "general") {
                   showToast("Ошибка", e.message, "error");
                 }
               });
-          } else if (tabId === "server") {
-            // TAB 2: СЕРВЕР И СЕТЬ (РЕАЛЬНЫЙ CONFIG.YML)
-            contentPane.innerHTML = `
-                        <h4 style="color:var(--text-heading); margin-bottom:14px;">ПАРАМЕТРЫ СЕРВЕРА И ВЕБ-ПАНЕЛИ</h4>
-
-                        <div style="background:var(--card-inner-bg); padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-bottom:16px;">
-                            <div class="form-group">
-                                <label>Порт веб-сервера (web.port)</label>
-                                <input type="number" id="cfg-web-port" value="${serverConfig.webPort || 8080}" min="1" max="65535">
-                                <div style="font-size:11.5px; color:var(--text-muted); margin-top:3px;">Порт, на котором работает веб-интерфейс панели</div>
-                            </div>
-
-                            <div class="form-group">
-                                <label>Хост прослушивания (web.host)</label>
-                                <input type="text" id="cfg-web-host" value="${esc(serverConfig.webHost || "0.0.0.0")}">
-                                <div style="font-size:11.5px; color:var(--text-muted); margin-top:3px;">IP-адрес привязки (0.0.0.0 для всех сетевых интерфейсов)</div>
-                            </div>
-
-                            <div class="form-group">
-                                <label>Время жизни сессии администратора (минуты)</label>
-                                <input type="number" id="cfg-session-lifetime" value="${serverConfig.sessionLifetimeMinutes || 1440}" min="10" max="43200">
-                                <div style="font-size:11.5px; color:var(--text-muted); margin-top:3px;">По истечении времени потребуется повторная авторизация</div>
-                            </div>
-
-                            <div class="form-group">
-                                <label>Лимит хранения логов в БД (записей)</label>
-                                <input type="number" id="cfg-keep-logs" value="${serverConfig.keepLogCount || 2000}" min="100" max="50000">
-                                <div style="font-size:11.5px; color:var(--text-muted); margin-top:3px;">Количество записей журнала, сохраняемых в локальной базе данных</div>
-                            </div>
-
-                            <div class="form-group" style="margin-bottom:0;">
-                                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:var(--text-heading);">
-                                    <input type="checkbox" id="cfg-preview-enabled" ${serverConfig.previewEnabled ? "checked" : ""}>
-                                    <span>Включить отдельное превью интерфейса на тестовых данных</span>
-                                    ${serverConfig.previewEnabled ? '<a href="/preview/">Открыть превью</a>' : ""}
-                                </label>
-                            </div>
-                        </div>
-
-                        <button type="button" class="primary btn-sm" id="btn-save-server-config" style="width:100%; display:flex; align-items:center; justify-content:center; gap:6px;">
-                            ${renderSvgIcon("save", "white", 14)} СОХРАНИТЬ НАСТРОЙКИ СЕРВЕРА
-                        </button>
-                    `;
-            document
-              .getElementById("btn-save-server-config")
-              ?.addEventListener("click", async () => {
-                const port =
-                  parseInt(document.getElementById("cfg-web-port").value, 10) ||
-                  8080;
-                const host =
-                  document.getElementById("cfg-web-host").value.trim() ||
-                  "0.0.0.0";
-                const sessionLifetime =
-                  parseInt(
-                    document.getElementById("cfg-session-lifetime").value,
-                    10,
-                  ) || 1440;
-                const keepLogs =
-                  parseInt(
-                    document.getElementById("cfg-keep-logs").value,
-                    10,
-                  ) || 2000;
-                const previewEnabled = document.getElementById(
-                  "cfg-preview-enabled",
-                ).checked;
-                try {
-                  const res = await api("POST", "/api/server/config", {
-                    webPort: port,
-                    webHost: host,
-                    sessionLifetimeMinutes: sessionLifetime,
-                    keepLogCount: keepLogs,
-                    ...(hasPerm("MANAGE_PREVIEW") ? { previewEnabled } : {}),
-                  });
-                  serverConfig = {
-                    ...serverConfig,
-                    ...res.config,
-                  };
-                  showToast(
-                    "Сохранено",
-                    "Конфигурация сервера успешно обновлена в config.yml",
-                    "success",
-                  );
-                } catch (e) {
-                  showToast("Ошибка", e.message, "error");
-                }
-              });
+          } else if (
+            ["server", "discord", "preview", "webhooks"].includes(tabId)
+          ) {
+            renderSettingsSection(contentPane, tabId, {
+              api,
+              config: serverConfig,
+              hasPerm,
+              onSaved: (response) => {
+                serverConfig = { ...serverConfig, ...response };
+              },
+              drafts,
+              unavailable: configError,
+            });
+          } else if (tabId === "notifications") {
+            renderPersonalNotifications(contentPane, {
+              api,
+              me: state.me,
+              preferences: userPrefs,
+              onSaved: (next) => {
+                userPrefs = next;
+                state.me.uiPreferences = JSON.stringify(next);
+              },
+            });
           } else if (tabId === "security") {
             // TAB 3: БЕЗОПАСНОСТЬ (СИСТЕМА + СМЕНА ПАРОЛЯ + 2FA)
             contentPane.innerHTML = `
@@ -353,7 +320,7 @@ export async function openAdminSettingsModal(initialTab = "general") {
                             <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px;">
                                 <div class="form-group" style="margin-bottom:0;">
                                     <label>Мин. длина пароля</label>
-                                    <input type="number" id="cfg-min-pass" value="${serverConfig.minPasswordLength || 8}" min="6" max="32">
+                                    <input type="number" id="cfg-min-pass" value="${serverConfig.minPasswordLength || 12}" min="12" max="32">
                                 </div>
                                 <div class="form-group" style="margin-bottom:0;">
                                     <label>Макс. попыток входа</label>
@@ -404,7 +371,7 @@ export async function openAdminSettingsModal(initialTab = "general") {
                                 <input type="password" id="sec-old-pass" placeholder="••••••••" autocomplete="current-password">
                             </div>
                             <div class="form-group">
-                                <label>2. Новый надёжный пароль (минимум ${serverConfig.minPasswordLength || 8} символов) *</label>
+                                <label>2. Новый надёжный пароль (минимум ${serverConfig.minPasswordLength || 12} символов) *</label>
                                 <input type="password" id="sec-new-pass" placeholder="Новый пароль" autocomplete="new-password">
                             </div>
                             <div class="form-group">
@@ -433,6 +400,20 @@ export async function openAdminSettingsModal(initialTab = "general") {
                 .getElementById("btn-save-sec-rules")
                 ?.closest("div[style]")
                 ?.setAttribute("hidden", "");
+            if (!hasPerm("MANAGE_SECURITY_SETTINGS"))
+              for (const id of [
+                "cfg-strict-ip",
+                "cfg-min-pass",
+                "cfg-max-attempts",
+                "cfg-lockout-min",
+                "btn-save-sec-rules",
+              ]) {
+                const input = document.getElementById(id);
+                if (input) {
+                  input.disabled = true;
+                  input.title = "Нужно право управления безопасностью сервера";
+                }
+              }
             document
               .getElementById("btn-save-sec-rules")
               ?.addEventListener("click", async () => {
@@ -441,7 +422,7 @@ export async function openAdminSettingsModal(initialTab = "general") {
                   document.getElementById("cfg-strict-ip").checked;
                 const minLength =
                   parseInt(document.getElementById("cfg-min-pass").value, 10) ||
-                  8;
+                  12;
                 const maxAttempts =
                   parseInt(
                     document.getElementById("cfg-max-attempts").value,
@@ -461,7 +442,7 @@ export async function openAdminSettingsModal(initialTab = "general") {
                   });
                   serverConfig = {
                     ...serverConfig,
-                    ...res.config,
+                    ...res,
                   };
                   showToast(
                     "Сохранено",
@@ -530,7 +511,7 @@ export async function openAdminSettingsModal(initialTab = "general") {
                   ?.value.trim();
                 const err = document.getElementById("sec-pass-err");
                 err.style.display = "none";
-                const minRequired = serverConfig.minPasswordLength || 8;
+                const minRequired = serverConfig.minPasswordLength || 12;
                 if (!oldPassword || !newPassword || !confirmPass) {
                   err.textContent = "Заполните все обязательные поля";
                   err.style.display = "block";
@@ -651,128 +632,6 @@ export async function openAdminSettingsModal(initialTab = "general") {
                 });
             };
             renderBlacklistUI();
-          } else if (tabId === "webhooks") {
-            // TAB 5: ВЕБХУКИ И СВЯЗЬ (DISCORD + TELEGRAM)
-            const discordId = state.me.discordVerified
-              ? state.me.discordId
-              : "";
-            const notifyReports = userPrefs.discordNotifyReports === true;
-            const notifyTickets = userPrefs.discordNotifyTickets === true;
-            contentPane.innerHTML = `
-                        <h4 style="color:var(--text-heading); margin-bottom:14px;">ОПОВЕЩЕНИЯ, DISCORD И TELEGRAM ВЕБХУКИ</h4>
-
-                        <!-- Server Global Webhooks Card -->
-                        <div style="background:var(--card-inner-bg); padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-bottom:16px;">
-                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
-                                <div>
-                                    <b style="color:var(--text-heading); font-size:13.5px;">Глобальные вебхуки сервера</b>
-                                    <div style="font-size:11.5px; color:var(--text-muted); margin-top:2px;">Отправка событий наказаний, входов и алертов в каналы</div>
-                                </div>
-                                <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
-                                    <input type="checkbox" id="cfg-webhooks-enabled" ${serverConfig.webhooksEnabled ? "checked" : ""}>
-                                    <span style="font-size:12.5px; color:var(--text-heading); font-weight:700;">ВКЛЮЧЕНЫ</span>
-                                </label>
-                            </div>
-
-                            <div class="form-group">
-                                <label>Discord Webhook URL (webhooks.discord)</label>
-                                <input type="text" id="cfg-discord-webhook" value="${esc(serverConfig.discordWebhookUrl || "")}" placeholder="https://discord.com/api/webhooks/...">
-                                <div style="font-size:11.5px; color:var(--text-muted); margin-top:3px;">Канал Discord для серверных оповещений и логов</div>
-                            </div>
-
-                            <div style="display:grid; grid-template-columns:1.5fr 1fr; gap:12px;">
-                                <div class="form-group" style="margin-bottom:0;">
-                                    <label>Telegram Bot Token</label>
-                                    <input type="text" id="cfg-tg-token" value="${esc(serverConfig.telegramBotToken || "")}" placeholder="123456789:ABCdefGHI...">
-                                </div>
-                                <div class="form-group" style="margin-bottom:0;">
-                                    <label>Telegram Chat ID</label>
-                                    <input type="text" id="cfg-tg-chat" value="${esc(serverConfig.telegramChatId || "")}" placeholder="-100123456789">
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Personal Staff Notifications -->
-                        <div style="background:var(--card-inner-bg); padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-bottom:16px;">
-                            <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
-                                <span style="font-size:16px;">${renderSvgIcon("bell", "violet", 16)}</span>
-                                <h5 style="font-size:13.5px; color:var(--text-heading); margin:0;">ЛИЧНЫЕ ОПОВЕЩЕНИЯ В ЛС DISCORD</h5>
-                            </div>
-                            <div style="font-size:12px; color:var(--text-muted); margin-bottom:12px;">
-                                Моментальные личные оповещения от бота при поступлении новых жалоб игроков или тикетов.
-                            </div>
-
-                            <div class="form-group">
-                                ${hasPerm("MANAGE_API") ? '<a href="/deliveries.html">Состояние доставки Discord</a> · <a href="/templates.html">Шаблоны сообщений</a>' : ""}<label>Подтверждённый Discord-аккаунт</label>
-                                <input type="text" id="pref-discord-id" value="${esc(discordId)}" readonly placeholder="Привяжите Minecraft-аккаунт через LoveCore или LoveAuth">
-                            </div>
-
-                            <div style="display:flex; flex-direction:column; gap:8px;">
-                                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:12.5px; color:var(--text-heading);">
-                                    <input type="checkbox" id="pref-notify-reports" ${notifyReports ? "checked" : ""}>
-                                    <span>Оповещать в ЛС о новых жалобах игроков (Reports)</span>
-                                </label>
-                                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:12.5px; color:var(--text-heading);">
-                                    <input type="checkbox" id="pref-notify-tickets" ${notifyTickets ? "checked" : ""}>
-                                    <span>Оповещать в ЛС о новых апелляциях банов (Tickets)</span>
-                                </label>
-                            </div>
-                        </div>
-
-                        <button type="button" class="primary btn-sm" id="btn-save-webhooks" style="width:100%; display:flex; align-items:center; justify-content:center; gap:6px;">
-                            ${renderSvgIcon("save", "white", 14)} СОХРАНИТЬ ВЕБХУКИ И ОПОВЕЩЕНИЯ
-                        </button>
-                    `;
-            document
-              .getElementById("btn-save-webhooks")
-              ?.addEventListener("click", async () => {
-                const webhooksEnabled = document.getElementById(
-                  "cfg-webhooks-enabled",
-                ).checked;
-                const discordWebhook = document
-                  .getElementById("cfg-discord-webhook")
-                  .value.trim();
-                const tgToken = document
-                  .getElementById("cfg-tg-token")
-                  .value.trim();
-                const tgChat = document
-                  .getElementById("cfg-tg-chat")
-                  .value.trim();
-                delete userPrefs.discordId;
-                userPrefs.discordNotifyReports = document.getElementById(
-                  "pref-notify-reports",
-                ).checked;
-                userPrefs.discordNotifyTickets = document.getElementById(
-                  "pref-notify-tickets",
-                ).checked;
-                try {
-                  const [resCfg] = await Promise.all([
-                    hasPerm("MANAGE_INTEGRATIONS")
-                      ? api("POST", "/api/server/config", {
-                          webhooksEnabled,
-                          discordWebhookUrl: discordWebhook,
-                          telegramBotToken: tgToken,
-                          telegramChatId: tgChat,
-                        })
-                      : Promise.resolve({}),
-                    api("PUT", "/api/me/preferences", {
-                      uiPreferences: userPrefs,
-                    }),
-                  ]);
-                  serverConfig = {
-                    ...serverConfig,
-                    ...resCfg.config,
-                  };
-                  state.me.uiPreferences = JSON.stringify(userPrefs);
-                  showToast(
-                    "Сохранено",
-                    "Настройки вебхуков и оповещений успешно обновлены",
-                    "success",
-                  );
-                } catch (e) {
-                  showToast("Ошибка", e.message, "error");
-                }
-              });
           } else if (tabId === "maintenance") {
             // TAB 6: ТЕХНИЧЕСКИЕ РАБОТЫ
             let maintStatus = {

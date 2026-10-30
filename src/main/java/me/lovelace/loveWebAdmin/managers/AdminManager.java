@@ -99,7 +99,9 @@ public class AdminManager {
         || newUsername.trim().length() < 2) {
       return new OnboardingResult(false, "Выберите персональный никнейм (не 'admin')", null, null);
     }
-    String pwdErr = PasswordUtils.validateStrength(newPassword);
+    String pwdErr =
+        PasswordUtils.validateStrength(
+            newPassword, plugin.getConfig().getInt("security.password.min-length", 12));
     if (pwdErr != null) {
       return new OnboardingResult(false, pwdErr, null, null);
     }
@@ -178,7 +180,9 @@ public class AdminManager {
       return new RegisterResult(
           RegisterStatus.INVALID_INPUT, "Слишком короткий никнейм", List.of());
     }
-    String pwdErrReg = PasswordUtils.validateStrength(password);
+    String pwdErrReg =
+        PasswordUtils.validateStrength(
+            password, plugin.getConfig().getInt("security.password.min-length", 12));
     if (pwdErrReg != null) {
       return new RegisterResult(RegisterStatus.INVALID_INPUT, pwdErrReg, List.of());
     }
