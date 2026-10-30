@@ -182,6 +182,29 @@ public class LoveCoreDiscordBridge implements Listener {
   public void notifyBanned(
       me.lovelace.loveWebAdmin.models.WebBan ban,
       me.lovelace.loveWebAdmin.models.BanOrigin origin) {
+    notifyBanned(ban, origin, "ban:" + ban.id(), null);
+  }
+
+  /**
+   * A corrected ban needs its own event key: the outbox drops a repeated key, so reusing the
+   * original one silently swallowed every correction notice.
+   */
+  public void notifyBannedCorrection(
+      me.lovelace.loveWebAdmin.models.WebBan ban,
+      me.lovelace.loveWebAdmin.models.BanOrigin origin,
+      int correction) {
+    notifyBanned(
+        ban,
+        origin,
+        "ban-correction:" + ban.id() + ":" + correction,
+        "✏ **Блокировка изменена.** Актуальные условия:");
+  }
+
+  private void notifyBanned(
+      me.lovelace.loveWebAdmin.models.WebBan ban,
+      me.lovelace.loveWebAdmin.models.BanOrigin origin,
+      String event,
+      String heading) {
     if (ban.targetUuid() == null) return;
     discord()
         .flatMap(service -> service.getLinkedDiscordId(java.util.UUID.fromString(ban.targetUuid())))
@@ -202,12 +225,14 @@ public class LoveCoreDiscordBridge implements Listener {
                               origin.display(),
                               "duration",
                               ban.durationSeconds() > 0
-                                  ? ban.durationSeconds() + " сек."
+                                  ? me.lovelace.loveWebAdmin.utils.Durations.human(
+                                      ban.durationSeconds())
                                   : "Бессрочно",
                               "expiry",
                               end,
                               "id",
                               String.valueOf(ban.id())));
+              if (heading != null) text = heading + "\n" + text;
               String url = plugin.getConfig().getString("web.public-url", "");
               if (!url.isBlank())
                 text +=
@@ -217,7 +242,7 @@ public class LoveCoreDiscordBridge implements Listener {
                         + ban.id();
               try {
                 store.enqueue(
-                    "ban:" + ban.id() + ":" + id,
+                    event + ":" + id,
                     id,
                     JsonUtils.toJson(
                         Map.of(
@@ -228,7 +253,7 @@ public class LoveCoreDiscordBridge implements Listener {
                                 .loveWebAdmin
                                 .database
                                 .ModerationStore
-                                .hash("ban:" + ban.id() + ":" + id)
+                                .hash(event + ":" + id)
                                 .substring(0, 24),
                             "enforce_nonce",
                             true,
@@ -492,19 +517,24 @@ public class LoveCoreDiscordBridge implements Listener {
                                     io.run(
                                         () -> {
                                           try {
-                                            if (error != null || message == null) {
-                                              store.uncertainDelivery(
-                                                  id,
-                                                  "Discord не подтвердил результат. Сверьте канал или личные сообщения перед повтором");
-                                              return;
+                                            int attempts =
+                                                ((Number) item.get("attempts")).intValue() + 1;
+                                            switch (outcome(message, error)) {
+                                              case DELIVERED ->
+                                                  store.delivered(id, true, attempts, null);
+                                              case RETRY ->
+                                                  store.delivered(
+                                                      id,
+                                                      false,
+                                                      attempts,
+                                                      error == null
+                                                          ? "Discord отказал или бот выключен; повтор позже"
+                                                          : "Очередь Discord переполнена; повтор позже");
+                                              case UNCERTAIN ->
+                                                  store.uncertainDelivery(
+                                                      id,
+                                                      "Discord не подтвердил результат. Сверьте канал или личные сообщения перед повтором");
                                             }
-                                            store.delivered(
-                                                id,
-                                                error == null && message != null,
-                                                ((Number) item.get("attempts")).intValue() + 1,
-                                                error == null && message != null
-                                                    ? null
-                                                    : "ЛС недоступны или ошибка Discord");
                                           } catch (java.sql.SQLException e) {
                                             throw new IllegalStateException(e);
                                           }
@@ -527,6 +557,28 @@ public class LoveCoreDiscordBridge implements Listener {
             })
         .thenCompose(java.util.function.Function.identity())
         .whenComplete((v, e) -> delivering.set(false));
+  }
+
+  enum Outcome {
+    DELIVERED,
+    RETRY,
+    UNCERTAIN
+  }
+
+  /**
+   * Only a lost answer is uncertain. LoveCore answers null when Discord refused the request or the
+   * bot is off, and rejects at once when its own queue is full: in both cases nothing left this
+   * server, so the delivery is retried with backoff instead of waiting for a manual check. A
+   * ticket's deliveries go strictly in order, so one needless UNCERTAIN froze the whole case.
+   */
+  static Outcome outcome(Object message, Throwable error) {
+    if (error == null) return message == null ? Outcome.RETRY : Outcome.DELIVERED;
+    Throwable cause = error;
+    while (cause instanceof java.util.concurrent.CompletionException && cause.getCause() != null)
+      cause = cause.getCause();
+    return cause instanceof java.util.concurrent.RejectedExecutionException
+        ? Outcome.RETRY
+        : Outcome.UNCERTAIN;
   }
 
   public void notifyCaseEvidence(String kind, int caseId, int evidenceId) {
@@ -603,7 +655,7 @@ public class LoveCoreDiscordBridge implements Listener {
       if (store.ticket("report", id).isEmpty()) return;
       String key = "report-reply:" + id + ":" + java.util.UUID.randomUUID();
       int index = 0;
-      for (String part : conversationParts(actor + ": " + text)) {
+      for (String part : quotedParts(actor, text)) {
         String event = key + ":" + index++;
         store.enqueue(
             event,
@@ -719,15 +771,42 @@ public class LoveCoreDiscordBridge implements Listener {
 
   @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
   public void onReportCreated(PlayerReportCreatedEvent event) {
-    notifyReportCreated(event.getReport(), true);
+    offMain(() -> notifyReportCreated(event.getReport(), true));
   }
 
   @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
   public void onReportResolved(
       me.lovelace.loveWebAdmin.api.events.PlayerReportResolvedEvent event) {
+    offMain(() -> reportClosed(event.getReportId()));
+  }
+
+  /**
+   * Accepting or rejecting a report runs on the main thread and fires its event there; the
+   * database reads and per-staff queueing behind these notices must not take the tick with them.
+   */
+  private void offMain(Runnable work) {
+    if (!org.bukkit.Bukkit.isPrimaryThread()) {
+      work.run();
+      return;
+    }
+    io.run(work)
+        .exceptionally(
+            error -> {
+              plugin.getLogger().warning("Discord: уведомление по жалобе не отправлено: " + error);
+              return null;
+            });
+  }
+
+  /**
+   * Updates the card and closes the private channel of a report that left PENDING by any road:
+   * a verdict, expiry or being merged into another report. Only verdicts fire an event, so expiry
+   * and merging used to leave the channel open and the card offering "take it" forever.
+   */
+  public void reportClosed(int reportId) {
     // Refresh from persisted state rather than trusting a client-provided status.
     database
-        .getReportById(event.getReportId())
+        .getReportById(reportId)
+        .filter(report -> !report.status().equals("PENDING"))
         .ifPresent(
             report -> {
               notifyReportCreated(report);
@@ -750,6 +829,7 @@ public class LoveCoreDiscordBridge implements Listener {
                                     case "ACCEPTED" -> "Подтверждена";
                                     case "REJECTED" -> "Отклонена";
                                     case "EXPIRED" -> "Истекла";
+                                    case "MERGED" -> "Объединена с другой жалобой";
                                     default -> "Закрыта";
                                   }
                                   + ". Сотрудник: "
@@ -1061,7 +1141,33 @@ public class LoveCoreDiscordBridge implements Listener {
         "reply:" + appeal.id() + ":" + messageId,
         appeal,
         "APPEAL_MESSAGE",
-        "**" + role + " " + authorName + "**: " + message);
+        quotedParts(role + " " + authorName, message));
+  }
+
+  /**
+   * The bot posts these messages, so they carry its authority. The author line is fixed and every
+   * line of the body is a quote: a player writing a line break and "**🛡 [Персонал] …**" can no
+   * longer produce something that reads as a staff answer. Parts start quoted even when a long
+   * line is split between them.
+   */
+  static List<String> quotedParts(String author, String body) {
+    String text = body == null ? "" : body.replace("\r\n", "\n").replace('\r', '\n');
+    String quoted = "> " + text.replace("\n", "\n> ");
+    var parts = new ArrayList<String>();
+    for (int start = 0; start < quoted.length(); ) {
+      int end = Math.min(quoted.length(), start + 1800);
+      if (end < quoted.length() && Character.isHighSurrogate(quoted.charAt(end - 1))) end--;
+      String part = quoted.substring(start, end);
+      if (start > 0 && quoted.charAt(start - 1) != '\n') part = "> " + part;
+      parts.add(part);
+      start = end;
+    }
+    parts.set(0, "**" + escapeMarkdown(author) + "**:\n" + parts.get(0));
+    return List.copyOf(parts);
+  }
+
+  static String escapeMarkdown(String text) {
+    return text == null ? "" : text.replaceAll("([\\\\*_~`|>#\\[\\]])", "\\\\$1");
   }
 
   static List<String> conversationParts(String text) {
@@ -1077,7 +1183,11 @@ public class LoveCoreDiscordBridge implements Listener {
   }
 
   private void enqueueConversation(String key, WebBanAppeal appeal, String type, String text) {
-    var parts = conversationParts(text);
+    enqueueConversation(key, appeal, type, conversationParts(text));
+  }
+
+  private void enqueueConversation(
+      String key, WebBanAppeal appeal, String type, List<String> parts) {
     var deliveries = new ArrayList<me.lovelace.loveWebAdmin.database.ModerationStore.Delivery>();
     for (int i = 0; i < parts.size(); i++) {
       String partKey = key + ":part:" + i;
@@ -1149,7 +1259,8 @@ public class LoveCoreDiscordBridge implements Listener {
         .thenCompose(
             updated ->
                 updated && !closed
-                    ? service.get().closeTicketChannel(channel, reason)
+                    // The decision itself was just posted; the closing line only says why.
+                    ? service.get().closeTicketChannel(channel, "Рассмотрение завершено")
                     : CompletableFuture.completedFuture(false));
   }
 
@@ -1168,9 +1279,17 @@ public class LoveCoreDiscordBridge implements Listener {
   }
 
   private Optional<String> linkedDiscord(WebAdmin admin, DiscordService service) {
-    return database
-        .getPlayerStats(admin.username())
-        .map(p -> p.get("uuid"))
+    Optional<String> pinned;
+    try {
+      pinned = store.staffUuid(admin.id());
+    } catch (java.sql.SQLException error) {
+      return Optional.empty();
+    }
+    // Once the account is pinned, its notices follow that Minecraft account, not whoever holds
+    // the nickname now.
+    return pinned
+        .<Object>map(uuid -> uuid)
+        .or(() -> database.getPlayerStats(admin.username()).map(p -> p.get("uuid")))
         .flatMap(
             uuid -> {
               try {

@@ -347,6 +347,7 @@ public final class ApiCasesHandler extends ApiHandlerSupport {
               Integer.parseInt(
                   Objects.toString(body.get("targetId"), "").replaceFirst("\\.0$", ""));
           ok = plugin.getDatabaseManager().mergeReports(id, target, actor);
+          if (ok) plugin.getDiscordBridge().reportClosed(id);
           plugin
               .getDatabaseManager()
               .getReportById(target)
