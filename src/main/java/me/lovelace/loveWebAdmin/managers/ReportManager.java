@@ -526,7 +526,14 @@ public class ReportManager {
                 long weekAgo = (System.currentTimeMillis() / 1000L) - (7L * 86400L);
                 List<PlayerReport> expired = plugin.getDatabaseManager().getExpiredActiveReports(weekAgo);
                 for (PlayerReport r : expired) {
-                    plugin.getDatabaseManager().resolveReport(r.id(), "EXPIRED", "SYSTEM");
+                    if (plugin.getDatabaseManager().resolveReport(r.id(), "EXPIRED", "SYSTEM")
+                        && plugin.getDiscordBridge() != null) {
+                        try {
+                            plugin.getDiscordBridge().reportClosed(r.id());
+                        } catch (RuntimeException e) {
+                            plugin.getLogger().warning("[LoveWebAdmin] Тикет истёкшей жалобы #" + r.id() + " не закрыт в Discord: " + e.getMessage());
+                        }
+                    }
                     if (behaviorBridge.isAvailable() && r.reputationDeducted() > 0) {
                         try {
                             behaviorBridge.modifyPoliteness(UUID.fromString(r.targetUuid()), r.reputationDeducted());

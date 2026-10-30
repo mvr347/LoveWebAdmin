@@ -33,6 +33,17 @@ class ModerationStoreTest {
   }
 
   @Test
+  void staffAccountAnswersOnlyToItsFirstMinecraftAccount() throws Exception {
+    String owner = "11111111-1111-1111-1111-111111111111";
+    assertTrue(store.pinStaff(7, owner));
+    assertTrue(store.pinStaff(7, owner.toUpperCase()));
+    // Someone who later takes the staff member's old nickname is a different UUID.
+    assertFalse(store.pinStaff(7, "22222222-2222-2222-2222-222222222222"));
+    assertEquals(Optional.of(owner), store.staffUuid(7));
+    assertEquals(Optional.empty(), store.staffUuid(8));
+  }
+
+  @Test
   void tokensAreHashedAtRest() throws Exception {
     String token = store.createAccess(1, "1234", true);
     try (var db = DriverManager.getConnection("jdbc:sqlite:" + dir.resolve("moderation.db"));

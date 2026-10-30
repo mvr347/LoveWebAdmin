@@ -117,7 +117,8 @@ public final class AppealService {
           (approve
                   ? "Апелляция одобрена"
                   : status.equals("REDUCED")
-                      ? "Срок сокращён. Осталось: " + remainingSeconds + " сек."
+                      ? "Срок сокращён. Осталось: "
+                          + me.lovelace.loveWebAdmin.utils.Durations.human(remainingSeconds)
                       : "Апелляция отклонена")
               + ". Сотрудник: "
               + actor

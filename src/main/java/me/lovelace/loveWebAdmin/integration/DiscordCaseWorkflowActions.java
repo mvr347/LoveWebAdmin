@@ -379,7 +379,7 @@ final class DiscordCaseWorkflowActions {
       throw new IllegalArgumentException("Нужно право управления наказаниями");
     long seconds =
         action.equals("reduce")
-            ? Math.multiplyExact(Long.parseLong(i.values().getOrDefault("minutes", "0")), 60)
+            ? DiscordActions.minutes(i.values().get("minutes")) * 60
             : 0;
     var value =
         plugin

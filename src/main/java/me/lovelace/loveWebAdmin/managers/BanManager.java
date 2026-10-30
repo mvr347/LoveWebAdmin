@@ -564,10 +564,11 @@ public class BanManager {
     plugin.getLogManager().logWebAction(actor, "Исправил блокировку №" + id + ": " + explanation);
     plugin
         .getDiscordBridge()
-        .notifyBanned(
+        .notifyBannedCorrection(
             after,
             new me.lovelace.loveWebAdmin.models.BanOrigin(
-                me.lovelace.loveWebAdmin.models.BanOrigin.Kind.STAFF, actor, null));
+                me.lovelace.loveWebAdmin.models.BanOrigin.Kind.STAFF, actor, null),
+            history);
     return after;
   }
 

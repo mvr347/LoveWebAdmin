@@ -86,6 +86,8 @@ public final class ModerationStore implements AutoCloseable {
           "CREATE TABLE IF NOT EXISTS case_evidence(id INTEGER PRIMARY KEY,kind TEXT NOT NULL,case_id INTEGER NOT NULL,author TEXT NOT NULL,type TEXT NOT NULL,value TEXT NOT NULL,visibility TEXT NOT NULL,mime TEXT,data BLOB,created_at INTEGER NOT NULL)");
       s.execute(
           "CREATE TABLE IF NOT EXISTS appeal_access_parent(appeal_id INTEGER PRIMARY KEY,parent_id INTEGER NOT NULL)");
+      s.execute(
+          "CREATE TABLE IF NOT EXISTS staff_identity(admin_id INTEGER PRIMARY KEY,uuid TEXT NOT NULL)");
       s.execute("CREATE INDEX IF NOT EXISTS idx_delivery_due ON delivery_outbox(state,next_at,id)");
       s.execute(
           "CREATE INDEX IF NOT EXISTS idx_delivery_ticket ON delivery_outbox(recipient,id,state)");
@@ -273,6 +275,33 @@ public final class ModerationStore implements AutoCloseable {
       q.setInt(1, appeal);
       try (var r = q.executeQuery()) {
         return r.next() && r.getBoolean(1);
+      }
+    }
+  }
+
+  /**
+   * Pins a panel account to the Minecraft UUID it was first used from through Discord. A nickname
+   * is not an identity: once a staff member renames, anyone who later takes the old name would
+   * otherwise inherit their panel rights. Returns false when the account is pinned to another UUID.
+   */
+  public synchronized boolean pinStaff(int adminId, String uuid) throws SQLException {
+    try (var q =
+        db.prepareStatement(
+            "INSERT INTO staff_identity(admin_id,uuid) VALUES(?,?) ON CONFLICT(admin_id) DO"
+                + " NOTHING")) {
+      q.setInt(1, adminId);
+      q.setString(2, uuid);
+      q.executeUpdate();
+    }
+    return staffUuid(adminId).filter(uuid::equalsIgnoreCase).isPresent();
+  }
+
+  /** The Minecraft UUID this panel account is pinned to, if it has used Discord yet. */
+  public synchronized Optional<String> staffUuid(int adminId) throws SQLException {
+    try (var q = db.prepareStatement("SELECT uuid FROM staff_identity WHERE admin_id=?")) {
+      q.setInt(1, adminId);
+      try (var r = q.executeQuery()) {
+        return r.next() ? Optional.of(r.getString(1)) : Optional.empty();
       }
     }
   }

@@ -39,12 +39,16 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
   }
 
   private Optional<WebAdmin> staff(String user, Permission perm) {
-    return service
-        .getLinkedPlayer(user)
-        .flatMap(uuid -> plugin.getDatabaseManager().getPlayerStats(uuid.toString()))
+    var linked = service.getLinkedPlayer(user);
+    if (linked.isEmpty()) return Optional.empty();
+    String uuid = linked.get().toString();
+    return plugin
+        .getDatabaseManager()
+        .getPlayerStats(uuid)
         .flatMap(
             stats -> plugin.getDatabaseManager().getAdminByUsername(stats.get("name").toString()))
         .filter(a -> a.status().equals("ACTIVE"))
+        .filter(a -> pinned(a, uuid))
         .filter(
             a ->
                 plugin
@@ -52,6 +56,22 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
                     .getRoleById(a.roleId())
                     .map(r -> r.isOwner() || perm == null || r.permissions().contains(perm))
                     .orElse(false));
+  }
+
+  /** A panel account answers only to the Minecraft account it was first used from. */
+  private boolean pinned(WebAdmin admin, String uuid) {
+    try {
+      if (plugin.moderation().pinStaff(admin.id(), uuid)) return true;
+      plugin
+          .getLogger()
+          .warning(
+              "Discord: аккаунт сотрудника "
+                  + admin.username()
+                  + " привязан к другому UUID Minecraft; доступ отклонён");
+      return false;
+    } catch (java.sql.SQLException error) {
+      return false;
+    }
   }
 
   public Optional<WebAdmin> staffMember(String user, Permission perm) {
@@ -313,10 +333,19 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
       if (parts[2].equals("reduce")) {
         if (staff(i.userId(), Permission.MANAGE_BANS).isEmpty())
           return "Нужно право управления блокировками.";
-        long minutes = Long.parseLong(i.values().getOrDefault("minutes", "0"));
-        return plugin
-            .appeals()
-            .reduce(id, admin.username(), Math.multiplyExact(minutes, 60), reason);
+        try {
+          long minutes = minutes(i.values().get("minutes"));
+          return plugin.appeals().reduce(id, admin.username(), minutes * 60, reason);
+        } catch (RuntimeException failure) {
+          // The ban change runs on the main thread, so its refusal arrives wrapped.
+          Throwable cause =
+              failure instanceof java.util.concurrent.CompletionException
+                      && failure.getCause() != null
+                  ? failure.getCause()
+                  : failure;
+          if (cause instanceof IllegalArgumentException) return cause.getMessage();
+          throw failure;
+        }
       }
       if (parts[2].equals("approve") && staff(i.userId(), Permission.MANAGE_BANS).isEmpty())
         return "Нужно право управления наказаниями.";
@@ -330,8 +359,9 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
       return "Игрок: "
           + p.get().get("name")
           + "\nНаиграно: "
-          + p.get().get("playtimeSeconds")
-          + " сек.\n"
+          + me.lovelace.loveWebAdmin.utils.Durations.human(
+              ((Number) p.get().get("playtimeSeconds")).longValue())
+          + "\n"
           + url()
           + "/#player="
           + java.net.URLEncoder.encode(nick, java.nio.charset.StandardCharsets.UTF_8);
@@ -347,10 +377,12 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
       return "Укажите корректный ник нарушителя и описание от 5 до 2000 символов.";
     var identity = service.getLinkedPlayer(interaction.userId());
     String reporter =
-        identity
-            .flatMap(uuid -> plugin.getDatabaseManager().getPlayerStats(uuid.toString()))
-            .map(record -> record.get("name").toString())
-            .orElse(interaction.values().getOrDefault("nick", "Игрок Discord"));
+        identity.isPresent()
+            ? identity
+                .flatMap(uuid -> plugin.getDatabaseManager().getPlayerStats(uuid.toString()))
+                .map(record -> record.get("name").toString())
+                .orElse("Игрок Discord")
+            : unverifiedName(interaction.values().getOrDefault("nick", ""));
     var targetRecord = plugin.getDatabaseManager().getPlayerStats(target);
     if (targetRecord.isEmpty()) return "Игрок не найден в истории сервера.";
     String uuid =
@@ -411,8 +443,27 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
     var existing = plugin.getDatabaseManager().getAppealByBanId(ban.id());
     if (existing.filter(a -> Set.of("PENDING", "DECIDING").contains(a.status())).isPresent()) {
       var appeal = existing.get();
-      if (!plugin.moderation().owner(appeal.id()).filter(i.userId()::equals).isPresent())
-        return "По блокировке уже есть обращение. Обратитесь к персоналу.";
+      boolean mine = plugin.moderation().owner(appeal.id()).filter(i.userId()::equals).isPresent();
+      if (!mine
+          && appeal.status().equals("PENDING")
+          && supersedes(
+              linked.map(UUID::toString).orElse(null),
+              ban.targetUuid(),
+              plugin.moderation().verified(appeal.id()))) {
+        // Someone typed this player's nickname before the player came: their unverified appeal
+        // must not lock the real owner out of appealing their own ban.
+        plugin
+            .appeals()
+            .decide(
+                appeal.id(),
+                "Система",
+                false,
+                "Апелляцию подал не владелец аккаунта. Владелец подал свою, подтверждённую.");
+        existing = Optional.empty();
+      } else if (!mine) return "По блокировке уже есть обращение. Обратитесь к персоналу.";
+    }
+    if (existing.filter(a -> Set.of("PENDING", "DECIDING").contains(a.status())).isPresent()) {
+      var appeal = existing.get();
       return appeal.discordChannelId() == null
           ? "Апелляция уже открыта; тикет создаётся."
           : "Ваш тикет: <#" + appeal.discordChannelId() + ">";
@@ -435,6 +486,41 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
         + (url().isBlank()
             ? ""
             : "\nПереписка в панели: " + url() + "/appeal.html#" + id + ":" + token);
+  }
+
+  /**
+   * A verified owner replaces an appeal that someone filed by merely typing their nickname. A
+   * verified appeal is never replaced, and an unverified submitter never replaces anything.
+   */
+  static boolean supersedes(String submitterUuid, String banTargetUuid, boolean existingVerified) {
+    return !existingVerified
+        && submitterUuid != null
+        && banTargetUuid != null
+        && submitterUuid.equalsIgnoreCase(banTargetUuid);
+  }
+
+  /**
+   * The remaining term typed into a Discord form. A typo used to surface as Java's own
+   * "For input string" text, or as a generic failure that marked the action for manual review.
+   */
+  static long minutes(String typed) {
+    long minutes;
+    try {
+      minutes = Long.parseLong(typed == null ? "" : typed.trim());
+    } catch (NumberFormatException invalid) {
+      throw new me.lovelace.loveWebAdmin.utils.ActionRejectedException(
+          "Срок укажите целым числом минут");
+    }
+    if (minutes < 1 || minutes > 5_256_000)
+      throw new me.lovelace.loveWebAdmin.utils.ActionRejectedException(
+          "Оставшийся срок: от 1 минуты до 10 лет");
+    return minutes;
+  }
+
+  /** A nickname typed by an unlinked Discord user is shown as such, never as a real player. */
+  static String unverifiedName(String typed) {
+    String nick = typed == null ? "" : typed.trim();
+    return nick.matches("[A-Za-z0-9_]{1,16}") ? nick + " (Discord, не подтверждён)" : "Игрок Discord";
   }
 
   private String url() {

@@ -1035,9 +1035,7 @@ public final class DiscordTicketDesk {
             if (action.equals("reduce")) {
               if (!allowed(admin, Permission.MANAGE_BANS))
                 throw new IllegalArgumentException("Нужно право управления наказаниями");
-              long minutes = Long.parseLong(i.values().getOrDefault("minutes", "0"));
-              if (minutes <= 0 || minutes > 5256000)
-                throw new IllegalArgumentException("Некорректный срок");
+              long minutes = DiscordActions.minutes(i.values().get("minutes"));
               plugin
                   .appeals()
                   .reduce(id, admin.username(), Math.multiplyExact(minutes, 60), reason);
