@@ -245,34 +245,90 @@ public final class DiscordTicketDesk {
     if (digest.equals(publishedBodies.get(slot))
         && System.currentTimeMillis() - published.getOrDefault(slot, 0L) < 60000)
       return existing.map(m -> m.get("message")).orElse("");
-    if (!store.sending(slot, channel)) return existing.map(m -> m.get("message")).orElse("");
+    if (System.currentTimeMillis() < retryAfter.getOrDefault("message:" + slot, 0L))
+      return existing.map(m -> m.get("message")).orElse("");
     try {
-      String message =
-          existing
-              .filter(m -> m.get("channel").equals(channel))
-              .map(m -> m.get("message"))
-              .filter(m -> !m.isBlank())
-              .orElse(null);
-      var data = new LinkedHashMap<String, Object>(payload);
-      data.put(
-          "nonce", me.lovelace.loveWebAdmin.database.ModerationStore.hash(slot).substring(0, 24));
-      data.put("enforce_nonce", true);
-      String sent =
-          call(
-              "ensureMessage",
-              new Class<?>[] {String.class, String.class, String.class},
-              channel,
-              message,
-              JsonUtils.toJson(data));
-      if (sent == null) throw new IllegalStateException("Discord не подтвердил сообщение");
-      store.sent(slot, sent);
+      String sent = DiscordMessagePublisher.publish(store, service, slot, channel, payload);
       published.put(slot, System.currentTimeMillis());
       publishedBodies.put(slot, digest);
+      retryAfter.remove("message:" + slot);
       return sent;
     } catch (Exception error) {
-      store.uncertain(slot, "Проверьте сообщение в Discord перед восстановлением");
+      retryAfter.put("message:" + slot, System.currentTimeMillis() + 60000);
+      plugin
+          .getLogger()
+          .warning(
+              "Панель/карточка Discord ["
+                  + slot
+                  + "]: "
+                  + DiscordMessagePublisher.explanation(error));
       throw error;
     }
+  }
+
+  private Map<String, Object> productionPanel() {
+    return DiscordPanelMessages.body("lwa:desk:", false);
+  }
+
+  public Map<String, Object> panelStatus() throws Exception {
+    var result = new LinkedHashMap<String, Object>();
+    result.put("channelId", panelChannel);
+    result.put("botAvailable", enabled());
+    result.put(
+        "state",
+        panelChannel.isBlank()
+            ? "NOT_CONFIGURED"
+            : !enabled()
+                ? "BOT_UNAVAILABLE"
+                : store
+                    .message("panel:" + panelChannel)
+                    .map(m -> m.get("state"))
+                    .orElse("NOT_PUBLISHED"));
+    result.put(
+        "messageId", store.message("panel:" + panelChannel).map(m -> m.get("message")).orElse(""));
+    result.put(
+        "explanation",
+        panelChannel.isBlank()
+            ? "Не задан discord.tickets.panel-channel-id в config.yml. Укажите ID канала и перезапустите плагин."
+            : !enabled()
+                ? "Бот выключен, ядро недоступно или ещё запускается"
+                : store
+                    .message("panel:" + panelChannel)
+                    .map(m -> m.get("error"))
+                    .orElse("Публикация ещё не запускалась"));
+    return result;
+  }
+
+  public Map<String, Object> diagnosePanel() throws Exception {
+    var result = new LinkedHashMap<String, Object>(panelStatus());
+    if (enabled() && !panelChannel.isBlank())
+      try {
+        Map<String, Object> channel =
+            CoreDiscordExtensions.<Map<String, Object>>managed(
+                    service, "inspectChannel", new Class<?>[] {String.class}, panelChannel)
+                .get(30, TimeUnit.SECONDS);
+        result.put("channel", channel);
+        boolean text = ((Number) channel.get("type")).intValue() == 0;
+        if (!text) result.put("state", "INVALID_CHANNEL");
+        result.put(
+            "inspection",
+            text
+                ? "Канал доступен для чтения; право отправки подтверждается только успешной публикацией"
+                : "Указан не текстовый канал. Нужен ID текстового канала, а не категории");
+      } catch (Exception error) {
+        result.put("inspection", DiscordMessagePublisher.explanation(error));
+      }
+    return result;
+  }
+
+  public Map<String, Object> publishPanel() throws Exception {
+    if (panelChannel.isBlank())
+      throw new IllegalArgumentException(
+          "Укажите discord.tickets.panel-channel-id в config.yml и перезапустите плагин");
+    retryAfter.remove("message:panel:" + panelChannel);
+    publishedBodies.remove("panel:" + panelChannel);
+    publish("panel:" + panelChannel, panelChannel, productionPanel());
+    return panelStatus();
   }
 
   public void tick() {
@@ -284,17 +340,7 @@ public final class DiscordTicketDesk {
               try {
                 if (!enabled()) return;
                 if (!panelChannel.isBlank())
-                  publish(
-                      "panel:" + panelChannel,
-                      panelChannel,
-                      body(
-                          "**Обращения**\nСообщите о нарушении, обжалуйте наказание или откройте свои обращения. Переписка будет приватной.",
-                          List.of(
-                              row(
-                                  List.of(
-                                      button("Пожаловаться на игрока", "lwa:desk:new:report", 1),
-                                      button("Обжаловать наказание", "lwa:desk:new:appeal", 1),
-                                      button("Мои обращения", "lwa:desk:mine", 2))))));
+                  publish("panel:" + panelChannel, panelChannel, productionPanel());
                 for (var ticket : store.active()) {
                   if (closed) break;
                   String retryKey = ticket.kind() + ":" + ticket.id();

@@ -10,6 +10,22 @@ import org.junit.jupiter.api.Test;
 class PreviewDiscordConfigTest {
 
   @Test
+  void categoryAndTextChannelCannotHaveTheSameId() {
+    var config =
+        PreviewDiscordConfig.parse(
+            "1548780207941615707", "1548780207941615707", List.of("123456789"));
+    assertTrue(config.problems().stream().anyMatch(p -> p.contains("совпадают")));
+    assertTrue(config.channel().isEmpty());
+  }
+
+  @Test
+  void partiallyConfiguredDeliveryExplainsTheMissingTester() {
+    var config = PreviewDiscordConfig.parse("12345", "67890", List.of());
+    assertTrue(config.problems().stream().anyMatch(p -> p.contains("allowed-user-ids")));
+    assertTrue(config.channel().isEmpty());
+  }
+
+  @Test
   void acceptsNumbersAndStringsAndTrims() {
     var config = PreviewDiscordConfig.parse(" 12345 ", "67890", List.of(1480933101902499951L, " 22222 ", ""));
     assertTrue(config.problems().isEmpty());

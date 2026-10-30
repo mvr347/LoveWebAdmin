@@ -240,6 +240,7 @@ final class PreviewChecks {
               if (expected.status != 401) throw expected;
             }
           });
+      results.addAll(DiscordProtocolChecks.run(parent));
       results.add(
           Map.of(
               "name",

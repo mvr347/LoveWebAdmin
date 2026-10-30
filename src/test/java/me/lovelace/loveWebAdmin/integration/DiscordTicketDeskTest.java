@@ -127,6 +127,47 @@ class DiscordTicketDeskTest {
   }
 
   @Test
+  void explicitPermissionFailureCanBeRetriedAfterFixingRights() throws Exception {
+    discord.publicationFailure =
+        new dev.lovelace.lovecore.api.discord.DiscordRequestRejectedException(403);
+    assertThrows(Exception.class, () -> desk.publishPanel());
+    assertEquals("FAILED", desk.panelStatus().get("state"));
+    assertTrue(desk.panelStatus().get("explanation").toString().contains("403"));
+    discord.publicationFailure = null;
+    desk.publishPanel();
+    assertEquals("READY", desk.panelStatus().get("state"));
+    assertEquals(1, discord.panelCreates.get());
+  }
+
+  @Test
+  void lostPublicationResponseRequiresReconciliationAndNeverCreatesAgain() throws Exception {
+    discord.publicationFailure = new java.io.IOException("lost response");
+    assertThrows(Exception.class, () -> desk.publishPanel());
+    int calls = discord.publicationCalls.get();
+    discord.publicationFailure = null;
+    desk.publishPanel();
+    assertEquals(calls, discord.publicationCalls.get());
+    assertEquals("UNCERTAIN", desk.panelStatus().get("state"));
+  }
+
+  @Test
+  void missingPanelChannelHasAnExplicitStatusAndDoesNotSend() throws Exception {
+    plugin.getConfig().set("discord.tickets.panel-channel-id", "");
+    var other = new DiscordTicketDesk(plugin, plugin.getDiscordBridge().ticketDeskStore());
+    other.attach(discord.service, new DiscordActions(plugin, discord.service));
+    assertEquals("NOT_CONFIGURED", other.panelStatus().get("state"));
+    assertTrue(
+        other
+            .panelStatus()
+            .get("explanation")
+            .toString()
+            .contains("discord.tickets.panel-channel-id"));
+    assertThrows(IllegalArgumentException.class, other::publishPanel);
+    assertEquals(0, discord.publicationCalls.get());
+    other.close();
+  }
+
+  @Test
   void confirmationAssignmentTransferAndWithdrawalUseOnePrivateCase() throws Exception {
     int id = createReport();
     assertEquals(List.of("10000"), discord.lastMembers);
@@ -221,6 +262,10 @@ class DiscordTicketDeskTest {
     second.tick();
     await(() -> discord.panelUpdates.get() >= 2);
     assertEquals(1, discord.panelCreates.get());
+    assertTrue(JsonUtils.toJson(first).contains("lwa:desk:new:report"));
+    assertTrue(JsonUtils.toJson(first).contains("lwa:desk:new:appeal"));
+    assertTrue(JsonUtils.toJson(first).contains("lwa:desk:mine"));
+    assertFalse(JsonUtils.toJson(first).contains("lwa:preview:"));
     assertFalse(JsonUtils.toJson(discord.messages).contains("LoveWebAdmin"));
     assertFalse(JsonUtils.toJson(discord.messages).contains("LoveCore"));
     second.close();
@@ -376,6 +421,8 @@ class DiscordTicketDeskTest {
   }
 
   static class FakeDiscord {
+    volatile Throwable publicationFailure;
+    final AtomicInteger publicationCalls = new AtomicInteger();
     final AtomicInteger ids = new AtomicInteger(10000),
         deleted = new AtomicInteger(),
         panelCreates = new AtomicInteger(),
@@ -432,6 +479,9 @@ class DiscordTicketDeskTest {
                       yield CompletableFuture.completedFuture(true);
                     }
                     case "ensureMessage" -> {
+                      publicationCalls.incrementAndGet();
+                      if (publicationFailure != null)
+                        yield CompletableFuture.failedFuture(publicationFailure);
                       messages.put(args[0].toString(), JsonUtils.parseObject(args[2].toString()));
                       if (args[0].equals("70000")) {
                         panelUpdates.incrementAndGet();

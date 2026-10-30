@@ -57,6 +57,42 @@ public final class CoreDiscordExtensions {
     }
   }
 
+  public static CompletableFuture<String> managedPreviewTicket(
+      DiscordService service,
+      TicketType kind,
+      String key,
+      String player,
+      String owner,
+      String category,
+      java.util.List<String> members,
+      String name) {
+    try {
+      var loader = DiscordService.class.getClassLoader();
+      var routeType =
+          Class.forName("dev.lovelace.lovecore.api.discord.TicketRequest", true, loader);
+      var route =
+          routeType
+              .getConstructor(
+                  TicketType.class,
+                  String.class,
+                  String.class,
+                  String.class,
+                  String.class,
+                  String.class,
+                  boolean.class)
+              .newInstance(kind, key, player, "[ТЕСТ] Проверка обращений", owner, category, true);
+      var type =
+          Class.forName("dev.lovelace.lovecore.api.discord.ManagedTicketRequest", true, loader);
+      Object request =
+          type.getConstructor(routeType, java.util.List.class, java.util.List.class, String.class)
+              .newInstance(route, java.util.List.of(), members, name);
+      return managed(service, "createManagedTicket", new Class<?>[] {type}, request);
+    } catch (ReflectiveOperationException error) {
+      return CompletableFuture.failedFuture(
+          new IllegalStateException("Обновите ядро для приватных тестовых обращений", error));
+    }
+  }
+
   @SuppressWarnings("unchecked")
   public static CompletableFuture<String> sendImage(
       DiscordService service,

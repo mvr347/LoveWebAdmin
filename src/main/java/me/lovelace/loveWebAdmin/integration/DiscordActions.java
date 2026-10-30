@@ -65,7 +65,7 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
 
   @Override
   public boolean onInteraction(DiscordInteraction i) {
-    if (closed) return false;
+    if (closed || i.name().startsWith("lwa:preview:")) return false;
     if (plugin.getDiscordBridge().ticketDesk().onInteraction(i)) return true;
     if (!i.name().startsWith("lwa:")
         && !Set.of("апелляция", "жалоба", "мои-обращения", "дело", "игрок").contains(i.name()))

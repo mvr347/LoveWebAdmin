@@ -43,6 +43,48 @@ class PanelIsolationTest {
   }
 
   @Test
+  void panelDiagnosticAndPublishingRequireIntegrationRights() throws Exception {
+    var staff = account("OnlyCaseRights", Set.of(Permission.MANAGE_REPORTS));
+    var headers = Map.of("Authorization", "Bearer " + staff.token());
+    var handler = new ApiCasesHandler(plugin);
+    assertEquals(403, call(handler, "/api/cases", "/discord-panel", headers).status);
+    requestMethod = "POST";
+    requestBody = "{}";
+    assertEquals(403, call(handler, "/api/cases", "/discord-panel/publish", headers).status);
+    var manager = account("PanelIntegration", Set.of(Permission.MANAGE_INTEGRATIONS));
+    headers = Map.of("Authorization", "Bearer " + manager.token());
+    requestMethod = "GET";
+    var status = call(handler, "/api/cases", "/discord-panel", headers);
+    assertEquals(200, status.status);
+    assertTrue(status.body.toString().contains("NOT_CONFIGURED"));
+    requestMethod = "POST";
+    assertEquals(409, call(handler, "/api/cases", "/discord-panel/publish", headers).status);
+    assertTrue(plugin.getDiscordBridge().ticketDeskStore().messages().isEmpty());
+  }
+
+  @Test
+  void previewDiscordApiRunsModelsButDoesNotPretendToDeliverWithoutConfiguration()
+      throws Exception {
+    var owner = account("PreviewLabOwner", Set.of(Permission.MANAGE_PREVIEW));
+    var created = plugin.preview().create(owner.adminId());
+    String id = created.get("id").toString();
+    var headers = Map.of("X-Preview-Session", created.get("token").toString());
+    var handler = new ApiPreviewHandler(plugin);
+    var status = call(handler, "/preview/api", "/" + id + "/discord-lab", headers);
+    assertEquals(200, status.status);
+    assertTrue(status.body.toString().contains("\"configured\":false"));
+    requestMethod = "POST";
+    requestBody = "{\"action\":\"model\"}";
+    var models = call(handler, "/preview/api", "/" + id + "/discord-lab/run", headers);
+    assertEquals(200, models.status);
+    assertTrue(models.body.toString().contains("TRANSPORT_MODEL"));
+    assertFalse(models.body.toString().contains("\"passed\":false"));
+    requestBody = "{\"action\":\"panel\"}";
+    assertEquals(400, call(handler, "/preview/api", "/" + id + "/discord-lab/run", headers).status);
+    assertTrue(plugin.getDiscordBridge().ticketDeskStore().messages().isEmpty());
+  }
+
+  @Test
   void managingStaffDoesNotGrantPanelSettings() throws Exception {
     var staff = account("OnlyStaff", Set.of(Permission.MANAGE_ADMINS));
     assertEquals(

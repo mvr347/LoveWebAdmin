@@ -87,6 +87,7 @@ public final class PreviewRuntime implements AutoCloseable, AppealService.Contex
                     id, action.equals("approve") ? "ACCEPTED" : "REJECTED", staff))
                   throw new Rejected(409, "Жалоба уже рассмотрена");
                 database.recordReportVerdict(id, staff, reason);
+                delivery("REPORT_DECISION", Map.of("reportId", id, "reason", reason));
                 return "Тестовое решение сохранено";
               },
               (kind, id) ->
@@ -1034,6 +1035,64 @@ public final class PreviewRuntime implements AutoCloseable, AppealService.Contex
     return String.valueOf(
         map(state.computeIfAbsent("discordTickets", k -> new LinkedHashMap<>()))
             .getOrDefault(kind + ":" + id, ""));
+  }
+
+  Path folder() {
+    return folder;
+  }
+
+  public synchronized int discordCase(String kind, String nick, String text, String owner)
+      throws Exception {
+    if (closed) throw new Rejected(410, "Песочница закрыта");
+    if (!Set.of("report", "appeal").contains(kind)
+        || !nick.matches("[A-Za-z0-9_]{3,16}")
+        || text.trim().length() < 5
+        || text.length() > 2000)
+      throw new IllegalArgumentException("Тестовый ник: 3–16 символов, описание: 5–2000 символов");
+    String uuid =
+        java.util
+            .UUID
+            .nameUUIDFromBytes((namespace + nick).getBytes(java.nio.charset.StandardCharsets.UTF_8))
+            .toString();
+    int id;
+    if (kind.equals("report")) {
+      id =
+          database.createPlayerReport(
+              "preview-discord:" + owner,
+              "Тестовый автор",
+              "127.0.0.1",
+              uuid,
+              nick,
+              List.of("Тестовая жалоба"),
+              text,
+              false,
+              0);
+      moderation.ticketOwner(kind, id, owner);
+    } else {
+      var ban =
+          database.saveBan(
+              new WebBan(
+                  0,
+                  nick,
+                  uuid,
+                  null,
+                  "Система",
+                  "Тестовая блокировка",
+                  "",
+                  "[]",
+                  false,
+                  "ACTIVE",
+                  3600,
+                  now(),
+                  now() + 3600));
+      moderation.source(ban.id(), "CONSOLE", "Система", null);
+      id = database.createAppeal(ban.id(), uuid, nick, text);
+      moderation.createAccess(id, owner, false);
+      database.addAppealMessage(id, nick, false, text);
+    }
+    if (id < 1) throw new IllegalStateException("Тестовое дело не сохранено");
+    persist();
+    return id;
   }
 
   public synchronized boolean isClosed() {

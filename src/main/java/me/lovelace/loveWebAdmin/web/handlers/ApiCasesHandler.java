@@ -22,6 +22,15 @@ public final class ApiCasesHandler extends ApiHandlerSupport {
 
   @Override
   protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+    if ("/discord-panel".equals(req.getPathInfo())) {
+      if (requirePermission(req, resp, Permission.MANAGE_INTEGRATIONS).isEmpty()) return;
+      try {
+        sendSuccess(resp, plugin.getDiscordBridge().ticketDesk().diagnosePanel());
+      } catch (Exception error) {
+        throw new IllegalStateException(error);
+      }
+      return;
+    }
     if ("/discord-messages".equals(req.getPathInfo())) {
       if (requirePermission(req, resp, Permission.MANAGE_INTEGRATIONS).isEmpty()) return;
       try {
@@ -147,6 +156,26 @@ public final class ApiCasesHandler extends ApiHandlerSupport {
 
   @Override
   protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+    if ("/discord-panel/publish".equals(req.getPathInfo())) {
+      var auth = requirePermission(req, resp, Permission.MANAGE_INTEGRATIONS);
+      if (auth.isEmpty()) return;
+      try {
+        var result = plugin.getDiscordBridge().ticketDesk().publishPanel();
+        plugin
+            .getLogManager()
+            .logWebAction(
+                auth.get().adminUsername(), "Запросил публикацию панели обращений Discord");
+        sendSuccess(resp, result);
+      } catch (Exception error) {
+        sendError(
+            resp,
+            409,
+            error instanceof IllegalArgumentException
+                ? error.getMessage()
+                : me.lovelace.loveWebAdmin.integration.DiscordMessagePublisher.explanation(error));
+      }
+      return;
+    }
     if ("/discord-messages/resolve".equals(req.getPathInfo())) {
       var auth = requirePermission(req, resp, Permission.MANAGE_INTEGRATIONS);
       if (auth.isEmpty()) return;

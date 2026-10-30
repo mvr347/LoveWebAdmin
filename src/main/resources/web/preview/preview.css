@@ -81,3 +81,35 @@ body.love-preview .modal-overlay {
     display: none;
   }
 }
+
+#love-preview-tools .discord-lab {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid #665083;
+}
+#love-preview-tools .discord-lab p {
+  margin: 10px 0;
+  line-height: 1.5;
+}
+#love-preview-tools .discord-lab [data-actions] {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 14px 0;
+}
+#love-preview-tools .discord-lab button {
+  width: 100%;
+  min-height: 42px;
+  text-align: left;
+}
+#love-preview-tools .discord-lab [data-results] p {
+  padding: 10px 12px;
+  border-left: 3px solid #9b6deb;
+  background: #171123;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 560px) {
+  #love-preview-tools .discord-lab [data-actions] {
+    grid-template-columns: 1fr;
+  }
+}
