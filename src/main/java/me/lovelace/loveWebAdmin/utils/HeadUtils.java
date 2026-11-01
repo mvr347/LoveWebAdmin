@@ -13,7 +13,6 @@ import org.bukkit.inventory.meta.SkullMeta;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 
 /**
  * Утилиты для создания голов игроков с Base64 текстурами (Paper API).
@@ -32,7 +31,11 @@ public final class HeadUtils {
 
         if (base64 != null && !base64.isBlank()) {
             try {
-                PlayerProfile profile = Bukkit.createProfile(UUID.randomUUID());
+                PlayerProfile profile =
+                        Bukkit.createProfile(
+                                java.util.UUID.nameUUIDFromBytes(
+                                        base64.getBytes(java.nio.charset.StandardCharsets.UTF_8)),
+                                "LoveTexture");
                 profile.setProperty(new ProfileProperty("textures", base64));
                 meta.setPlayerProfile(profile);
             } catch (Throwable t) {
