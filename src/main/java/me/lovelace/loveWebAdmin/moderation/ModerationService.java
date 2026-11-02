@@ -363,14 +363,16 @@ public final class ModerationService implements Listener, AutoCloseable {
             .filter(r -> r.kind().equals(kind) && r.name().equalsIgnoreCase(name))
             .toList();
     boolean removed = false;
+    var ended = new ArrayList<RestrictionsStore.Restriction>();
     try {
       for (var r : matches) {
         boolean changed = store.remove(kind, r.uuid(), actor, reason, now());
         removed |= changed;
-        if (changed && plugin.getDiscordBridge() != null)
-          plugin.getDiscordBridge().closeRestriction(r);
+        if (changed) ended.add(r);
       }
       reload();
+      if (plugin.getDiscordBridge() != null)
+        ended.forEach(plugin.getDiscordBridge()::closeRestriction);
     } catch (java.sql.SQLException e) {
       throw new IllegalStateException(e);
     }

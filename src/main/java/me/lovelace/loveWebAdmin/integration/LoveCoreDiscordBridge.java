@@ -190,6 +190,7 @@ public class LoveCoreDiscordBridge implements Listener {
         if(!owner.isBlank())enqueueNotice("restriction:"+restriction.kind()+":"+restriction.uuid()+":"+restriction.created(),owner,
           restriction.kind().equals("MUTE")?"Вы получили мут. Вас никто не слышит. Причина: "+restriction.reason():"Вы вызваны на проверку. Причина: "+restriction.reason());
         if(restriction.kind().equals("FREEZE")) {
+          if(!currentRestriction(restriction))return;
           var staffStats=database.getPlayerStats(restriction.actor());
           String staff=staffStats.flatMap(row->{try{return service.getLinkedDiscordId(java.util.UUID.fromString(row.get("uuid").toString()));}catch(Exception bad){return Optional.<String>empty();}}).orElse("");
           if(staff.isBlank())return;
@@ -197,6 +198,7 @@ public class LoveCoreDiscordBridge implements Listener {
             "freeze:"+restriction.uuid()+":"+restriction.created(),restriction.name(),restriction.reason(),owner,
             plugin.getConfig().getStringList("discord.tickets.supervisor-role-ids"),List.of(staff),"проверка-"+restriction.created()%10000).join();
           if(channel!=null) {
+            if(!currentRestriction(restriction)){service.closeTicketChannel(channel,"Проверка уже завершена");return;}
             String contact="Проверка "+restriction.name()+": <#"+channel+">"+(owner.isBlank()?". Discord игрока не привязан.":". Игрок: <@"+owner+">");
             enqueueNotice("freeze-staff:"+restriction.uuid()+":"+restriction.created(),staff,contact);
             if(!owner.isBlank())enqueueNotice("freeze-contact:"+restriction.uuid()+":"+restriction.created(),owner,"Связь с сотрудником: <#"+channel+">. Выход с сервера будет записан, но сам по себе не выдаёт бан.");
@@ -205,8 +207,13 @@ public class LoveCoreDiscordBridge implements Listener {
       }catch(Exception error){plugin.getLogger().warning("Не отправлено уведомление ограничения: "+error.getClass().getSimpleName());}
     });
   }
+  private boolean currentRestriction(me.lovelace.loveWebAdmin.moderation.RestrictionsStore.Restriction value) {
+    var moderation=plugin.getModerationService();
+    return moderation!=null&&moderation.restrictions().stream().anyMatch(r->r.kind().equals(value.kind())&&r.uuid().equals(value.uuid())&&r.created()==value.created()&&r.active(System.currentTimeMillis()/1000));
+  }
   public void closeRestriction(me.lovelace.loveWebAdmin.moderation.RestrictionsStore.Restriction restriction) {
     if(!restriction.kind().equals("FREEZE"))return;
+    if(currentRestriction(restriction))return;
     io.run(()->{
       var transport=discord().filter(DiscordService::isEnabled);if(transport.isEmpty())return;
       var service=transport.get();

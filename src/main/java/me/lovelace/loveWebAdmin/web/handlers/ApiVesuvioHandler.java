@@ -166,6 +166,7 @@ public class ApiVesuvioHandler extends ApiHandlerSupport {
           yield bridge.call("editModerationWave",new Class<?>[]{String.class,String.class,long.class},java.util.Objects.toString(body.get("event"),""),java.util.Objects.toString(body.get("reason"),""),seconds);}
         default->throw new IllegalArgumentException("Неизвестное действие волны");
       };
+      if(Boolean.FALSE.equals(result)){sendError(resp,409,"Запись волны уже изменена; обновите список");return;}
       plugin.getLogManager().logWebAction(session.get().adminUsername(),"Волна наказаний: "+action);
       sendSuccess(resp,java.util.Map.of("result",result));return;
     }
