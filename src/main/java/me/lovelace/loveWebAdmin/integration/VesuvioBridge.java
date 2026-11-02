@@ -121,6 +121,7 @@ public final class VesuvioBridge implements org.bukkit.event.Listener, AutoClose
             throw new VesuvioUnavailableException(
                     "Установленная версия Vesuvio несовместима (нет метода " + method + ")", e);
         } catch (InvocationTargetException e) {
+      if(e.getCause() instanceof IllegalArgumentException invalid)throw invalid;
       if (e.getCause() instanceof UnsupportedOperationException)
         throw new VesuvioUnavailableException(
             "Обновите Vesuvio: установленная версия не поддерживает это действие", e.getCause());

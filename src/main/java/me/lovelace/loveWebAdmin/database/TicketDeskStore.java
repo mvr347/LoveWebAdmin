@@ -171,6 +171,15 @@ public final class TicketDeskStore implements AutoCloseable {
     }
   }
 
+  public synchronized List<Ticket> owned(String owner, int offset) throws SQLException {
+    var out = new ArrayList<Ticket>();
+    try (var q = db.prepareStatement("SELECT * FROM desk_tickets WHERE owner=? ORDER BY id DESC LIMIT 6 OFFSET ?")) {
+      q.setString(1, owner); q.setInt(2, Math.max(0, offset));
+      try (var r = q.executeQuery()) { while(r.next()) out.add(ticket(r)); }
+    }
+    return List.copyOf(out);
+  }
+
   public synchronized List<Ticket> active() throws SQLException {
     var rows = new ArrayList<Ticket>();
     try (var q = db.createStatement();

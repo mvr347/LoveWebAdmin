@@ -349,3 +349,16 @@ test("settings keep domain permissions, reject invalid batches and never return 
     400,
   );
 });
+
+test('provisional moderation counts from the kick and rejects late finalization',()=>{
+  let clock=1000;const m=create({clock:()=>clock});
+  const pending=call(m,'POST','/api/moderation',{action:'ban',player:'Ada123'});
+  assert.equal(pending.deadline,1300);
+  clock=1120;
+  const ban=call(m,'POST','/api/bans',{id:pending.id,targetName:'Ada123',ruleReason:'Тест',durationSeconds:3600});
+  assert.equal(ban.expiresAt,4600);
+  const other=call(m,'POST','/api/moderation',{action:'ban',player:'Ada123'});
+  clock=1421;
+  assert.equal(m.request('POST','/api/bans',{id:other.id,targetName:'Ada123',ruleReason:'Поздно',durationSeconds:3600}).status,409);
+  assert.equal(call(m,'GET','/api/moderation').pending.length,0);
+});

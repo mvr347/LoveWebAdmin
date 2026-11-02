@@ -32,8 +32,9 @@ public final class MainDispatcher implements AutoCloseable {
           new RejectedExecutionException("Сервер занят или останавливается"));
     CompletableFuture<T> result = new CompletableFuture<>();
     pending.add(result);
-    var phase = new java.util.concurrent.atomic.AtomicInteger(); // queued / running / finished
-    var expiry =
+    boolean direct=Bukkit.isPrimaryThread();
+    var phase = new java.util.concurrent.atomic.AtomicInteger(direct?1:0); // queued / running / finished
+    var expiry = direct ? null :
         timer.schedule(
             () -> {
               if (phase.compareAndSet(0, 2))
@@ -45,14 +46,14 @@ public final class MainDispatcher implements AutoCloseable {
     result.whenComplete(
         (v, e) -> {
           phase.set(2);
-          expiry.cancel(false);
+          if(expiry!=null)expiry.cancel(false);
           pending.remove(result);
           admission.release();
         });
     Runnable invoke =
         () -> {
-          if (!phase.compareAndSet(0, 1) || result.isDone()) return;
-          expiry.cancel(false);
+          if ((!direct&&!phase.compareAndSet(0, 1)) || result.isDone()) return;
+          if(expiry!=null)expiry.cancel(false);
           try {
             result.complete(action.get());
           } catch (Throwable e) {
@@ -60,7 +61,7 @@ public final class MainDispatcher implements AutoCloseable {
           }
         };
     try {
-      if (Bukkit.isPrimaryThread()) invoke.run();
+      if (direct) invoke.run();
       else {
         var task = Bukkit.getScheduler().runTask(plugin, invoke);
         result.whenComplete(

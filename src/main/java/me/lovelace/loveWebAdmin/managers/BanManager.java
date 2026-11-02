@@ -160,7 +160,7 @@ public class BanManager {
                       ruleReason,
                       description,
                       proofUrls,
-                      isIpBan,
+                      true,
                       durationSeconds,
                       linkedReportId,
                       origin))
@@ -176,12 +176,19 @@ public class BanManager {
     } catch (java.sql.SQLException e) {
       throw new IllegalStateException(e);
     }
+    if(plugin.getModerationService()!=null && origin.kind()==me.lovelace.loveWebAdmin.models.BanOrigin.Kind.STAFF)
+      plugin.getModerationService().checkDuration(actorUsername,"BAN",durationSeconds);
+    if (banId > 0 && plugin.getModerationService() != null && !plugin.getModerationService().mayFinalize(banId)) return false;
     if (banId > 0
         && plugin
             .getDatabaseManager()
             .getBanById(banId)
             .filter(b -> b.status().equals("DRAFT"))
             .isEmpty()) return false;
+    if(banId>0 && plugin.getModerationService()!=null) {
+      var pendingCase=plugin.getModerationService().pending(banId);
+      if(pendingCase.isPresent()&&!pendingCase.get().name().equalsIgnoreCase(targetName.trim()))throw new IllegalArgumentException("Игрок не совпадает с предварительным делом");
+    }
     String cleanTarget = targetName.trim();
     String targetUuid = null;
     String targetIp = null;
@@ -204,7 +211,11 @@ public class BanManager {
     }
 
     long now = System.currentTimeMillis() / 1000L;
-    long expiresAt = (durationSeconds > 0) ? (now + durationSeconds) : -1L;
+    long began = banId > 0 && plugin.getModerationService() != null
+        ? plugin.getModerationService().pending(banId).map(p -> p.created()).orElse(now) : now;
+    long expiresAt = (durationSeconds > 0) ? Math.addExact(began, durationSeconds) : -1L;
+    if (expiresAt > 0 && expiresAt <= now) throw new IllegalArgumentException("Срок бана уже истёк с момента предварительной блокировки");
+    isIpBan = true;
     String proofJson = JsonUtils.toJson(proofUrls != null ? proofUrls : List.of());
 
     WebBan ban =
@@ -265,6 +276,7 @@ public class BanManager {
       plugin.getReportManager().acceptReport(linkedReportId, actorUsername, effectiveBanId);
     }
 
+    if (plugin.getModerationService() != null) plugin.getModerationService().finalized(savedBan.id());
     if (plugin.getDiscordBridge() != null) plugin.getDiscordBridge().notifyBanned(savedBan, origin);
 
     String reportNote =
@@ -625,6 +637,7 @@ public class BanManager {
   public boolean unban(int banId, String actorUsername) {
     if (!Bukkit.isPrimaryThread())
       return plugin.main().call(() -> unban(banId, actorUsername)).join();
+    if (plugin.getModerationService() != null && plugin.getModerationService().cancelPending(banId, actorUsername)) return true;
     Optional<WebBan> banOpt = plugin.getDatabaseManager().getBanById(banId);
     if (banOpt.isEmpty()) return false;
 
@@ -707,6 +720,10 @@ public class BanManager {
     if (targetName == null || targetName.isBlank()) return false;
     String cleanTarget = targetName.trim();
 
+    if (plugin.getModerationService() != null) {
+      var pending = plugin.getModerationService().pending().stream().filter(p -> p.name().equalsIgnoreCase(cleanTarget)).findFirst();
+      if (pending.isPresent() && plugin.getModerationService().cancelPending(pending.get().id(), actorUsername)) return true;
+    }
     Optional<WebBan> banOpt = plugin.getDatabaseManager().getActiveBan(cleanTarget);
     if (banOpt.isPresent()) {
       return unban(banOpt.get().id(), actorUsername);

@@ -67,6 +67,7 @@ public class WebServer {
             context.addServlet(analyticsHolder, "/api/analytics");
             context.addServlet(analyticsHolder, "/api/analytics/*");
 
+            context.addServlet(new ServletHolder(new me.lovelace.loveWebAdmin.web.handlers.ApiModerationHandler(plugin)), "/api/moderation/*");
             ServletHolder bansHolder = new ServletHolder(new me.lovelace.loveWebAdmin.web.handlers.ApiBansHandler(plugin));
             context.addServlet(bansHolder, "/api/bans");
             context.addServlet(bansHolder, "/api/bans/*");
