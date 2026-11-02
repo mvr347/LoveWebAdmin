@@ -205,6 +205,20 @@ public class LoveCoreDiscordBridge implements Listener {
       }catch(Exception error){plugin.getLogger().warning("Не отправлено уведомление ограничения: "+error.getClass().getSimpleName());}
     });
   }
+  public void closeRestriction(me.lovelace.loveWebAdmin.moderation.RestrictionsStore.Restriction restriction) {
+    if(!restriction.kind().equals("FREEZE"))return;
+    io.run(()->{
+      var transport=discord().filter(DiscordService::isEnabled);if(transport.isEmpty())return;
+      var service=transport.get();
+      try {
+        String owner=service.getLinkedDiscordId(java.util.UUID.fromString(restriction.uuid())).orElse("");
+        String channel=CoreDiscordExtensions.managedTicket(service,TicketType.SUPPORT,
+          "freeze:"+restriction.uuid()+":"+restriction.created(),restriction.name(),restriction.reason(),owner,
+          plugin.getConfig().getStringList("discord.tickets.supervisor-role-ids"),List.of(),"проверка-"+restriction.created()%10000,true).join();
+        if(channel!=null&&!service.closeTicketChannel(channel,"Проверка завершена. Ограничение снято.").join())plugin.getLogger().warning("Канал проверки не закрыт; проверьте права бота");
+      }catch(Exception error){plugin.getLogger().warning("Не удалось закрыть канал проверки; требуется проверка сотрудника");}
+    });
+  }
   private void enqueueNotice(String event,String recipient,String content)throws java.sql.SQLException {
     store.enqueue(event+":"+recipient,recipient,JsonUtils.toJson(Map.of("content",content,"nonce",me.lovelace.loveWebAdmin.database.ModerationStore.hash(event+":"+recipient).substring(0,24),"enforce_nonce",true,"allowed_mentions",Map.of("parse",List.of()),"components",List.of(Map.of("type",1,"components",List.of(Map.of("type",2,"style",2,"custom_id","lc:menu:home","label","Личный кабинет")))))));
   }

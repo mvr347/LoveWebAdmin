@@ -275,7 +275,9 @@ public final class ModerationService implements Listener, AutoCloseable {
                       + ". Требуется проверка старших.");
       }
       for (var r : restrictions.values())
-        if (!r.active(now())) store.remove(r.kind(), r.uuid(), "Система", "Истёк срок", now());
+        if (!r.active(now())
+            && store.remove(r.kind(), r.uuid(), "Система", "Истёк срок", now())
+            && plugin.getDiscordBridge() != null) plugin.getDiscordBridge().closeRestriction(r);
       reload();
     } catch (java.sql.SQLException e) {
       throw new IllegalStateException(e);
@@ -295,7 +297,7 @@ public final class ModerationService implements Listener, AutoCloseable {
         "FREEZE",
         actor,
         name,
-        plugin.getConfig().getLong("moderation.freeze-max-seconds", 1800),
+        Math.clamp(plugin.getConfig().getLong("moderation.freeze-max-seconds", 1800), 60, 86400),
         reason);
   }
 
@@ -313,7 +315,8 @@ public final class ModerationService implements Listener, AutoCloseable {
     }
     checkDuration(actor, kind, seconds);
     validateName(name);
-    if (reason == null || reason.isBlank()) throw new IllegalArgumentException("Укажите причину");
+    if (reason == null || reason.isBlank() || reason.length() > 1000)
+      throw new IllegalArgumentException("Укажите причину");
     Player target = Bukkit.getPlayerExact(name);
     String uuid =
         target == null
@@ -361,7 +364,12 @@ public final class ModerationService implements Listener, AutoCloseable {
             .toList();
     boolean removed = false;
     try {
-      for (var r : matches) removed |= store.remove(kind, r.uuid(), actor, reason, now());
+      for (var r : matches) {
+        boolean changed = store.remove(kind, r.uuid(), actor, reason, now());
+        removed |= changed;
+        if (changed && plugin.getDiscordBridge() != null)
+          plugin.getDiscordBridge().closeRestriction(r);
+      }
       reload();
     } catch (java.sql.SQLException e) {
       throw new IllegalStateException(e);
