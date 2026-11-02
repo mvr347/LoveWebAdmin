@@ -19,6 +19,7 @@
     "MANAGE_PASSWORDS",
     "VIEW_BANS",
     "MANAGE_BANS",
+    "MANAGE_MUTES",
     "VIEW_APPEALS",
     "MANAGE_APPEALS",
     "VIEW_PLAYERS",
@@ -288,6 +289,16 @@
       };
     }
     function createBan(body) {
+      if(Number(body.id)>0) {
+        const pending=state.bans.find(b=>b.id===Number(body.id)&&b.status==='DRAFT'&&b.pendingDeadline>clock());
+        if(!pending)fail(409,'Срок оформления истёк');
+        if(body.targetName&&body.targetName.toLowerCase()!==pending.targetName.toLowerCase())fail(400,'Игрок не совпадает с делом');
+        const seconds=Number(body.durationSeconds??-1);
+        if(seconds!==-1&&(seconds<60||seconds>315360000||pending.createdAt+seconds<=clock()))fail(400,'Недопустимый срок');
+        if(!body.ruleReason?.trim())fail(400,'Укажите причину');
+        Object.assign(pending,{status:'ACTIVE',ruleReason:body.ruleReason,description:body.description||'',durationSeconds:seconds,expiresAt:seconds<0?-1:pending.createdAt+seconds,isIpBan:true});
+        return clone(pending);
+      }
       const p = player(
         body.targetName || body.playerName || body.player || "Ada123",
       );
@@ -1366,6 +1377,36 @@
         if (!has("VIEW_PLAYER_IP")) delete profile.ip;
         return profile;
       }
+      if(parts[1]==='moderation') {
+        state.restrictions ||= [];
+        for(const b of state.bans)if(b.status==='DRAFT'&&b.pendingDeadline<=clock())b.status='EXPIRED';
+        state.restrictions=state.restrictions.filter(r=>r.expires<0||r.expires>clock());
+        if(method==='GET') {
+          requirePermission('VIEW_BANS');
+          return {pending:state.bans.filter(b=>b.status==='DRAFT'&&b.pendingDeadline).map(b=>({id:b.id,name:b.targetName,actor:b.creatorName,createdAt:b.createdAt,deadline:b.pendingDeadline})),restrictions:clone(state.restrictions),serverTime:clock()};
+        }
+        const permissions={ban:'MANAGE_BANS',unban:'MANAGE_BANS',mute:'MANAGE_MUTES',unmute:'MANAGE_MUTES',freeze:'FREEZE_PLAYERS',unfreeze:'FREEZE_PLAYERS',kick:'KICK_PLAYERS'};
+        if(!permissions[body.action])fail(400,'Неизвестное действие');requirePermission(permissions[body.action]);
+        const target=player(body.player);
+        if(body.action==='ban') {
+          let pending=state.bans.find(b=>b.status==='DRAFT'&&b.targetName.toLowerCase()===target.name.toLowerCase());
+          if(!pending){pending={id:id(),targetName:target.name,targetUuid:target.uuid,creatorName:viewer().username,createdAt:clock(),pendingDeadline:clock()+300,status:'DRAFT',ruleReason:'Ожидает оформления',expiresAt:-1};state.bans.push(pending);}
+          return {id:pending.id,deadline:pending.pendingDeadline};
+        }
+        if(!body.reason?.trim())fail(400,'Укажите причину');
+        if(body.action==='mute'||body.action==='freeze') {
+          const kind=body.action==='mute'?'MUTE':'FREEZE';let seconds=1800;
+          if(kind==='MUTE') {
+            if(['permanent','навсегда','бессрочно'].includes(body.duration))seconds=-1;
+            else {const match=/^([1-9][0-9]{0,8})([smhdw])$/.exec(body.duration||'');if(!match)fail(400,'Укажите срок');seconds=Number(match[1])*({s:1,m:60,h:3600,d:86400,w:604800}[match[2]]);if(seconds>315360000)fail(400,'Недопустимый срок');}
+          }
+          state.restrictions=state.restrictions.filter(r=>r.uuid!==target.uuid||r.kind!==kind);
+          state.restrictions.push({kind,uuid:target.uuid,name:target.name,reason:body.reason,actor:viewer().username,created:clock(),expires:seconds<0?-1:clock()+seconds});
+        }else if(body.action==='unmute'||body.action==='unfreeze')state.restrictions=state.restrictions.filter(r=>r.uuid!==target.uuid||r.kind!==(body.action==='unmute'?'MUTE':'FREEZE'));
+        else if(body.action==='unban')for(const ban of state.bans)if(ban.targetName===target.name&&['DRAFT','ACTIVE'].includes(ban.status))ban.status='UNBANNED';
+        else target.online=false;
+        return {message:'Тестовое действие выполнено'};
+      }
       if (parts[1] === "bans") {
         requirePermission(method === "GET" ? "VIEW_BANS" : "MANAGE_BANS");
         if (n === "reasons")
@@ -1881,6 +1922,15 @@
       }
       if (parts[1] === "vesuvio") {
         requirePermission(method === "GET" ? "VIEW_VESUVIO" : "MANAGE_VESUVIO");
+        if(n==='wave') {
+          state.moderationWave ||= [];
+          if(method==='GET')return clone(state.moderationWave);
+          requirePermission('MANAGE_BANS');
+          for(const entry of state.moderationWave)if(entry.state==='QUEUED'&&(body.action==='execute'||entry.event===body.event)) {
+            if(body.action==='edit')Object.assign(entry,{reason:body.reason,duration:body.duration});
+            else entry.state=body.action==='remove'?'REMOVED':'APPLIED';
+          }return {result:true};
+        }
         if (n === "suspects")
           return clone(
             state.players

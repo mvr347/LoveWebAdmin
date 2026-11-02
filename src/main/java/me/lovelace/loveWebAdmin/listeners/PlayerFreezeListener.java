@@ -93,4 +93,48 @@ public class PlayerFreezeListener implements Listener {
                 "ВНИМАНИЕ: Замороженный игрок " + player.getName() + " покинул сервер во время проверки!");
         }
     }
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onAnyDamage(org.bukkit.event.entity.EntityDamageEvent e) {
+        if (e.getEntity() instanceof Player p && plugin.getFreezeManager().isFrozen(p)) e.setCancelled(true);
+    }
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onEntityInteract(org.bukkit.event.player.PlayerInteractEntityEvent e) {
+        if (plugin.getFreezeManager().isFrozen(e.getPlayer())) e.setCancelled(true);
+    }
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onTeleport(org.bukkit.event.player.PlayerTeleportEvent e) {
+        if (plugin.getFreezeManager().isFrozen(e.getPlayer())) e.setCancelled(true);
+    }
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onInventoryClick(org.bukkit.event.inventory.InventoryClickEvent e) {
+        if (e.getWhoClicked() instanceof Player p && plugin.getFreezeManager().isFrozen(p)) e.setCancelled(true);
+    }
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onInventoryDrag(org.bukkit.event.inventory.InventoryDragEvent e) {
+        if (e.getWhoClicked() instanceof Player p && plugin.getFreezeManager().isFrozen(p)) e.setCancelled(true);
+    }
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onSwap(org.bukkit.event.player.PlayerSwapHandItemsEvent e) {
+        if (plugin.getFreezeManager().isFrozen(e.getPlayer())) e.setCancelled(true);
+    }
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onCommand(PlayerCommandPreprocessEvent e) {
+        if (!plugin.getFreezeManager().isFrozen(e.getPlayer())) return;
+        String command = e.getMessage().substring(1).split(" ", 2)[0].toLowerCase(java.util.Locale.ROOT);
+        int colon = command.indexOf(':'); if (colon >= 0) command = command.substring(colon + 1);
+        if (!java.util.Set.of("discord", "дискорд", "report", "жалоба").contains(command)) e.setCancelled(true);
+    }
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onPickup(org.bukkit.event.entity.EntityPickupItemEvent event) {
+        if(event.getEntity() instanceof Player player && plugin.getFreezeManager().isFrozen(player)) event.setCancelled(true);
+    }
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onProjectile(org.bukkit.event.entity.ProjectileLaunchEvent event) {
+        if(event.getEntity().getShooter() instanceof Player player && plugin.getFreezeManager().isFrozen(player)) event.setCancelled(true);
+    }
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onProjectileDamage(EntityDamageByEntityEvent event) {
+        if(event.getDamager() instanceof org.bukkit.entity.Projectile projectile && projectile.getShooter() instanceof Player player && plugin.getFreezeManager().isFrozen(player)) event.setCancelled(true);
+    }
+
 }

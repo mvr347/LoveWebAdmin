@@ -17,7 +17,7 @@ commands:
     permission: lovewebadmin.admin
     permission-message: ""
   бан:
-    description: Создание черновика бана для передачи в WebAdmin
+    description: Предварительная блокировка с оформлением в течение пяти минут
     usage: /бан <игрок>
     aliases: [ ban, webban, lban ]
     permission: lovewebadmin.ban
@@ -35,6 +35,32 @@ commands:
     permission: lovewebadmin.unban
     permission-message: ""
 
+  mute:
+    description: Модерация игроков
+    aliases: [мут]
+    permission: lovewebadmin.mute
+    permission-message: ""
+  unmute:
+    description: Модерация игроков
+    aliases: [размут]
+    permission: lovewebadmin.unmute
+    permission-message: ""
+  freeze:
+    description: Модерация игроков
+    aliases: [заморозить]
+    permission: lovewebadmin.freeze
+    permission-message: ""
+  unfreeze:
+    description: Модерация игроков
+    aliases: [разморозить]
+    permission: lovewebadmin.unfreeze
+    permission-message: ""
+  kick:
+    description: Модерация игроков
+    aliases: [кик]
+    permission: lovewebadmin.kick
+    permission-message: ""
+
 permissions:
   lovewebadmin.admin:
     description: Доступ к команде /lovewebadmin (алиас /lwa)
@@ -49,3 +75,21 @@ permissions:
     description: Доступ к отправке жалоб через /репорт
     default: true
 
+
+  lovewebadmin.mute:
+    default: op
+
+  lovewebadmin.unmute:
+    default: op
+
+  lovewebadmin.freeze:
+    default: op
+
+  lovewebadmin.unfreeze:
+    default: op
+
+  lovewebadmin.kick:
+    default: op
+
+  lovewebadmin.supervise:
+    default: op

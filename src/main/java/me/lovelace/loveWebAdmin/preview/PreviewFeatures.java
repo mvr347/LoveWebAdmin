@@ -649,6 +649,17 @@ final class PreviewFeatures {
       String[] p,
       Map<String, Object> body) {
     r.require("VIEW_VESUVIO");
+    if(id.equals("wave")) {
+      var entries=r.list("moderationWave");
+      if(read)return entries;
+      r.require("MANAGE_VESUVIO");r.require("MANAGE_BANS");
+      String operation=text(body,"action","");
+      for(var entry:entries)if(text(entry,"state","").equals("QUEUED")&&(operation.equals("execute")||text(entry,"event","").equals(text(body,"event","")))) {
+        if(operation.equals("edit")){entry.put("reason",r.reason(body,"reason"));entry.put("duration",body.getOrDefault("duration",-1));}
+        else entry.put("state",operation.equals("remove")?"REMOVED":"APPLIED");
+      }
+      return Map.of("result",true);
+    }
     if (id.equals("reviews")) {
       r.require("REVIEW_VESUVIO_SAMPLES");
       return r.list("vesuvioReviews");

@@ -597,6 +597,7 @@ public final class DiscordTicketDesk {
                                   "lwa:desk:claim:" + ticket.kind() + ":" + ticket.id(),
                                   1))))));
     store.display(ticket.kind(), ticket.id(), card, queue, acl);
+    plugin.getDiscordBridge().notifyAssigned(ticket.kind(),ticket.id(),assigned,ticket.channel());
   }
 
   private List<Map<String, Object>> controls(TicketDeskStore.Ticket ticket) {
@@ -608,17 +609,6 @@ public final class DiscordTicketDesk {
                 button("Передать", "lwa:desk:form:transfer:" + key, 2),
                 button("Уточнить", "lwa:desk:form:clarify:" + key, 2),
                 button("Руководству", "lwa:desk:form:escalate:" + key, 2)));
-    if (!publicUrl.isBlank())
-      first.add(
-          Map.of(
-              "type",
-              2,
-              "style",
-              5,
-              "label",
-              "Открыть в панели",
-              "url",
-              publicUrl + "/case.html?kind=" + ticket.kind() + "&id=" + ticket.id()));
     var second =
         new ArrayList<Map<String, Object>>(
             List.of(
@@ -842,11 +832,6 @@ public final class DiscordTicketDesk {
       throw new IllegalArgumentException("Слишком много нажатий. Подождите минуту.");
     String name = i.name();
     if (name.equals("lwa:desk:mine") || name.equals("мои-обращения")) {
-      String token =
-          plugin
-              .moderation()
-              .portalLink(
-                  i.userId(), service.getLinkedPlayer(i.userId()).map(UUID::toString).orElse(null));
       var buttons = new ArrayList<Map<String, Object>>();
       for (var t : store.active())
         if (t.owner().equals(i.userId())
@@ -868,23 +853,10 @@ public final class DiscordTicketDesk {
                       + t.channel()));
       var components = new ArrayList<Map<String, Object>>();
       if (!buttons.isEmpty()) components.add(row(buttons));
-      if (!publicUrl.isBlank())
-        components.add(
-            row(
-                List.of(
-                    Map.of(
-                        "type",
-                        2,
-                        "style",
-                        5,
-                        "label",
-                        "Личный кабинет (5 минут)",
-                        "url",
-                        publicUrl + "/portal.html#" + token))));
       return body(
           buttons.isEmpty()
-              ? "Сейчас у вас нет открытых каналов обращений. В личном кабинете доступна история."
-              : "Ваши открытые обращения. Личную ссылку никому не передавайте.",
+              ? "Сейчас у вас нет открытых каналов обращений. История доступна в личном меню бота."
+              : "Ваши открытые обращения.",
           components);
     }
     if (name.startsWith("lwa:desk:draft:")) {

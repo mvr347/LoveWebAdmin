@@ -17,6 +17,15 @@ final class PreviewChecks {
     Path folder = Files.createTempDirectory(parent, "checks-");
     var results = new ArrayList<Map<String, Object>>();
     try (var r = new PreviewRuntime(folder, "checks")) {
+      check(results,"Предварительный бан: 5 минут, автоматическое снятие и запрет позднего оформления","SERVER",()->{
+        r.control("role",Map.of("id",1));
+        var created=map(r.execute("POST","/api/moderation",Map.of("action","ban","player","PreviewBan"),Map.of()));
+        int id=integer(created.get("id"));r.control("advance-time",Map.of("seconds",301));
+        if(!r.database().getBanById(id).orElseThrow().status().equals("EXPIRED"))throw new AssertionError("Блокировка не снята");
+        try {r.execute("POST","/api/bans",Map.of("id",id,"targetName","PreviewBan","ruleReason","Поздно","durationSeconds",3600),Map.of());throw new AssertionError("Просроченный бан оформлен");}
+        catch(Rejected expected) {if(expected.status!=409)throw expected;}
+
+      });
       for (String endpoint :
           List.of(
               "me",
@@ -62,9 +71,9 @@ final class PreviewChecks {
                 "/api/bans",
                 Map.of("targetName", "Ada123", "ruleReason", "Тестовая блокировка"),
                 Map.of("idempotency-key", "test-centre-ban"));
-            if (r.database().getAllBans(null).size() != 1)
+            if (r.database().getAllBans(null).stream().filter(b->b.status().equals("ACTIVE")).count() != 1)
               throw new AssertionError("Повторный запрос создал второй бан");
-            var ban = r.database().getAllBans(null).getFirst();
+            var ban = r.database().getAllBans(null).stream().filter(b->b.status().equals("ACTIVE")).findFirst().orElseThrow();
             r.execute(
                 "POST",
                 "/api/bans/" + ban.id() + "/correct",

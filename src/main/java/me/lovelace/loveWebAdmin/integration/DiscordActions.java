@@ -11,20 +11,26 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
   private final LoveWebAdmin plugin;
   private final DiscordService service;
   private volatile boolean closed;
+  private final PrivateDiscordMenus privateMenus;
+  private final DiscordModerationCommands moderationCommands;
   private final me.lovelace.loveWebAdmin.utils.SubmissionLimiter submissions =
       new me.lovelace.loveWebAdmin.utils.SubmissionLimiter();
 
   public DiscordActions(LoveWebAdmin plugin, DiscordService service) {
     this.plugin = plugin;
     this.service = service;
+    this.privateMenus = new PrivateDiscordMenus(plugin, service, this);
+    this.moderationCommands = new DiscordModerationCommands(plugin, service, this);
   }
 
   public void register() {
+    privateMenus.register();
+    moderationCommands.register();
     CoreDiscordExtensions.claimPrefix(service, "lwa:");
     service.registerInteractionListener(this);
     service.registerTicketMessageListenerV2(this);
     service.registerCommand("жалоба", "Подать жалобу на игрока", Map.of());
-    service.registerCommand("мои-обращения", "Личная ссылка на ваши обращения", Map.of());
+    service.registerCommand("мои-обращения", "Ваши обращения в личных сообщениях бота", Map.of());
     service.registerCommand("апелляция", "Обжаловать блокировку Minecraft", Map.of());
     service.registerCommand("дело", "Открыть дело", Map.of("номер", "Номер апелляции"));
     CoreDiscordExtensions.unregister(service, "жалобы");
@@ -34,6 +40,7 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
 
   public void close() {
     closed = true;
+    privateMenus.close();
     service.unregisterInteractionListener(this);
     service.unregisterTicketMessageListenerV2(this);
   }
@@ -86,6 +93,8 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
   @Override
   public boolean onInteraction(DiscordInteraction i) {
     if (closed || i.name().startsWith("lwa:preview:")) return false;
+    if (moderationCommands.handle(i)) return true;
+    if (privateMenus.interaction(i)) return true;
     if (plugin.getDiscordBridge().ticketDesk().onInteraction(i)) return true;
     if (!i.name().startsWith("lwa:")
         && !Set.of("апелляция", "жалоба", "мои-обращения", "дело", "игрок").contains(i.name()))
@@ -265,21 +274,7 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
 
   private String execute(DiscordInteraction i) throws Exception {
     if (closed) throw new java.util.concurrent.CancellationException("Интеграция остановлена");
-    if (i.name().equals("мои-обращения")) {
-      if (!submissions.take(i.userId())) return "Слишком много запросов. Повторите позже.";
-      String link =
-          plugin
-              .moderation()
-              .portalLink(
-                  i.userId(), service.getLinkedPlayer(i.userId()).map(UUID::toString).orElse(null));
-      return url().isBlank()
-          ? "Для личного кабинета администратор должен настроить web.public-url."
-          : "Личная одноразовая ссылка, действует 5 минут: "
-              + url()
-              + "/portal.html#"
-              + link
-              + "\nНе передавайте её другим людям.";
-    }
+    if (i.name().equals("мои-обращения")) { privateMenus.open(i.userId()); return "Список обращений обновлён в личке бота."; }
     if (i.name().equals("lwa:report:submit")) return createReport(i);
     if (i.name().startsWith("lwa:appeal:submit:")) return createAppeal(i);
     if (i.name().startsWith("lwa:clarify:submit:")) {
@@ -473,7 +468,7 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
             .getDatabaseManager()
             .createAppeal(ban.id(), ban.targetUuid(), ban.targetName(), reason);
     if (id <= 0) return "Апелляция уже существует или не сохранена.";
-    String token = plugin.moderation().createAccess(id, i.userId(), linked.isPresent());
+    plugin.moderation().createAccess(id, i.userId(), linked.isPresent());
     plugin.getDatabaseManager().addAppealMessage(id, ban.targetName(), false, reason);
     var appeal = plugin.getDatabaseManager().getAppealById(id).orElseThrow();
     plugin.getDiscordBridge().createAppealTicket(appeal);
@@ -483,9 +478,7 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
         + (linked.isPresent()
             ? "Аккаунт подтверждён."
             : "Аккаунт не подтверждён; сотрудник может запросить проверку.")
-        + (url().isBlank()
-            ? ""
-            : "\nПереписка в панели: " + url() + "/appeal.html#" + id + ":" + token);
+        + "\nПереписка доступна в разделе «Мои обращения» личного меню бота.";
   }
 
   /**

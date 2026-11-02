@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import me.lovelace.loveWebAdmin.LoveWebAdmin;
 import me.lovelace.loveWebAdmin.api.events.PlayerReportCreatedEvent;
@@ -179,6 +180,49 @@ public class LoveCoreDiscordBridge implements Listener {
     unregister();
   }
 
+  /** Durable, deduplicated important notices; navigation cards use a different transport. */
+  public void notifyRestriction(me.lovelace.loveWebAdmin.moderation.RestrictionsStore.Restriction restriction) {
+    io.run(()->{
+      var transport=discord().filter(DiscordService::isEnabled);if(transport.isEmpty())return;
+      var service=transport.get();
+      String owner=service.getLinkedDiscordId(java.util.UUID.fromString(restriction.uuid())).orElse("");
+      try {
+        if(!owner.isBlank())enqueueNotice("restriction:"+restriction.kind()+":"+restriction.uuid()+":"+restriction.created(),owner,
+          restriction.kind().equals("MUTE")?"Вы получили мут. Вас никто не слышит. Причина: "+restriction.reason():"Вы вызваны на проверку. Причина: "+restriction.reason());
+        if(restriction.kind().equals("FREEZE")) {
+          var staffStats=database.getPlayerStats(restriction.actor());
+          String staff=staffStats.flatMap(row->{try{return service.getLinkedDiscordId(java.util.UUID.fromString(row.get("uuid").toString()));}catch(Exception bad){return Optional.<String>empty();}}).orElse("");
+          if(staff.isBlank())return;
+          var channel=CoreDiscordExtensions.managedTicket(service,dev.lovelace.lovecore.api.discord.TicketType.SUPPORT,
+            "freeze:"+restriction.uuid()+":"+restriction.created(),restriction.name(),restriction.reason(),owner,
+            plugin.getConfig().getStringList("discord.tickets.supervisor-role-ids"),List.of(staff),"проверка-"+restriction.created()%10000).join();
+          if(channel!=null) {
+            String contact="Проверка "+restriction.name()+": <#"+channel+">"+(owner.isBlank()?". Discord игрока не привязан.":". Игрок: <@"+owner+">");
+            enqueueNotice("freeze-staff:"+restriction.uuid()+":"+restriction.created(),staff,contact);
+            if(!owner.isBlank())enqueueNotice("freeze-contact:"+restriction.uuid()+":"+restriction.created(),owner,"Связь с сотрудником: <#"+channel+">. Выход с сервера будет записан, но сам по себе не выдаёт бан.");
+          }
+        }
+      }catch(Exception error){plugin.getLogger().warning("Не отправлено уведомление ограничения: "+error.getClass().getSimpleName());}
+    });
+  }
+  private void enqueueNotice(String event,String recipient,String content)throws java.sql.SQLException {
+    store.enqueue(event+":"+recipient,recipient,JsonUtils.toJson(Map.of("content",content,"nonce",me.lovelace.loveWebAdmin.database.ModerationStore.hash(event+":"+recipient).substring(0,24),"enforce_nonce",true,"allowed_mentions",Map.of("parse",List.of()),"components",List.of(Map.of("type",1,"components",List.of(Map.of("type",2,"style",2,"custom_id","lc:menu:home","label","Личный кабинет")))))));
+  }
+  public boolean notifyOverdue(String actor,String day,int count) throws java.sql.SQLException {
+    var transport=discord().filter(DiscordService::isEnabled);if(transport.isEmpty())return false;
+    boolean queued=false;
+    for(var staff:database.getAllAdmins()) {
+      if(!staff.status().equals("ACTIVE"))continue;
+      var role=database.getRoleById(staff.roleId());
+      if(role.isEmpty()||!role.get().isOwner()&&!role.get().permissions().contains(me.lovelace.loveWebAdmin.models.Permission.VIEW_STAFF_AUDIT))continue;
+      var stats=database.getPlayerStats(staff.username());if(stats.isEmpty())continue;
+      String uuid=Objects.toString(stats.get().get("uuid"),"");if(uuid.isBlank())continue;
+      var owner=transport.get().getLinkedDiscordId(java.util.UUID.fromString(uuid));if(owner.isEmpty())continue;
+      enqueueNotice("overdue:"+actor+":"+day,owner.get(),"Сотрудник "+actor+": "+count+" незавершённых предварительных банов за "+day+". Нужна проверка старшего.");queued=true;
+    }
+    return queued;
+  }
+
   public void notifyBanned(
       me.lovelace.loveWebAdmin.models.WebBan ban,
       me.lovelace.loveWebAdmin.models.BanOrigin origin) {
@@ -233,13 +277,6 @@ public class LoveCoreDiscordBridge implements Listener {
                               "id",
                               String.valueOf(ban.id())));
               if (heading != null) text = heading + "\n" + text;
-              String url = plugin.getConfig().getString("web.public-url", "");
-              if (!url.isBlank())
-                text +=
-                    "\nПодать апелляцию: "
-                        + url.replaceAll("/+$", "")
-                        + "/appeal.html?ban="
-                        + ban.id();
               try {
                 store.enqueue(
                     event + ":" + id,
@@ -838,6 +875,15 @@ public class LoveCoreDiscordBridge implements Listener {
                 throw new IllegalStateException(error);
               }
             });
+  }
+
+  public void notifyAssigned(String kind,int id,String assignee,String channel)throws java.sql.SQLException {
+    if(assignee.isBlank()||channel.isBlank())return;
+    var transport=discord().filter(DiscordService::isEnabled);if(transport.isEmpty())return;
+    var stats=database.getPlayerStats(assignee);if(stats.isEmpty())return;
+    String uuid=Objects.toString(stats.get().get("uuid"),"");if(uuid.isBlank())return;
+    var owner=transport.get().getLinkedDiscordId(java.util.UUID.fromString(uuid));if(owner.isEmpty())return;
+    enqueueNotice("assigned:"+kind+":"+id+":"+assignee+":"+channel,owner.get(),"Вам назначено обращение №"+id+": <#"+channel+">. Оно также доступно в разделе «Мои дела» личного кабинета.");
   }
 
   public void notifyTicketCreated(String kind, int id) {

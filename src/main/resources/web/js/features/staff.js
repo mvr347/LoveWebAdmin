@@ -944,7 +944,7 @@ export async function renderStaffView() {
                     </div>
 
                     <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;" id="perms-matrix-container">
-                        ${renderPermCheckboxes(["VIEW_STATS", "VIEW_PLAYERS", "VIEW_BANS", "MANAGE_BANS", "VIEW_REPORTS", "MANAGE_REPORTS", "VIEW_SERVER_LOGS"])}
+                        ${renderPermCheckboxes(["VIEW_STATS", "VIEW_PLAYERS", "VIEW_BANS", "MANAGE_BANS", "MANAGE_MUTES", "VIEW_REPORTS", "MANAGE_REPORTS", "VIEW_SERVER_LOGS"])}
                     </div>
                 </div>
                 <div class="modal-footer">

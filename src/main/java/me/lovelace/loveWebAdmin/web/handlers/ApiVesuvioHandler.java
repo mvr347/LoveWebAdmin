@@ -49,6 +49,7 @@ public class ApiVesuvioHandler extends ApiHandlerSupport {
         String playerFilter = req.getParameter("player");
         final String filterLower = (playerFilter != null && !playerFilter.isBlank()) ? playerFilter.trim().toLowerCase() : null;
 
+        if ("/wave".equals(pathInfo)) {handleBasic(req,resp,()->bridge.call("getModerationWave"));return;}
         if ("/suspects".equals(pathInfo)) {
             handleBasic(req, resp, () -> {
                 Object result = bridge.call("getSuspects");
@@ -153,6 +154,21 @@ public class ApiVesuvioHandler extends ApiHandlerSupport {
     @Override
     protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws IOException {
         String pathInfo = req.getPathInfo();
+    if("/wave".equals(pathInfo)) {
+      var session=requirePermission(req,resp,Permission.MANAGE_VESUVIO);if(session.isEmpty())return;
+      if(!hasPermission(session.get(),Permission.MANAGE_BANS)){sendError(resp,403,"Нужны права управления наказаниями");return;}
+      var body=readJsonBody(req);String action=java.util.Objects.toString(body.get("action"),"");
+      Object result=switch(action) {
+        case "execute"->bridge.call("executeModerationWave");
+        case "remove"->bridge.call("removeModerationWave",new Class<?>[]{String.class},java.util.Objects.toString(body.get("event"),""));
+        case "edit"->{long seconds=body.get("duration") instanceof Number n?n.longValue():-1;
+          plugin.getModerationService().checkDuration(session.get().adminUsername(),"BAN",seconds);
+          yield bridge.call("editModerationWave",new Class<?>[]{String.class,String.class,long.class},java.util.Objects.toString(body.get("event"),""),java.util.Objects.toString(body.get("reason"),""),seconds);}
+        default->throw new IllegalArgumentException("Неизвестное действие волны");
+      };
+      plugin.getLogManager().logWebAction(session.get().adminUsername(),"Волна наказаний: "+action);
+      sendSuccess(resp,java.util.Map.of("result",result));return;
+    }
     if (pathInfo != null
         && (pathInfo.equals("/models/reload") || pathInfo.startsWith("/review/"))) {
       var session =

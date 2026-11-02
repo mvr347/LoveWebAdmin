@@ -17,6 +17,7 @@ public enum Permission {
     // Баны и апелляции
     VIEW_BANS,
     MANAGE_BANS,
+    MANAGE_MUTES,
     VIEW_APPEALS,
     MANAGE_APPEALS,
 

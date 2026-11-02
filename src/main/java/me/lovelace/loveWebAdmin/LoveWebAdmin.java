@@ -95,6 +95,9 @@ public class LoveWebAdmin extends JavaPlugin {
   private LogManager logManager;
   private RoleManager roleManager;
   private AdminManager adminManager;
+  private me.lovelace.loveWebAdmin.moderation.ModerationService moderationService;
+  public me.lovelace.loveWebAdmin.moderation.ModerationService getModerationService() { return moderationService; }
+
   private BanManager banManager;
   private BanArchiveManager banArchiveManager;
   private ProofStorage proofStorage;
@@ -278,6 +281,10 @@ public class LoveWebAdmin extends JavaPlugin {
     this.playerConnectionListener = new PlayerConnectionListener(this);
     getServer().getPluginManager().registerEvents(playerConnectionListener, this);
 
+    try {
+      this.moderationService = new me.lovelace.loveWebAdmin.moderation.ModerationService(this);
+      this.moderationService.start();
+    } catch (Exception error) { throw new IllegalStateException("Не открыты ограничения игроков", error); }
     this.freezeManager = new FreezeManager(this);
     getServer().getPluginManager().registerEvents(new PlayerFreezeListener(this), this);
 
@@ -334,6 +341,15 @@ public class LoveWebAdmin extends JavaPlugin {
     if (unbanPluginCommand != null) {
       unbanPluginCommand.setExecutor(unbanCommand);
       unbanPluginCommand.setTabCompleter(unbanCommand);
+    }
+
+    for (String action : java.util.List.of("ban", "mute", "unban", "unmute", "freeze", "unfreeze", "kick")) {
+      String root = action.equals("ban") ? "бан" : action.equals("unban") ? "разбан" : action;
+      var registered = getCommand(root);
+      if (registered != null) {
+        var handler = new me.lovelace.loveWebAdmin.commands.ModerationCommand(this, action);
+        registered.setExecutor(handler); registered.setTabCompleter(handler);
+      }
     }
 
     int port = getConfig().getInt("web.port", 8080);
@@ -396,6 +412,7 @@ public class LoveWebAdmin extends JavaPlugin {
     safely("Bukkit scheduler", () -> getServer().getScheduler().cancelTasks(this));
     safely("Async scheduler", () -> getServer().getAsyncScheduler().cancelTasks(this));
     if (io != null) io.stop(java.time.Duration.ofSeconds(3));
+    if (moderationService != null) safely("ограничения", () -> { try { moderationService.close(); } catch (Exception e) { throw new IllegalStateException(e); } });
     if (preview != null) safely("Preview stores", preview::close);
     if (discordBridge != null)
       safely(

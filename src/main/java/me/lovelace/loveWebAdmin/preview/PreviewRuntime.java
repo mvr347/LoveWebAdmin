@@ -26,6 +26,8 @@ public final class PreviewRuntime implements AutoCloseable, AppealService.Contex
   final Map<String, Object> state;
   private final String namespace;
   private boolean closed;
+  private PreviewModeration previewModeration;
+  PreviewModeration restrictions()throws Exception {if(previewModeration==null)previewModeration=new PreviewModeration(this,folder);return previewModeration;}
   private final Set<String> requiredRights = new LinkedHashSet<>();
   private final String totpSecret;
   private final Map<String, String> passwords = new HashMap<>();
@@ -143,7 +145,7 @@ public final class PreviewRuntime implements AutoCloseable, AppealService.Contex
   }
 
   long now() {
-    return System.currentTimeMillis() / 1000;
+    return System.currentTimeMillis() / 1000 + ((Number)state.getOrDefault("clockOffset",0)).longValue();
   }
 
   int nextId() {
@@ -347,6 +349,7 @@ public final class PreviewRuntime implements AutoCloseable, AppealService.Contex
         throw new Rejected(409, "Результат уже установлен либо операция выполняется");
       return Map.of();
     }
+    if (scope.equals("moderation"))return restrictions().route(read,body);
     if (scope.equals("stats")) return PreviewFeatures.stats(this);
     if (scope.equals("bans")) {
       require(read ? "VIEW_BANS" : "MANAGE_BANS");
@@ -855,6 +858,13 @@ public final class PreviewRuntime implements AutoCloseable, AppealService.Contex
   public synchronized Object control(String scenario, Map<String, Object> body) throws Exception {
     Object result;
     switch (scenario) {
+      case "advance-time" -> {
+        long seconds=((Number)body.getOrDefault("seconds",300)).longValue();
+        if(seconds<0||seconds>86400)throw new Rejected(400,"Сдвиг: от 0 до 86400 секунд");
+        state.put("clockOffset",((Number)state.getOrDefault("clockOffset",0)).longValue()+seconds);
+        restrictions().expire();result=Map.of("serverTime",now());
+      }
+
       case "run-checks" -> result = PreviewChecks.run(folder);
       case "role" -> {
         int role = integer(body.get("id"));
@@ -953,6 +963,7 @@ public final class PreviewRuntime implements AutoCloseable, AppealService.Contex
 
   private WebBan createBan(Map<String, Object> body) throws Exception {
     require("MANAGE_BANS");
+    if(body.get("id") instanceof Number id && id.intValue()>0)return restrictions().finalizeBan(body);
     String player = text(body, "targetName", "");
     if (!player.matches("[A-Za-z0-9_]{1,16}")) throw new Rejected(400, "Укажите ник игрока");
     long duration = body.get("durationSeconds") instanceof Number n ? n.longValue() : -1;
@@ -1213,7 +1224,7 @@ public final class PreviewRuntime implements AutoCloseable, AppealService.Contex
         if (workflows != null) workflows.close();
       } finally {
       try {
-        operations.close();
+        try {if(previewModeration!=null)previewModeration.close();} finally {operations.close();}
       } finally {
         try {
           moderation.close();

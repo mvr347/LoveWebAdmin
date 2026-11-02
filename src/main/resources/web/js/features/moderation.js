@@ -1,3 +1,4 @@
+import { renderRestrictions } from "./restrictions.js";
 import { confirmCaseDecision } from "../core/decision-preview.js";
 import { explanationDialog, noticeDialog } from "../core/dialogs.js";
 import { state } from "../state.js";
@@ -128,6 +129,7 @@ export async function renderPunishmentsView(
                     <span>${renderSvgIcon("scales", "violet", 15)}</span>
                     <span>АПЕЛЛЯЦИИ (DISCORD)</span>
                 </button>
+                <button type="button" class="segmented-nav-tab" data-subtab="restrictions">ОГРАНИЧЕНИЯ</button>
             </div>
 
             <!-- Subtab Content Area -->
@@ -178,7 +180,8 @@ export async function renderPunishmentsView(
   const switchSubtab = (tab, param = null) => {
     state.currentPunishmentsSubtab = tab;
     clearPollers();
-    if (tab === "reports") loadReportsSubtab();
+    if (tab === "restrictions") renderRestrictions(document.getElementById("punishments-subtab-container"));
+    else if (tab === "reports") loadReportsSubtab();
     else if (tab === "bans") loadBansSubtab();
     else if (tab === "appeals") loadAppealsSubtab(param || initialBanId);
   };
