@@ -180,7 +180,8 @@ public class ApiAuthHandler extends ApiHandlerSupport {
             "maintenance", maintenance,
             "maintenanceMessage",
                 maintenanceMsg != null ? maintenanceMsg : "Ведутся технические работы",
-            "strictIp", strictIp));
+            "strictIp", strictIp,
+            "passwordMinLength",Math.max(12,plugin.getConfig().getInt("security.password.min-length",12))));
   }
 
   private void handleCheckUsername(HttpServletRequest req, HttpServletResponse resp)

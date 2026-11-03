@@ -156,14 +156,16 @@ button[aria-busy="true"] {
 }
 
 .modal-overlay:has(.workspace-drawer) {
-  justify-content: flex-end;
-  padding: 0;
+  justify-content: center;
+  padding: 20px;
+  background:rgba(5,7,18,.38);
 }
 .modal.workspace-drawer {
-  height: 100dvh;
-  max-height: 100dvh;
-  border-radius: 0;
-  width: min(780px, 100vw);
+  height: auto;
+  max-height: min(740px,calc(100dvh - var(--love-preview-height,0px) - 64px));
+  border-radius: 16px;
+  max-width:780px;
+  width: min(780px,calc(100vw - 40px));
   margin: 0;
   overflow: auto;
 }
@@ -219,3 +221,13 @@ button[aria-busy="true"] {
 .operation-status button {
   margin-right: 8px;
 }
+
+/* Native confirmation dialogs must size to content, including under the global CSS reset. */
+.workspace-dialog {position:fixed;inset:0;margin:auto;width:min(480px,calc(100vw - 32px));height:fit-content;max-height:calc(100dvh - 64px);overflow:auto;box-sizing:border-box;border-radius:16px;padding:24px;box-shadow:0 20px 70px rgba(0,0,0,.3);}
+.workspace-dialog[open] {display:block;}
+.workspace-dialog:not([open]) {display:none;}
+.workspace-dialog::backdrop {background:rgba(5,7,18,.38);backdrop-filter:blur(2px);}
+.workspace-dialog h2 {font-size:20px;line-height:1.4;margin:0 0 12px;}
+.workspace-dialog p {line-height:1.65;margin:0 0 18px;}
+.workspace-dialog textarea {width:100%;min-height:110px;box-sizing:border-box;margin-bottom:16px;}
+.workspace-dialog .row {gap:10px;flex-wrap:wrap;}

@@ -1,3 +1,4 @@
+import { passwordError } from "../core/form-validation.js";
 import { state } from "../state.js";
 import {
   api,
@@ -35,6 +36,7 @@ export async function renderAuthGate() {
   try {
     status = await api("GET", "/api/auth/status");
     state.serverStatus = status;
+    document.documentElement.dataset.passwordMinimum=String(status.passwordMinLength||12);
   } catch (e) {
     state.serverStatus = status;
     state.app.innerHTML = `
@@ -101,26 +103,23 @@ export function renderTotpQrCode(containerEl, otpUrl) {
             </div>`;
 }
 export function validatePasswordClient(p) {
-  if (!p || p.length < 10) return "Минимум 12 символов";
-  if (!/[A-Za-zА-Яа-я]/.test(p)) return "Нужна хотя бы одна буква";
-  if (!/\d/.test(p)) return "Нужна хотя бы одна цифра";
-  if (!/[^A-Za-zА-Яа-я0-9]/.test(p)) return "Нужен спецсимвол";
-  return null;
+  return passwordError(p||'',state.serverStatus?.passwordMinLength||12)||null;
 }
 export function updatePasswordMeter(password, fillEl, hintsEl) {
   if (!fillEl) return;
   const p = password || "";
-  const hasLen = p.length >= 12;
-  const hasLetter = /[A-Za-zА-Яа-я]/.test(p);
+  const minimum=Number(state.serverStatus?.passwordMinLength)||12;
+  const hasLen = p.length >= minimum;
+  const hasLetter = /[a-zа-я]/.test(p)&&/[A-ZА-Я]/.test(p);
   const hasDigit = /\d/.test(p);
   const hasSpecial = /[^A-Za-zА-Яа-я0-9]/.test(p);
   if (hintsEl) {
     const hints = hintsEl.querySelectorAll("span");
     if (hints.length >= 4) {
       hints[0].className = hasLen ? "valid" : "invalid";
-      hints[0].textContent = (hasLen ? "✓ " : "• ") + "10+ симв.";
+      hints[0].textContent = (hasLen ? "✓ " : "• ") + `${minimum}+ симв.`;
       hints[1].className = hasLetter ? "valid" : "invalid";
-      hints[1].textContent = (hasLetter ? "✓ " : "• ") + "буква";
+      hints[1].textContent = (hasLetter ? "✓ " : "• ") + "а + А";
       hints[2].className = hasDigit ? "valid" : "invalid";
       hints[2].textContent = (hasDigit ? "✓ " : "• ") + "цифра";
       hints[3].className = hasSpecial ? "valid" : "invalid";
@@ -214,7 +213,7 @@ export function bindLogin2faInput(input) {
   input.dataset.totpBound = "1";
   input.addEventListener("input", () => {
     const raw = (input.value || "").replace(/[^0-9A-Za-z]/g, "");
-    if (/^\d*$/.test(raw)) {
+    if (/^\d*$/.test(raw) && raw.length <= 6) {
       const d = raw.slice(0, 6);
       input.value = d.length > 3 ? d.slice(0, 3) + "-" + d.slice(3) : d;
     } else {
@@ -675,7 +674,7 @@ export function renderMasterOnboarding() {
                     <form id="ob-step1-form">
                         <div class="form-group">
                             <label>Токен из консоли сервера *</label>
-                            <input type="text" id="ob-token" placeholder="LWA-..." required autofocus style="font-family:'JetBrains Mono',monospace;">
+                            <input type="text" id="ob-token" placeholder="LWA-..." pattern="LWA-[A-Fa-f0-9]{16}" minlength="20" maxlength="20" data-format-hint="Вставьте токен LWA- и 16 символов из консоли сервера" required autofocus style="font-family:'JetBrains Mono',monospace;">
                             <div style="font-size:11px;color:var(--text-muted);margin-top:6px;line-height:1.4;">
                                 Токен печатается в <b>консоль при запуске</b> сервера, если Управляющий ещё не создан.
                             </div>

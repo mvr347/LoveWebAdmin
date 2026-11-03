@@ -1,3 +1,4 @@
+import { installInterfaceControls } from "./interface-controls.js";
 import { workspaceBack } from "./view-state.js";
 import { confirmDialog } from "./dialogs.js";
 export { confirmDialog };
@@ -47,3 +48,5 @@ export function installWorkspace() {
       } catch {}
   });
 }
+
+installInterfaceControls();

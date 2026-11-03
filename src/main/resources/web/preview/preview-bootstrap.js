@@ -100,6 +100,8 @@
       typeof input === "string" ? input : input.url,
       location.href,
     );
+    // The case dialog reads only this static template; production pages stay blocked.
+    if(url.origin===location.origin&&url.pathname==='/preview/case.html'&&!url.search&&(options.method||(input instanceof Request?input.method:'GET'))==='GET')return nativeFetch(url.href,options);
     if (
       url.origin !== location.origin ||
       !/^\/(preview\/)?api(?:\/|$)/.test(url.pathname)

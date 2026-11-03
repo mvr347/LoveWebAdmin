@@ -22,7 +22,7 @@
       <section>
         <h2>Ответственный и состояние</h2>
         <p id="owner"></p>
-        <button id="claim">Взять в работу</button>
+        <button id="claim" class="primary">Взять в работу</button>
         <form id="work">
           <label for="assignee">Передать сотруднику (ник WebAdmin)</label
           ><input id="assignee" />
@@ -135,12 +135,12 @@
           maxlength="2000"
           placeholder="Обязательное объяснение решения"
         ></textarea
-        ><button id="approve">Одобрить и снять блокировку</button
-        ><button id="reject">Отклонить</button
+        ><button id="approve" class="primary success">Одобрить и снять блокировку</button
+        ><button id="reject" class="danger">Отклонить</button
         ><label for="remaining"
           >Оставшийся срок в минутах (только сокращение)</label
         ><input id="remaining" type="number" min="1" max="5256000" /><button
-          id="reduce"
+          id="reduce" class="primary"
         >
           Сократить срок
         </button>

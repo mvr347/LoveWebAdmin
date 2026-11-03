@@ -1,3 +1,4 @@
+import { bindValidation } from "../core/form-validation.js";
 import { noticeDialog } from "../core/dialogs.js";
 import { state } from "../state.js";
 import {
@@ -500,14 +501,14 @@ export async function renderStaffView() {
                 </div>
                 <div class="modal-body" id="invite-wizard-body">
                     <!-- Step 1 -->
-                    <div id="invite-step-1">
+                    <div id="invite-step-1" data-validation-scope>
                         <div class="form-group">
                             <label>Никнейм сотрудника в Minecraft *</label>
                             <input id="invite-username" placeholder="Например: Steve" autocomplete="username" autofocus required>
                         </div>
                         <div class="form-group">
                             <label>Назначаемая роль *</label>
-                            <select id="invite-role">
+                            <select id="invite-role" required><option value="" disabled selected>Выберите роль</option>
                                 ${availableRoles
                                   .map(
                                     (r) => `
@@ -539,6 +540,7 @@ export async function renderStaffView() {
       () => {
         const uInput = document.getElementById("invite-username");
         if (uInput) attachPlayerAutocomplete(uInput);
+        bindValidation(document.getElementById("invite-step-1"),[document.getElementById("invite-next")]);
         document
           .getElementById("invite-next")
           ?.addEventListener("click", async () => {

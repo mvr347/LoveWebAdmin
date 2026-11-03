@@ -1,3 +1,5 @@
+import { installCaseDialogs } from "../core/case-dialog.js";
+import { installInterfaceControls } from "../core/interface-controls.js";
 import { requestFetch, clearOperationIntents } from "../core/requests.js";
 import { state } from "../state.js";
 import { renderMaintenanceScreen } from "./notifications.js";
@@ -223,12 +225,14 @@ export function exposeShowToast() {
 
   // ---------- Modal System ----------
 }
+const modalOpeners=new WeakMap();
 export function openModal(html, onMount, customClass = "") {
   closeModal();
   const overlay = document.createElement("div");
   overlay.className = "modal-overlay";
   overlay.id = "modal-overlay";
-  overlay.innerHTML = `<div class="modal ${customClass}">${html}</div>`;
+  modalOpeners.set(overlay,document.activeElement);
+  overlay.innerHTML = `<div class="modal ${customClass}" role="dialog" aria-modal="true" tabindex="-1">${html}</div>`;
 
   // Надёжное закрытие: по клику на затемнённый фон, на любой .close-btn или [data-modal-close]
   overlay.addEventListener("click", (e) => {
@@ -241,6 +245,8 @@ export function openModal(html, onMount, customClass = "") {
     }
   });
   document.body.appendChild(overlay);
+  overlay.addEventListener("keydown",event=>{if(event.key!=="Tab")return;const controls=[...overlay.querySelectorAll("button,input,select,textarea,a[href],[tabindex='0']")].filter(el=>!el.disabled&&el.getClientRects().length);const first=controls[0],last=controls.at(-1);if(event.shiftKey&&document.activeElement===first){last?.focus();event.preventDefault();}else if(!event.shiftKey&&document.activeElement===last){first?.focus();event.preventDefault();}});
+  requestAnimationFrame(()=>{if(overlay.isConnected)(overlay.querySelector(".close-btn")||overlay.querySelector(".modal")).focus({preventScroll:true});});
   if (onMount) {
     try {
       const cleanup = onMount();
@@ -255,6 +261,8 @@ export function closeModal() {
   document.querySelectorAll(".modal-overlay").forEach((el) => {
     el.dispatchEvent(new Event("lwa:dispose"));
     el.remove();
+    const opener=modalOpeners.get(el);if(opener?.isConnected)opener.focus({preventScroll:true});
+    modalOpeners.delete(el);
   });
 }
 export function exposeCloseCurrentModal() {
@@ -268,6 +276,7 @@ export function exposeCloseModal() {
 export function installModalKeyboardShortcuts() {
   window.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
+      if(document.querySelector("dialog[open]"))return;
       const overlay = document.getElementById("modal-overlay");
       if (overlay) {
         e.preventDefault();
@@ -1080,3 +1089,7 @@ export function exposeOpenQuickMuteModal() {
 export function startInitialSession() {
   boot();
 }
+
+installInterfaceControls();
+
+installCaseDialogs(openModal);
