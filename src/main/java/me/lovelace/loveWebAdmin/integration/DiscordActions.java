@@ -104,26 +104,17 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
         && !Set.of("апелляция", "жалоба", "мои-обращения", "дело", "игрок").contains(i.name()))
       return false;
     if (i.name().equals("жалоба")) {
-      response(
-          i,
-          9,
-          Map.of(
-              "custom_id",
-              "lwa:report:submit",
-              "title",
-              "Жалоба на игрока",
-              "components",
-              List.of(
-                  input("target", "Ник игрока-нарушителя", true, 1),
-                  input("nick", "Ваш ник, если аккаунт не привязан", false, 1),
-                  input("reason", "Что произошло?", true, 2))));
+      var fields=new ArrayList<Map<String,Object>>();fields.add(input("target","Ник игрока-нарушителя",true,1));
+      if(service.getLinkedPlayer(i.userId()).isEmpty())fields.add(input("nick","Ваш ник Minecraft",true,1));
+      fields.add(input("reason","Что произошло?",true,2));
+      response(i,9,Map.of("custom_id","lwa:report:submit","title","Жалоба на игрока","components",fields));
       return true;
     }
     if (i.name().equals("апелляция") || i.name().startsWith("lwa:appeal:new:")) {
       String ban =
           i.name().startsWith("lwa:") ? i.name().substring("lwa:appeal:new:".length()) : "0";
       var fields = new ArrayList<Map<String, Object>>();
-      fields.add(input("nick", "Ник Minecraft (если аккаунт не привязан)", false, 1));
+      if(service.getLinkedPlayer(i.userId()).isEmpty()) fields.add(input("nick", "Ваш ник Minecraft", true, 1));
       fields.add(input("reason", "Почему нужно пересмотреть блокировку?", true, 2));
       response(
           i,

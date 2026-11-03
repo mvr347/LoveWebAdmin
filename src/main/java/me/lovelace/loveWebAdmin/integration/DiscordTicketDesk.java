@@ -263,7 +263,7 @@ public final class DiscordTicketDesk {
               "Панель/карточка Discord ["
                   + slot
                   + "]: "
-                  + DiscordMessagePublisher.explanation(error));
+                   + DiscordMessagePublisher.explanation(error));
       throw error;
     }
   }
@@ -367,7 +367,7 @@ public final class DiscordTicketDesk {
                             "Обращение №"
                                 + ticket.id()
                                 + ": " + (ticket.channel().isBlank() ? "канал не создан. " : "Канал сохранён. ")
-                                + DiscordMessagePublisher.explanation(error));
+                                + ticketFailure(ticket,error));
                   }
                 }
                 reminders.scan();
@@ -383,6 +383,13 @@ public final class DiscordTicketDesk {
               busy.set(false);
               return null;
             });
+  }
+
+  private String ticketFailure(TicketDeskStore.Ticket ticket,Throwable error) {
+    if(!ticket.channel().isBlank()) return DiscordMessagePublisher.explanation(error);
+    try {
+      return DiscordTicketFailure.describe(new java.util.concurrent.RejectedExecutionException("Не удалось проверить каналы обращения; новый канал не создавался",error),store.creationStarted(ticket.kind(),ticket.id()));
+    }catch(java.sql.SQLException unavailable) {return "Не удалось прочитать состояние создания канала из базы; обращение не удалено";}
   }
 
   private String closureReason(TicketDeskStore.Ticket ticket) {
@@ -702,7 +709,7 @@ public final class DiscordTicketDesk {
                   for (Throwable cause=error; cause!=null; cause=cause.getCause())
                     if (cause instanceof IllegalArgumentException && Objects.toString(cause.getMessage(), "").startsWith("Категория тикетов")) definitive=true;
                   definitive = definitive && !wasAmbiguous;
-                  String explanation = definitive ? DiscordMessagePublisher.explanation(error) : "Результат создания неизвестен; сотруднику нужна сверка каналов";
+                  String explanation = DiscordTicketFailure.describe(error,wasAmbiguous);
                   try { store.creationFailed(kind,id,explanation,definitive); } catch (java.sql.SQLException persistence) { error.addSuppressed(persistence); }
                   plugin.getLogger().warning("Обращение " + kind + " №" + id + ": " + explanation);
                   throw new CompletionException(error);
@@ -737,38 +744,6 @@ public final class DiscordTicketDesk {
     if (name.equals("lwa:desk:mine") || name.equals("мои-обращения"))
       return actions.openMyCases(interaction);
     if(wizard.modal(interaction,service)) return true;
-    if (name.equals("жалоба")
-        || name.equals("апелляция")
-        || name.startsWith("lwa:appeal:new:")
-        || name.startsWith("lwa:desk:new:")) {
-      String kind = name.equals("жалоба") || name.endsWith(":report") ? "report" : "appeal";
-      var fields = new ArrayList<Map<String, Object>>();
-      if (kind.equals("report")) fields.add(field("target", "Ник игрока-нарушителя", 16, true));
-      fields.add(field("nick", "Ваш ник, если аккаунт не привязан", 16, false));
-      if (kind.equals("appeal"))
-        fields.add(field("ban", "Номер наказания, если знаете", 10, false));
-      fields.add(
-          field(
-              "reason",
-              kind.equals("report") ? "Что произошло?" : "Почему нужно пересмотреть наказание?",
-              2000,
-              true));
-      service.respond(
-          interaction,
-          JsonUtils.toJson(
-              Map.of(
-                  "type",
-                  9,
-                  "data",
-                  Map.of(
-                      "custom_id",
-                      "lwa:desk:draft:" + kind,
-                      "title",
-                      kind.equals("report") ? "Жалоба на игрока" : "Апелляция",
-                      "components",
-                      fields))));
-      return true;
-    }
     if (name.startsWith("lwa:desk:form:")) {
       String[] parts = name.split(":");
       if (parts.length != 6
@@ -889,17 +864,26 @@ public final class DiscordTicketDesk {
       }
       if(((Number)draft.data().getOrDefault("_step",3)).intValue()!=3) throw new IllegalArgumentException("Сначала заполните описание обращения");
       var data = validate(draft.kind(), i.userId(), draft.data());
-      if (!submissions.take(i.userId())) throw new IllegalArgumentException("Слишком много обращений. Повторите через 5 минут.");
+      if(draft.kind().equals("report")) {
+        var prior=openReport(i.userId(),data.get("target").toString());
+        if(prior.isPresent()&&!draft.data().containsKey("appendCase")) {
+          var changed=new LinkedHashMap<String,Object>(draft.data());changed.put("appendCase",prior.get().id());store.updateDraft(id,i.userId(),changed);
+          return body("Уже есть открытая жалоба №"+prior.get().id()+" на этого игрока. Новая жалоба не будет создана. Добавить введённую информацию в существующую?",List.of(row(List.of(button("Добавить информацию","lwa:desk:confirm:"+id,3),button("Отменить","lwa:desk:cancel:"+id,2)))));
+        }
+        if(draft.data().containsKey("appendCase")) data.put("appendCase",draft.data().get("appendCase"));
+      }
+      if (!data.containsKey("appendCase") && !submissions.take(i.userId())) throw new IllegalArgumentException("Слишком много обращений. Повторите через 5 минут.");
       if (!store.consume(id, i.userId(), false))
         throw new IllegalArgumentException("Форма уже обрабатывается");
       int caseId;
       try {
-        caseId = createRecord(draft.kind(), i.userId(), data);
+        caseId = createRecord(draft.kind(), i.userId(), data,id);
       } catch (IllegalArgumentException rejected) {
         store.rejectDraft(id);
         throw rejected;
       }
       store.completeDraft(id, caseId);
+      if(data.containsKey("appendCase")) return body("Дополнение к жалобе №"+caseId+" сохранено. Оно будет доставлено в существующую переписку.",List.of(row(List.of(button("Открыть жалобу","lwa:mine:open:report:"+caseId,1)))));
       return existing(draft.kind(), caseId);
     }
     String[] parts = name.split(":");
@@ -1084,12 +1068,12 @@ public final class DiscordTicketDesk {
   }
 
   Map<String, Object> validate(String kind, String discord, Map<String, ?> input) {
-    var linked = service.getLinkedPlayer(discord);
-    String nick =
-        linked
-            .flatMap(id -> plugin.getDatabaseManager().getPlayerStats(id.toString()))
-            .map(p -> p.get("name").toString())
-            .orElse(Objects.toString(input.get("nick"), "").trim());
+    var context=new DiscordPlayerContext(plugin,service);
+    var identity=context.linked(discord);
+    var linked=identity.map(DiscordPlayerContext.Identity::uuid);
+    String currentIdentity=linked.map(UUID::toString).orElse("");
+    if(input.containsKey("linkedUuid")&&!Objects.toString(input.get("linkedUuid"),"").equals(currentIdentity)) throw new IllegalArgumentException("Привязка аккаунта изменилась. Откройте форму заново, чтобы проверить участника");
+    String nick=identity.map(DiscordPlayerContext.Identity::name).orElse(Objects.toString(input.get("nick"),"").trim());
     if (!nick.matches("[A-Za-z0-9_]{1,16}"))
       throw new IllegalArgumentException("Укажите корректный ник Minecraft");
     String reason = Objects.toString(input.get("reason"), "").trim();
@@ -1097,6 +1081,7 @@ public final class DiscordTicketDesk {
       throw new IllegalArgumentException("Описание: от 5 до 2000 символов");
     var data = new LinkedHashMap<String, Object>();
     data.put("nick", nick);
+    data.put("linkedUuid",currentIdentity);
     data.put("reason", reason);
     if (kind.equals("report")) {
       String target = Objects.toString(input.get("target"), "").trim();
@@ -1107,22 +1092,18 @@ public final class DiscordTicketDesk {
         throw new IllegalArgumentException("Нельзя подать жалобу на себя");
       data.put("target", target);
     } else {
-      var ban =
-          plugin
-              .getDatabaseManager()
-              .getActiveBan(nick)
-              .orElseThrow(() -> new IllegalArgumentException("Активное наказание не найдено"));
-      String requested =
-          Objects.toString(input.get("ban"), Objects.toString(input.get("banId"), "")).trim();
-      if (!requested.isBlank() && !requested.equals(String.valueOf(ban.id())))
-        throw new IllegalArgumentException(
-            "Этот номер не соответствует активному наказанию указанного аккаунта");
+      var ban=context.appealBan(discord,input,nick);
       data.put("banId", ban.id());
     }
     return data;
   }
 
-  private int createRecord(String kind, String discord, Map<String, Object> data) throws Exception {
+  Optional<me.lovelace.loveWebAdmin.database.TicketDeskStore.Ticket> openReport(String owner,String target) throws Exception {
+    for(var ticket:store.active()) if(ticket.kind().equals("report")&&ticket.owner().equals(owner)&&ticket.state().equals("OPEN")&&domainOpen(ticket)&&plugin.getDatabaseManager().getReportById(ticket.id()).map(r->r.targetName().equalsIgnoreCase(target)).orElse(false)) return Optional.of(ticket);
+    return Optional.empty();
+  }
+
+  private int createRecord(String kind, String discord, Map<String, Object> data, String draftId) throws Exception {
     String nick = data.get("nick").toString(), reason = data.get("reason").toString();
     if (kind.equals("appeal")) {
       int banId = ((Number) data.get("banId")).intValue();
@@ -1148,15 +1129,19 @@ public final class DiscordTicketDesk {
       return id;
     }
     String target = data.get("target").toString();
-    for (var ticket : store.active())
-      if (ticket.kind().equals("report")
-          && ticket.owner().equals(discord)
-          && domainOpen(ticket)
-          && plugin
-              .getDatabaseManager()
-              .getReportById(ticket.id())
-              .map(r -> r.targetName().equalsIgnoreCase(target))
-              .orElse(false)) return ticket.id();
+    var previous=openReport(discord,target);
+    if(data.containsKey("appendCase")) {
+      int expected=((Number)data.get("appendCase")).intValue();
+      var existing=previous.filter(t->t.id()==expected).orElseThrow(()->new IllegalArgumentException("Исходная жалоба уже завершена. Создайте новое обращение"));
+      plugin.getDatabaseManager().addReportDiscussion(existing.id(),nick,false,reason,"discord-addition:"+draftId);
+      int part=0;
+      for(String quoted:LoveCoreDiscordBridge.quotedParts(nick,reason)) {
+        String key="report-addition:"+draftId+":"+part++;
+        plugin.moderation().enqueue(key,"report-ticket:"+existing.id(),JsonUtils.toJson(Map.of("type","REPORT_MESSAGE","reportId",existing.id(),"text",quoted,"nonce",me.lovelace.loveWebAdmin.database.ModerationStore.hash(key).substring(0,24))));
+      }
+      return existing.id();
+    }
+    if(previous.isPresent()) throw new IllegalArgumentException("Уже есть открытая жалоба. Подтвердите добавление информации в неё");
     var identity = service.getLinkedPlayer(discord);
     String uuid =
         identity
