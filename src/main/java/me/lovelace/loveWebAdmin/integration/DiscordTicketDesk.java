@@ -585,7 +585,7 @@ public final class DiscordTicketDesk {
                     + "\n\n"
                     + description.substring(0, Math.min(description.length(), 900))
                     + "\n\nПереписка и вложения сохраняются. Закрытие канала не снимает наказание.",
-                controls(ticket)));
+                channelControls(ticket)));
     String queue = ticket.queueCard();
     if (!queueChannel.isBlank())
       queue =
@@ -608,6 +608,20 @@ public final class DiscordTicketDesk {
                                   1))))));
     store.display(ticket.kind(), ticket.id(), card, queue, acl);
     plugin.getDiscordBridge().notifyAssigned(ticket.kind(),ticket.id(),assigned,ticket.channel());
+  }
+
+  /**
+   * Buttons on the card inside the private channel. The author sits in that channel and Discord
+   * cannot hide a button from one member, so the staff actions are not placed here: only an entry
+   * point whose result is an ephemeral panel, visible to the staff member who pressed it.
+   */
+  private List<Map<String, Object>> channelControls(TicketDeskStore.Ticket ticket) {
+    String key = ticket.kind() + ":" + ticket.id();
+    return List.of(
+        row(
+            List.of(
+                button("Действия сотрудника", "lwa:desk:panel:" + key, 1),
+                button("Отозвать обращение", "lwa:desk:form:close:" + key, 2))));
   }
 
   private List<Map<String, Object>> controls(TicketDeskStore.Ticket ticket) {
@@ -920,6 +934,11 @@ public final class DiscordTicketDesk {
                         "Нужны действующие права сотрудника и подтверждённый аккаунт"));
     boolean boss = supervisor(admin, i.userId());
     String assigned = assignee(ticket);
+    if (action.equals("panel"))
+      return body(
+          "**Действия по обращению №" + id + "** · видно только вам\nОтветственный: "
+              + (assigned.isBlank() ? "не назначен" : assigned),
+          controls(ticket));
     if (action.equals("claim")) {
       if (!assigned.isBlank() && !assigned.equals(admin.username()) && !boss)
         throw new IllegalArgumentException("Обращение уже назначено другому сотруднику");

@@ -380,6 +380,26 @@ class DiscordTicketDeskTest {
   }
 
   @Test
+  void channelCardShowsTheAuthorNoStaffButtonsAndStaffGetAPrivatePanel() throws Exception {
+    int id = createReport();
+    desk.tick();
+    await(() -> discord.messages.containsKey("200000"));
+    String card = JsonUtils.toJson(discord.messages.get("200000"));
+    assertTrue(card.contains("lwa:desk:panel:report:" + id));
+    assertTrue(card.contains("lwa:desk:form:close:report:" + id));
+    for (String hidden :
+        List.of("claim", "form:approve", "form:reject", "form:transfer", "form:clarify", "form:escalate", "lwa:flow:templates"))
+      assertFalse(card.contains(hidden), hidden);
+    var panel = click("20000", "200000", "lwa:desk:panel:report:" + id, Map.of());
+    String buttons = JsonUtils.toJson(panel);
+    assertTrue(buttons.contains("lwa:desk:claim:report:" + id));
+    assertTrue(buttons.contains("lwa:desk:form:approve:report:" + id));
+    var author = click("10000", "200000", "lwa:desk:panel:report:" + id, Map.of());
+    assertTrue(author.get("content").toString().contains("права сотрудника"));
+    assertFalse(JsonUtils.toJson(author).contains("lwa:desk:claim"));
+  }
+
+  @Test
   void confirmationAssignmentTransferAndWithdrawalUseOnePrivateCase() throws Exception {
     int id = createReport();
     assertEquals(List.of("10000"), discord.lastMembers);
