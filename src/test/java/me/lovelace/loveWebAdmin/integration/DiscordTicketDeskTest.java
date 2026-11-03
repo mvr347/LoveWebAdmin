@@ -215,6 +215,11 @@ class DiscordTicketDeskTest {
     assertThrows(Exception.class,()->desk.create("report",id,"10000").get(8,TimeUnit.SECONDS));
     assertThrows(Exception.class,()->desk.create("report",id,"10000").get(8,TimeUnit.SECONDS));
     assertEquals(1,discord.creationCalls.get());assertTrue(desk.store().creationStarted("report",id));
+    discord.recoveryFailure=new DiscordRequestRejectedException(403);
+    assertThrows(Exception.class,()->desk.create("report",id,"10000").get(8,TimeUnit.SECONDS));
+    assertTrue(desk.store().creationStarted("report",id));
+    assertEquals(1,discord.creationCalls.get());
+    discord.recoveryFailure=null;
     discord.creationFailure=null;discord.recoveredChannel="200000";
     assertEquals("200000",desk.create("report",id,"10000").get(8,TimeUnit.SECONDS));assertEquals(1,discord.creationCalls.get());
   }
@@ -561,7 +566,7 @@ class DiscordTicketDeskTest {
     volatile String privateMenuOwner, privateMenuSection;
     final AtomicInteger privateMenuCalls = new AtomicInteger();
     volatile CompletableFuture<Boolean> privateMenuResult = CompletableFuture.completedFuture(true);
-    volatile Throwable publicationFailure, creationFailure;
+    volatile Throwable publicationFailure, creationFailure, recoveryFailure;
     volatile String recoveredChannel="200000";
     volatile Map<String,Object> lastReply;
     final AtomicInteger replySends=new AtomicInteger();
@@ -617,7 +622,7 @@ class DiscordTicketDeskTest {
                           .complete(JsonUtils.parseObject(args[1].toString()));
                       yield CompletableFuture.completedFuture(true);
                     }
-                    case "recoverManagedTicket" -> CompletableFuture.completedFuture(recoveredChannel);
+                    case "recoverManagedTicket" -> recoveryFailure==null?CompletableFuture.completedFuture(recoveredChannel):CompletableFuture.failedFuture(recoveryFailure);
                     case "sendMessage" -> {
                       lastReply=JsonUtils.parseObject(args[1].toString());replySends.incrementAndGet();
                       yield CompletableFuture.completedFuture("100000000000"+ids.incrementAndGet());

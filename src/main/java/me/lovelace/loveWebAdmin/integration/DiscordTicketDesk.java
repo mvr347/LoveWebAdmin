@@ -635,9 +635,11 @@ public final class DiscordTicketDesk {
         .supply(
             () -> {
               synchronized (writes) {
+                boolean wasAmbiguous=false;
                 try {
                   store.register(kind, id, owner);
                   var ticket = store.get(kind, id).orElseThrow();
+                  wasAmbiguous=ticket.channel().isBlank() && store.creationStarted(kind,id);
                   if (!ticket.state().equals("OPEN"))
                     throw new IllegalArgumentException("Обращение закрывается");
                   if (ticket.channel().isBlank() && store.creationStarted(kind, id)) {
@@ -699,6 +701,7 @@ public final class DiscordTicketDesk {
                   boolean definitive = DiscordMessagePublisher.definitive(error);
                   for (Throwable cause=error; cause!=null; cause=cause.getCause())
                     if (cause instanceof IllegalArgumentException && Objects.toString(cause.getMessage(), "").startsWith("Категория тикетов")) definitive=true;
+                  definitive = definitive && !wasAmbiguous;
                   String explanation = definitive ? DiscordMessagePublisher.explanation(error) : "Результат создания неизвестен; сотруднику нужна сверка каналов";
                   try { store.creationFailed(kind,id,explanation,definitive); } catch (java.sql.SQLException persistence) { error.addSuppressed(persistence); }
                   plugin.getLogger().warning("Обращение " + kind + " №" + id + ": " + explanation);
