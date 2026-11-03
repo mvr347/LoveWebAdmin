@@ -42,6 +42,29 @@ final class PrivateDiscordMenus implements AutoCloseable {
     register("appeals", "Мои обращения", this::mine);
     register("newcase", "Создать обращение", this::newCase);
     register("penalties", "Мои наказания", this::penalties);
+    register("loginhelp", "Не могу войти", new DiscordLoginHelp(plugin, service)::render);
+    try {
+      service
+          .getClass()
+          .getMethod(
+              "registerPrivateMenu",
+              String.class,
+              String.class,
+              java.util.function.Predicate.class,
+              Function.class)
+          .invoke(
+              service,
+              "waiting",
+              "Нужен ваш ответ",
+              (java.util.function.Predicate<String>) this::hasWaiting,
+              (Function<String, Map<String, Object>>)
+                  owner -> {
+                    views.put(owner, new View(0, "", 0, 0, "waiting"));
+                    return mine(owner);
+                  });
+    } catch (ReflectiveOperationException unavailable) {
+      plugin.getLogger().warning("Не удалось подключить раздел ожидающих ответа обращений");
+    }
     try {
       service
           .getClass()
@@ -73,12 +96,30 @@ final class PrivateDiscordMenus implements AutoCloseable {
     }
   }
 
+  private boolean hasWaiting(String owner) {
+    try {
+      return !plugin.getDiscordBridge().ticketDeskStore().owned(owner, "waiting", 0).isEmpty();
+    } catch (java.sql.SQLException unavailable) {
+      return false;
+    }
+  }
+
   private Map<String, Object> newCase(String owner) {
+    var context = new DiscordPlayerContext(plugin, service);
+    Optional<DiscordPlayerContext.Identity> identity;
+    try {
+      identity = context.linked(owner);
+    } catch (IllegalArgumentException missing) {
+      return body(missing.getMessage(), List.of(button("lc:menu:account", "Мой аккаунт")));
+    }
+    boolean canAppeal = identity.isEmpty() || !context.bans(identity.get()).isEmpty();
     var buttons =
         new ArrayList<Map<String, Object>>(
             List.of(
                 button("lwa:desk:new:report", "Жалоба"),
-                button("lwa:desk:new:appeal", "Апелляция")));
+                canAppeal
+                    ? button("lwa:desk:new:appeal", "Апелляция")
+                    : button("lc:menu:loginhelp", "Не могу войти")));
     try {
       for (var draft : plugin.getDiscordBridge().ticketDeskStore().drafts(owner)) {
         int step = ((Number) draft.data().getOrDefault("_step", 3)).intValue();
@@ -147,7 +188,16 @@ final class PrivateDiscordMenus implements AutoCloseable {
                   "lwa:desk:form:close:" + t.kind() + ":" + t.id()));
         } else if (t.state().equals("OPEN") && t.channel().isBlank()) {
           String issue = store.creationError(t.kind(), t.id());
-          lines.append("Канал: ").append(issue.isBlank() ? "Создаётся" : issue).append("\n");
+          lines
+              .append("Канал: ")
+              .append(
+                  issue.isBlank()
+                      ? (store.creationStarted(t.kind(), t.id())
+                          ? "Результат создания не подтверждён; проверьте канал или обратитесь к"
+                                + " сотруднику"
+                          : "Ожидает создания")
+                      : issue)
+              .append("\n");
           controls.add(
               button(
                   "lwa:mine:retry:" + t.kind() + ":" + t.id(),
@@ -214,7 +264,9 @@ final class PrivateDiscordMenus implements AutoCloseable {
       var lines =
           new StringBuilder(
               "**Мои обращения**\n"
-                  + (view.filter.equals("closed") ? "Завершённые" : "Активные")
+                  + (view.filter.equals("closed")
+                      ? "Завершённые"
+                      : view.filter.equals("waiting") ? "Нужен ваш ответ" : "Активные")
                   + " · Страница "
                   + (view.page + 1)
                   + "\n");
@@ -311,14 +363,19 @@ final class PrivateDiscordMenus implements AutoCloseable {
   }
 
   private Map<String, Object> penalties(String owner) {
-    var linked = service.getLinkedPlayer(owner);
-    if (linked.isEmpty())
+    var context = new DiscordPlayerContext(plugin, service);
+    Optional<DiscordPlayerContext.Identity> identity;
+    try {
+      identity = context.linked(owner);
+    } catch (IllegalArgumentException missing) {
+      return body(missing.getMessage(), List.of(button("lc:menu:account", "Мой аккаунт")));
+    }
+    if (identity.isEmpty())
       return body(
-          "Привяжите аккаунт в разделе «Мой аккаунт», чтобы просмотреть наказания.", List.of());
-    var stats = plugin.getDatabaseManager().getPlayerStats(linked.get().toString());
-    String name = stats.map(m -> Objects.toString(m.get("name"), "")).orElse("");
-    var bans =
-        plugin.getDatabaseManager().getActiveBansForPlayer(name, linked.get().toString(), null);
+          "**Мои наказания**\n"
+              + "Привяжите аккаунт, чтобы бот нашёл ваши наказания. Номер вводить не нужно.",
+          List.of(button("lc:menu:account", "Привязать аккаунт")));
+    var bans = context.bans(identity.get());
     var lines = new StringBuilder("**Мои наказания**\n");
     var buttons = new ArrayList<Map<String, Object>>();
     for (var b : bans.stream().limit(5).toList()) {
@@ -389,7 +446,7 @@ final class PrivateDiscordMenus implements AutoCloseable {
                                 "Слишком много нажатий. Подождите минуту.");
                           if (i.name().startsWith("lwa:mine:filter:")) {
                             String filter = i.name().substring("lwa:mine:filter:".length());
-                            if (!Set.of("active", "closed").contains(filter))
+                            if (!Set.of("active", "closed", "waiting").contains(filter))
                               throw new IllegalArgumentException();
                             views.put(i.userId(), new View(0, "", 0, 0, filter));
                           } else if (i.name().startsWith("lwa:mine:retry:")) {
@@ -615,7 +672,8 @@ final class PrivateDiscordMenus implements AutoCloseable {
 
   @Override
   public void close() {
-    for (String id : List.of("appeals", "newcase", "penalties", "staffcases"))
+    for (String id :
+        List.of("appeals", "newcase", "penalties", "staffcases", "waiting", "loginhelp"))
       try {
         service.getClass().getMethod("unregisterPrivateMenu", String.class).invoke(service, id);
       } catch (ReflectiveOperationException ignored) {

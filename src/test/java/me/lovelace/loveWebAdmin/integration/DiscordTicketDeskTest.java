@@ -263,6 +263,82 @@ class DiscordTicketDeskTest {
   }
 
   @Test
+  void linkedReportDoesNotAskForKnownNickButUnlinkedReportDoes() throws Exception {
+    var form=click("10000","70000","lwa:desk:new:report",Map.of());
+    assertEquals(Set.of("target"),fieldIds(form));
+    discord.links.remove("10000");
+    form=click("10000","70000","lwa:desk:new:report",Map.of());
+    assertEquals(Set.of("target","nick"),fieldIds(form));
+  }
+
+  @SuppressWarnings("unchecked")
+  Set<String> fieldIds(Map<String,Object> form) {
+    var ids=new HashSet<String>();
+    for(Object row:(List<?>)form.get("components")) for(Object field:(List<?>)((Map<?,?>)row).get("components")) ids.add(((Map<?,?>)field).get("custom_id").toString());
+    return ids;
+  }
+
+  WebBan ban(String name,String uuid) {
+    return plugin.getDatabaseManager().saveBan(new WebBan(0,name,uuid,null,"Issuer","Причина наказания","","[]",false,"ACTIVE",-1,100,-1));
+  }
+
+  @Test
+  void linkedAppealOffersOwnPenaltiesAndSkipsIdentityForm() throws Exception {
+    var first=ban("Reporter",discord.links.get("10000").toString());
+    var renamed=ban("OldNick",discord.links.get("10000").toString());
+    var foreign=ban("Reporter",discord.links.get("90000").toString());
+    var picker=click("10000","70000","lwa:desk:new:appeal",Map.of());
+    String json=JsonUtils.toJson(picker);
+    assertTrue(json.contains("lwa:appeal:new:"+first.id()));assertTrue(json.contains("lwa:appeal:new:"+renamed.id()));assertFalse(json.contains("lwa:appeal:new:"+foreign.id()));
+    var form=click("10000","70000","lwa:appeal:new:"+first.id(),Map.of());
+    assertEquals(Set.of("reason","when","where","evidence"),fieldIds(form));
+    String draft=form.get("custom_id").toString().substring("lwa:desk:details-submit:".length());
+    assertEquals(first.id(),((Number)desk.store().draft(draft,"10000").data().get("banId")).intValue());
+    var denied=click("10000","70000","lwa:appeal:new:"+foreign.id(),Map.of());
+    assertTrue(denied.get("content").toString().contains("недоступно"));
+  }
+
+  @Test
+  void aLinkChangeCannotSilentlyChangeTheAccountOfAnExistingDraft() throws Exception {
+    var step2=click("10000","70000","lwa:desk:identity:report",Map.of("target","Griefer","nick","ForgedNick"));
+    String draft=confirm(step2).split(":")[3];
+    assertEquals("Reporter",desk.store().draft(draft,"10000").data().get("nick"));
+    discord.links.remove("10000");
+    var result=click("10000","70000","lwa:desk:details-submit:"+draft,Map.of("reason","Проверить нарушение"));
+    assertTrue(result.get("content").toString().contains("Привязка аккаунта изменилась"));
+    assertTrue(plugin.getDatabaseManager().getAllReports(null,null,100,0).isEmpty());
+  }
+
+  @Test
+  void aSecondReportBecomesOneConfirmedAdditionWithoutAnotherCaseOrCooldown() throws Exception {
+    int id=createReport();
+    var step2=click("10000","70000","lwa:desk:identity:report",Map.of("target","Griefer"));
+    assertTrue(JsonUtils.toJson(step2).contains("Дополнить жалобу"));
+    String draft=confirm(step2).split(":")[3];
+    var preview=click("10000","70000","lwa:desk:details-submit:"+draft,Map.of("reason","Дополнительные подробности нарушения"));
+    String submit=confirm(preview);
+    var result=click("10000","70000",submit,Map.of());
+    assertTrue(result.get("content").toString().contains("Дополнение"));
+    click("10000","70000",submit,Map.of());
+    assertEquals(1,plugin.getDatabaseManager().getAllReports(null,null,100,0).size());
+    assertEquals(1,plugin.getDatabaseManager().reportDiscussion(id).size());
+    assertTrue(JsonUtils.toJson(plugin.getDatabaseManager().reportDiscussion(id)).contains("Дополнительные подробности"));
+    assertTrue(plugin.moderation().deliveries().stream().anyMatch(row->row.get("event").toString().startsWith("report-addition:")));
+  }
+
+  @Test
+  void waitingEntryIsVisibleOnlyToTheOwnerWhileAResponseIsRequired() throws Exception {
+    int id=createReport();
+    var menus=new PrivateDiscordMenus(plugin,discord.service,new DiscordActions(plugin,discord.service));menus.register();
+    assertFalse(discord.visible.get("waiting").test("10000"));
+    desk.store().workDisplay("report",id,"WAITING","Moderator");
+    assertTrue(discord.visible.get("waiting").test("10000"));assertFalse(discord.visible.get("waiting").test("90000"));
+    assertTrue(JsonUtils.toJson(discord.renderers.get("waiting").apply("10000")).contains("Нужен ваш ответ"));
+    desk.store().beginClose("report",id,"Chief","Завершить рассмотрение");
+    assertFalse(discord.visible.get("waiting").test("10000"));menus.close();assertFalse(discord.renderers.containsKey("waiting"));
+  }
+
+  @Test
   void explicitPermissionFailureCanBeRetriedAfterFixingRights() throws Exception {
     discord.publicationFailure =
         new dev.lovelace.lovecore.api.discord.DiscordRequestRejectedException(403);
@@ -558,9 +634,14 @@ class DiscordTicketDeskTest {
 
   public interface PrivateMenuApi {
     CompletableFuture<Boolean> openPrivateMenu(String owner, String section);
+    void registerPrivateMenu(String id,String label,java.util.function.Function<String,Map<String,Object>> render);
+    void registerPrivateMenu(String id,String label,java.util.function.Predicate<String> visible,java.util.function.Function<String,Map<String,Object>> render);
+    void unregisterPrivateMenu(String id);
   }
 
   static class FakeDiscord {
+    final Map<String,java.util.function.Function<String,Map<String,Object>>> renderers=new ConcurrentHashMap<>();
+    final Map<String,java.util.function.Predicate<String>> visible=new ConcurrentHashMap<>();
     volatile boolean acknowledgementAccepted = true;
     volatile Map<String, Object> lastAcknowledgement;
     volatile String privateMenuOwner, privateMenuSection;
@@ -601,6 +682,12 @@ class DiscordTicketDeskTest {
                     case "getMemberRoleIds" ->
                         CompletableFuture.completedFuture(
                             args[0].equals("50000") ? Set.of("60000") : Set.of());
+                    case "registerPrivateMenu" -> {
+                      renderers.put(args[0].toString(),(java.util.function.Function<String,Map<String,Object>>)args[args.length-1]);
+                      visible.put(args[0].toString(),args.length==4?(java.util.function.Predicate<String>)args[2]:user->true);
+                      yield null;
+                    }
+                    case "unregisterPrivateMenu" -> {renderers.remove(args[0]);visible.remove(args[0]);yield null;}
                     case "openPrivateMenu" -> {
                       privateMenuOwner = args[0].toString();
                       privateMenuSection = args[1].toString();

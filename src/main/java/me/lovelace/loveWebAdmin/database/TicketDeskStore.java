@@ -224,12 +224,9 @@ public final class TicketDeskStore implements AutoCloseable {
 
   public synchronized List<Ticket> owned(String owner, String filter, int offset)
       throws SQLException {
-    if (!Set.of("all", "active", "closed").contains(filter))
+    if (!Set.of("all", "active", "closed","waiting").contains(filter))
       throw new IllegalArgumentException("Неизвестный фильтр");
-    String condition =
-        filter.equals("active")
-            ? " AND state!='CLOSED'"
-            : filter.equals("closed") ? " AND state='CLOSED'" : "";
+    String condition = switch(filter) {case "active" -> " AND state!='CLOSED'";case "closed" -> " AND state='CLOSED'";case "waiting" -> " AND state='OPEN' AND work_state='WAITING'";default -> "";};
     var rows = new ArrayList<Ticket>();
     try (var q =
         db.prepareStatement(
