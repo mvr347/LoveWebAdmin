@@ -38,6 +38,10 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
     service.registerCommand("игрок", "Сводка игрока для персонала", Map.of("ник", "Ник игрока"));
   }
 
+  boolean openMyCases(DiscordInteraction interaction) {
+    return privateMenus.interaction(interaction);
+  }
+
   public void close() {
     closed = true;
     privateMenus.close();
@@ -274,7 +278,6 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
 
   private String execute(DiscordInteraction i) throws Exception {
     if (closed) throw new java.util.concurrent.CancellationException("Интеграция остановлена");
-    if (i.name().equals("мои-обращения")) { privateMenus.open(i.userId()); return "Список обращений обновлён в личке бота."; }
     if (i.name().equals("lwa:report:submit")) return createReport(i);
     if (i.name().startsWith("lwa:appeal:submit:")) return createAppeal(i);
     if (i.name().startsWith("lwa:clarify:submit:")) {

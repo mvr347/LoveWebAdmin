@@ -1,6 +1,7 @@
 package me.lovelace.loveWebAdmin.integration;
 
 import static org.junit.jupiter.api.Assertions.*;
+
 import dev.lovelace.lovecore.api.discord.*;
 import java.lang.reflect.Proxy;
 import java.util.*;
@@ -92,6 +93,73 @@ class DiscordTicketDeskTest {
                 name.contains(":draft:") || name.contains(":submit:") ? 5 : 3,
                 fields)));
     return result.get(8, TimeUnit.SECONDS);
+  }
+
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(strings = {"lwa:desk:mine", "мои-обращения"})
+  void myCasesAlwaysOpensTheOwnerPrivateMenu(String action) throws Exception {
+    var result = click("10000", "70000", action, Map.of());
+    assertEquals("10000", discord.privateMenuOwner);
+    assertEquals("appeals", discord.privateMenuSection);
+    assertEquals(1, discord.privateMenuCalls.get());
+    assertTrue(result.get("content").toString().contains("открыты в личных"));
+    assertTrue(((List<?>) result.get("components")).isEmpty());
+    assertEquals(
+        64,
+        ((Number) ((Map<?, ?>) discord.lastAcknowledgement.get("data")).get("flags")).intValue());
+  }
+
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+  void blockedDirectMessagesNeverClaimTheMenuWasDelivered(boolean exceptional) throws Exception {
+    discord.privateMenuResult =
+        exceptional
+            ? CompletableFuture.failedFuture(new IllegalStateException("transport"))
+            : CompletableFuture.completedFuture(false);
+    var result = click("10000", "70000", "lwa:desk:mine", Map.of());
+    assertTrue(result.get("content").toString().contains("Разрешите сообщения"));
+    assertFalse(result.get("content").toString().contains("открыты в личных"));
+    assertTrue(((List<?>) result.get("components")).isEmpty());
+  }
+
+  @Test
+  void myCasesDoesNotSendAnythingAfterARejectedAcknowledgement() {
+    discord.acknowledgementAccepted = false;
+    assertTrue(
+        desk.onInteraction(
+            new DiscordInteraction(
+                "ignored",
+                "11111",
+                "unused",
+                "10000",
+                "99999",
+                "lwa:desk:mine",
+                3,
+                Map.of("_channelId", "70000"))));
+    assertEquals(0, discord.privateMenuCalls.get());
+  }
+
+  @Test
+  void myCasesWaitsForDiscordBeforeConfirmingDelivery() throws Exception {
+    discord.privateMenuResult = new CompletableFuture<>();
+    var reply = new CompletableFuture<Map<String, Object>>();
+    discord.responses.put("pending", reply);
+    assertTrue(
+        desk.onInteraction(
+            new DiscordInteraction(
+                "pending",
+                "11111",
+                "unused",
+                "10000",
+                "99999",
+                "lwa:desk:mine",
+                3,
+                Map.of("_channelId", "70000"))));
+    await(() -> discord.privateMenuCalls.get() == 1);
+    assertFalse(reply.isDone());
+    discord.privateMenuResult.complete(true);
+    assertTrue(
+        reply.get(8, TimeUnit.SECONDS).get("content").toString().contains("открыты в личных"));
   }
 
   @SuppressWarnings("unchecked")
@@ -420,7 +488,16 @@ class DiscordTicketDeskTest {
     assertTrue(templates.get("content").toString().contains("Выберите текст"));
   }
 
+  public interface PrivateMenuApi {
+    CompletableFuture<Boolean> openPrivateMenu(String owner, String section);
+  }
+
   static class FakeDiscord {
+    volatile boolean acknowledgementAccepted = true;
+    volatile Map<String, Object> lastAcknowledgement;
+    volatile String privateMenuOwner, privateMenuSection;
+    final AtomicInteger privateMenuCalls = new AtomicInteger();
+    volatile CompletableFuture<Boolean> privateMenuResult = CompletableFuture.completedFuture(true);
     volatile Throwable publicationFailure;
     final AtomicInteger publicationCalls = new AtomicInteger();
     final AtomicInteger ids = new AtomicInteger(10000),
@@ -438,7 +515,7 @@ class DiscordTicketDeskTest {
         (DiscordService)
             Proxy.newProxyInstance(
                 DiscordService.class.getClassLoader(),
-                new Class[] {DiscordService.class},
+                new Class[] {DiscordService.class, PrivateMenuApi.class},
                 (proxy, method, args) -> {
                   return switch (method.getName()) {
                     case "isEnabled" -> true;
@@ -452,13 +529,20 @@ class DiscordTicketDeskTest {
                     case "getMemberRoleIds" ->
                         CompletableFuture.completedFuture(
                             args[0].equals("50000") ? Set.of("60000") : Set.of());
+                    case "openPrivateMenu" -> {
+                      privateMenuOwner = args[0].toString();
+                      privateMenuSection = args[1].toString();
+                      privateMenuCalls.incrementAndGet();
+                      yield privateMenuResult;
+                    }
                     case "respond" -> {
                       var data = JsonUtils.parseObject(args[1].toString());
+                      lastAcknowledgement = data;
                       if (((Number) data.get("type")).intValue() != 5)
                         responses
                             .get(((DiscordInteraction) args[0]).id())
                             .complete((Map<String, Object>) data.get("data"));
-                      yield CompletableFuture.completedFuture(true);
+                      yield CompletableFuture.completedFuture(acknowledgementAccepted);
                     }
                     case "editInteractionResponse" -> {
                       responses

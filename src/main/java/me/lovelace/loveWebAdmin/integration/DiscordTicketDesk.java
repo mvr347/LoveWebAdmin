@@ -718,6 +718,8 @@ public final class DiscordTicketDesk {
       answer(interaction, body("Обращения доступны на сервере сообщества.", List.of()));
       return true;
     }
+    if (name.equals("lwa:desk:mine") || name.equals("мои-обращения"))
+      return actions.openMyCases(interaction);
     if (name.equals("жалоба")
         || name.equals("апелляция")
         || name.startsWith("lwa:appeal:new:")
@@ -831,34 +833,6 @@ public final class DiscordTicketDesk {
     if (!plugin.operations().allow(actor))
       throw new IllegalArgumentException("Слишком много нажатий. Подождите минуту.");
     String name = i.name();
-    if (name.equals("lwa:desk:mine") || name.equals("мои-обращения")) {
-      var buttons = new ArrayList<Map<String, Object>>();
-      for (var t : store.active())
-        if (t.owner().equals(i.userId())
-            && !t.state().equals("CLOSED")
-            && !t.channel().isBlank()
-            && buttons.size() < 5)
-          buttons.add(
-              Map.of(
-                  "type",
-                  2,
-                  "style",
-                  5,
-                  "label",
-                  (t.kind().equals("report") ? "Жалоба" : "Апелляция") + " №" + t.id(),
-                  "url",
-                  "https://discord.com/channels/"
-                      + CoreDiscordExtensions.guild(service)
-                      + "/"
-                      + t.channel()));
-      var components = new ArrayList<Map<String, Object>>();
-      if (!buttons.isEmpty()) components.add(row(buttons));
-      return body(
-          buttons.isEmpty()
-              ? "Сейчас у вас нет открытых каналов обращений. История доступна в личном меню бота."
-              : "Ваши открытые обращения.",
-          components);
-    }
     if (name.startsWith("lwa:desk:draft:")) {
       String kind = name.substring("lwa:desk:draft:".length());
       if (!Set.of("report", "appeal").contains(kind))

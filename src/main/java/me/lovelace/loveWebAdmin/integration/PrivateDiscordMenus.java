@@ -256,7 +256,11 @@ final class PrivateDiscordMenus implements AutoCloseable {
   }
 
   boolean interaction(DiscordInteraction i) {
-    if (!i.name().equals("мои-обращения") && !i.name().startsWith("lwa:mine:")) return false;
+    if (i.name().equals("мои-обращения") || i.name().equals("lwa:desk:mine")) {
+      openFromInteraction(i);
+      return true;
+    }
+    if (!i.name().startsWith("lwa:mine:")) return false;
     service
         .respond(
             i,
@@ -355,11 +359,43 @@ final class PrivateDiscordMenus implements AutoCloseable {
     return true;
   }
 
-  void open(String owner) throws Exception {
+  private void openFromInteraction(DiscordInteraction i) {
     service
-        .getClass()
-        .getMethod("openPrivateMenu", String.class, String.class)
-        .invoke(service, owner, "appeals");
+        .respond(i, JsonUtils.toJson(Map.of("type", 5, "data", Map.of("flags", 64))))
+        .thenAccept(
+            acknowledged -> {
+              if (!Boolean.TRUE.equals(acknowledged)) return;
+              plugin
+                  .io()
+                  .run(
+                      () -> {
+                        if (!plugin.operations().allow("discord:" + i.userId())) {
+                          service.editInteractionResponse(
+                              i,
+                              JsonUtils.toJson(
+                                  body("Слишком много нажатий. Подождите минуту.", List.of())));
+                          return;
+                        }
+                        open(i.userId())
+                            .handle(
+                                (opened, error) ->
+                                    Boolean.TRUE.equals(opened) && error == null
+                                        ? "Мои обращения открыты в личных сообщениях бота."
+                                        : "Не удалось открыть личные сообщения. Разрешите сообщения"
+                                              + " от участников этого сервера в настройках"
+                                              + " конфиденциальности Discord и нажмите «Мои"
+                                              + " обращения» ещё раз.")
+                            .thenCompose(
+                                message ->
+                                    service.editInteractionResponse(
+                                        i, JsonUtils.toJson(body(message, List.of()))));
+                      });
+            });
+  }
+
+  CompletableFuture<Boolean> open(String owner) {
+    return CoreDiscordExtensions.managed(
+        service, "openPrivateMenu", new Class<?>[] {String.class, String.class}, owner, "appeals");
   }
 
   static Map<String, Object> button(String id, String label) {
