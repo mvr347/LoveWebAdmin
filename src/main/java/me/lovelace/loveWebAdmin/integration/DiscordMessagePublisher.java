@@ -81,6 +81,7 @@ public final class DiscordMessagePublisher {
 
   public static String explanation(Throwable error) {
     for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+      if (cause instanceof IllegalArgumentException && Objects.toString(cause.getMessage(), "").startsWith("Категория тикетов")) return cause.getMessage();
       if (cause instanceof IllegalArgumentException
           && Set.of(
                   "Тестовая категория совпадает с рабочей",

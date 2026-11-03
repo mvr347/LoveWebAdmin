@@ -553,6 +553,7 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
                 !owner && admin.isPresent(),
                 content,
                 msg.messageId());
+        if(!owner) plugin.getDiscordBridge().ticketDesk().notifyOwner("report",id,"message:"+msg.messageId(),"Ответ по жалобе №"+id,content);
         return;
       }
     } catch (Exception error) {
@@ -582,6 +583,7 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
                   : admin.map(WebAdmin::username).orElse(appeal.playerName()),
               !author && admin.isPresent(),
               content);
+      if(!author) plugin.getDiscordBridge().ticketDesk().notifyOwner("appeal",appeal.id(),"message:"+msg.messageId(),"Ответ по апелляции №"+appeal.id(),content);
     } catch (Exception e) {
       throw new IllegalStateException(e);
     }

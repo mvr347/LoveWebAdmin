@@ -24,6 +24,18 @@ class ModerationStoreTest {
   }
 
   @Test
+  void retryingAnOldChannelRequiresExplicitStaffReconciliation() throws Exception {
+    store.enqueue("create","report-ticket:7","{\"type\":\"REPORT_TICKET\",\"reportId\":7}");
+    int id=((Number)store.due().getFirst().get("id")).intValue();
+    assertTrue(store.verifiedRejectedCreation(id).isEmpty());store.takeDelivery(id);store.uncertainDelivery(id,"Lost response");
+    assertTrue(store.verifiedRejectedCreation(id).isEmpty());
+    store.resolveDelivery(id,false,"Chief","Каналы сверены: такого обращения нет");
+    assertEquals("report",store.verifiedRejectedCreation(id).orElseThrow().get("kind"));
+    assertEquals(7,((Number)store.verifiedRejectedCreation(id).orElseThrow().get("id")).intValue());
+    assertTrue(store.retryDelivery(id));assertTrue(store.verifiedRejectedCreation(id).isEmpty());
+  }
+
+  @Test
   void nicknameNeverAuthorizesAnAppeal() throws Exception {
     String token = store.createAccess(1, null, false);
     assertFalse(store.author(1, "Ada123"));
