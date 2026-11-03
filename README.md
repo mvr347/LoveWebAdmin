@@ -34,16 +34,17 @@
 
 | Команда | Алиасы | Описание | Право |
 |---|---|---|---|
-| `/lovewebadmin` | `/lwa` | Управление веб-панелью (`info`, `reload`, `resetowner`, `generatetoken`) | `lovewebadmin.admin` (op) |
+| `/lovewebadmin` | `/lwa` | Управление веб-панелью (`info`, `reload`, `resetowner`, `generatetoken`, `discord purge`) | `lovewebadmin.admin` (op) |
 | `/бан <игрок>` | `/ban`, `/webban`, `/lban` | Быстрое создание черновика бана для передачи в WebAdmin | `lovewebadmin.ban` (op) |
 | `/репорт <игрок>` | `/report`, `/жалоба` | Подача внутрииговой жалобы на нарушителя | `lovewebadmin.report` (все) |
 | `/разбан <игрок>` | `/unban`, `/webunban`, `/lunban`, `/pardon` | Снятие бана с игрока на сервере и в веб-панели | `lovewebadmin.unban` (op) |
 
 ### Подкоманды `/lovewebadmin`:
 - `/lovewebadmin info` — информация о веб-сервере (URL, порт, количество администраторов).
-- `/lovewebadmin generatetoken` — генерация одноразового токена для первичной настройки Управляющего.
+- `/lovewebadmin generatetoken` — генерация одноразового токена для первичной настройки Управляющего (только консоль, пока Управляющий не создан).
+- `/lovewebadmin resetowner` — сброс Управляющего, если данные входа утеряны (только консоль; подтверждение `confirm <код>` в течение минуты); печатает новый токен настройки.
+- `/lovewebadmin discord purge` — служебная команда для тестов: бот удаляет все свои сообщения в текстовых каналах сервера и известных ЛС (только консоль; подтверждение `confirm <код>`). Панель и карточки публикуются заново сами. Требуется LoveCore с `purgeOwnMessages`.
 - `/lovewebadmin reload` — горячая перезагрузка конфигурации `config.yml`.
-- `/lovewebadmin resetowner confirm` — сброс учетной записи Управляющего для повторного онбординга.
 
 ---
 

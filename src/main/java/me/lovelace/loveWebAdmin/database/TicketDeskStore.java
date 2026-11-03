@@ -65,6 +65,9 @@ public final class TicketDeskStore implements AutoCloseable {
       for (String column : List.of("creation_error", "work_state", "assignee"))
         if (!columns.contains(column))
           q.execute("ALTER TABLE desk_tickets ADD COLUMN " + column + " TEXT NOT NULL DEFAULT ''");
+      // Moment of the last channel creation attempt: lets a lost result be reconciled without staff.
+      if (!columns.contains("creation_at"))
+        q.execute("ALTER TABLE desk_tickets ADD COLUMN creation_at INTEGER NOT NULL DEFAULT 0");
 
       q.execute(
           "UPDATE desk_messages SET state='UNCERTAIN',error='Отправка прервана. Сверьте сообщение в"
@@ -314,10 +317,23 @@ public final class TicketDeskStore implements AutoCloseable {
   public synchronized void startCreation(String kind, int id) throws SQLException {
     try (var q =
         db.prepareStatement(
-            "UPDATE desk_tickets SET creation_started=1 WHERE kind=? AND id=? AND state='OPEN'")) {
+            "UPDATE desk_tickets SET creation_started=1,creation_at=? WHERE kind=? AND id=? AND state='OPEN'")) {
+      q.setLong(1, System.currentTimeMillis());
+      q.setString(2, kind);
+      q.setInt(3, id);
+      if (q.executeUpdate() != 1) throw new IllegalStateException("Обращение уже закрывается");
+    }
+  }
+
+  /** Epoch millis of the last creation attempt; 0 when unknown (rows from before the column). */
+  public synchronized long creationAt(String kind, int id) throws SQLException {
+    try (var q =
+        db.prepareStatement("SELECT creation_at FROM desk_tickets WHERE kind=? AND id=?")) {
       q.setString(1, kind);
       q.setInt(2, id);
-      if (q.executeUpdate() != 1) throw new IllegalStateException("Обращение уже закрывается");
+      try (var r = q.executeQuery()) {
+        return r.next() ? r.getLong(1) : 0L;
+      }
     }
   }
 

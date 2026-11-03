@@ -36,13 +36,31 @@ public final class DiscordTicketArchive {
       throw new InterruptedException("Архивация остановлена");
   }
 
+  /** Thrown by a transport when Discord confirms the channel no longer exists. */
+  public static final class ChannelGoneException extends Exception {
+    public ChannelGoneException(Throwable cause) {
+      super("Канал обращения удалён вне бота", cause);
+    }
+  }
+
+  /** True when the last finish() found the channel already deleted and kept only what was saved. */
+  public volatile boolean lastChannelGone;
+
   public boolean finish(TicketDeskStore.Ticket ticket) throws Exception {
+    lastChannelGone = false;
     admitted();
     if (ticket.state().equals("CLOSING")) {
       if (ticket.channel().isBlank() && store.creationStarted(ticket.kind(), ticket.id()))
         throw new IllegalStateException(
             "Создание канала не подтверждено; сначала требуется сверка");
-      if (!ticket.channel().isBlank()) archive(ticket);
+      if (!ticket.channel().isBlank()) {
+        try {
+          archive(ticket);
+        } catch (ChannelGoneException gone) {
+          // Deleted outside the bot: keep what was already archived instead of retrying forever.
+          lastChannelGone = true;
+        }
+      }
       if (!store.transition(ticket.kind(), ticket.id(), "CLOSING", "ARCHIVED")) return false;
       ticket = store.get(ticket.kind(), ticket.id()).orElseThrow();
     }
