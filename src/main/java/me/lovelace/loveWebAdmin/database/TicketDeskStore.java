@@ -34,19 +34,41 @@ public final class TicketDeskStore implements AutoCloseable {
       q.execute("PRAGMA journal_mode=WAL");
       q.execute("PRAGMA synchronous=FULL");
       q.execute(
-          "CREATE TABLE IF NOT EXISTS desk_messages(slot TEXT PRIMARY KEY,channel TEXT NOT NULL,message TEXT,state TEXT NOT NULL DEFAULT 'READY',error TEXT)");
+          "CREATE TABLE IF NOT EXISTS desk_messages(slot TEXT PRIMARY KEY,channel TEXT NOT"
+              + " NULL,message TEXT,state TEXT NOT NULL DEFAULT 'READY',error TEXT)");
       q.execute(
-          "CREATE TABLE IF NOT EXISTS desk_drafts(id TEXT PRIMARY KEY,owner TEXT NOT NULL,kind TEXT NOT NULL,payload TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'DRAFT',case_id INTEGER NOT NULL DEFAULT 0,expires_at INTEGER NOT NULL)");
+          "CREATE TABLE IF NOT EXISTS desk_drafts(id TEXT PRIMARY KEY,owner TEXT NOT NULL,kind TEXT"
+              + " NOT NULL,payload TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'DRAFT',case_id"
+              + " INTEGER NOT NULL DEFAULT 0,expires_at INTEGER NOT NULL)");
       q.execute("CREATE INDEX IF NOT EXISTS desk_drafts_expiry ON desk_drafts(expires_at)");
       q.execute(
-          "CREATE TABLE IF NOT EXISTS desk_tickets(kind TEXT NOT NULL,id INTEGER NOT NULL,owner TEXT NOT NULL,channel TEXT NOT NULL DEFAULT '',state TEXT NOT NULL DEFAULT 'OPEN',actor TEXT NOT NULL DEFAULT '',reason TEXT NOT NULL DEFAULT '',card TEXT NOT NULL DEFAULT '',queue_card TEXT NOT NULL DEFAULT '',acl TEXT NOT NULL DEFAULT '',notified INTEGER NOT NULL DEFAULT 0,creation_started INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(kind,id))");
+          "CREATE TABLE IF NOT EXISTS desk_tickets(kind TEXT NOT NULL,id INTEGER NOT NULL,owner"
+              + " TEXT NOT NULL,channel TEXT NOT NULL DEFAULT '',state TEXT NOT NULL DEFAULT"
+              + " 'OPEN',actor TEXT NOT NULL DEFAULT '',reason TEXT NOT NULL DEFAULT '',card TEXT"
+              + " NOT NULL DEFAULT '',queue_card TEXT NOT NULL DEFAULT '',acl TEXT NOT NULL DEFAULT"
+              + " '',notified INTEGER NOT NULL DEFAULT 0,creation_started INTEGER NOT NULL DEFAULT"
+              + " 0,PRIMARY KEY(kind,id))");
       q.execute(
-          "CREATE TABLE IF NOT EXISTS desk_transcript(kind TEXT NOT NULL,id INTEGER NOT NULL,message_id TEXT NOT NULL,author_id TEXT NOT NULL,author_name TEXT NOT NULL,body TEXT NOT NULL,created_at INTEGER NOT NULL,PRIMARY KEY(kind,id,message_id))");
+          "CREATE TABLE IF NOT EXISTS desk_transcript(kind TEXT NOT NULL,id INTEGER NOT"
+              + " NULL,message_id TEXT NOT NULL,author_id TEXT NOT NULL,author_name TEXT NOT"
+              + " NULL,body TEXT NOT NULL,created_at INTEGER NOT NULL,PRIMARY"
+              + " KEY(kind,id,message_id))");
       q.execute(
-          "CREATE TABLE IF NOT EXISTS desk_files(id INTEGER PRIMARY KEY,kind TEXT NOT NULL,case_id INTEGER NOT NULL,message_id TEXT NOT NULL,url TEXT NOT NULL,name TEXT NOT NULL,data BLOB NOT NULL,UNIQUE(kind,case_id,message_id,url))");
+          "CREATE TABLE IF NOT EXISTS desk_files(id INTEGER PRIMARY KEY,kind TEXT NOT NULL,case_id"
+              + " INTEGER NOT NULL,message_id TEXT NOT NULL,url TEXT NOT NULL,name TEXT NOT"
+              + " NULL,data BLOB NOT NULL,UNIQUE(kind,case_id,message_id,url))");
       q.execute("CREATE INDEX IF NOT EXISTS desk_files_case ON desk_files(kind,case_id)");
+      var columns = new HashSet<String>();
+      try (var fields = q.executeQuery("PRAGMA table_info(desk_tickets)")) {
+        while (fields.next()) columns.add(fields.getString("name"));
+      }
+      for (String column : List.of("creation_error", "work_state", "assignee"))
+        if (!columns.contains(column))
+          q.execute("ALTER TABLE desk_tickets ADD COLUMN " + column + " TEXT NOT NULL DEFAULT ''");
+
       q.execute(
-          "UPDATE desk_messages SET state='UNCERTAIN',error='Отправка прервана. Сверьте сообщение в Discord.' WHERE state='SENDING'");
+          "UPDATE desk_messages SET state='UNCERTAIN',error='Отправка прервана. Сверьте сообщение в"
+              + " Discord.' WHERE state='SENDING'");
     } catch (SQLException error) {
       db.close();
       throw error;
@@ -57,7 +79,8 @@ public final class TicketDeskStore implements AutoCloseable {
       throws SQLException {
     try (var q =
         db.prepareStatement(
-            "DELETE FROM desk_drafts WHERE expires_at<? AND state IN ('DRAFT','CANCELLED','CONFIRMED')")) {
+            "DELETE FROM desk_drafts WHERE expires_at<? AND state IN"
+                + " ('DRAFT','CANCELLED','CONFIRMED')")) {
       q.setLong(1, System.currentTimeMillis() / 1000);
       q.executeUpdate();
     }
@@ -105,10 +128,33 @@ public final class TicketDeskStore implements AutoCloseable {
     }
   }
 
+  public synchronized List<Draft> drafts(String owner) throws SQLException {
+    var drafts=new ArrayList<Draft>();
+    try (var q =
+        db.prepareStatement(
+            "SELECT * FROM desk_drafts WHERE owner=? AND state='DRAFT' AND expires_at>=? ORDER BY"
+                + " expires_at DESC LIMIT 3")) {
+      q.setString(1,owner);q.setLong(2,System.currentTimeMillis()/1000);
+      try(var r=q.executeQuery()) {
+        while (r.next())
+          drafts.add(
+              new Draft(
+                  r.getString("id"),
+                  owner,
+                  r.getString("kind"),
+                  JsonUtils.parseObject(r.getString("payload")),
+                  "DRAFT",
+                  0));
+      }
+    }
+    return List.copyOf(drafts);
+  }
+
   public synchronized boolean consume(String id, String owner, boolean cancel) throws SQLException {
     try (var q =
         db.prepareStatement(
-            "UPDATE desk_drafts SET state=? WHERE id=? AND owner=? AND state='DRAFT' AND expires_at>=?")) {
+            "UPDATE desk_drafts SET state=? WHERE id=? AND owner=? AND state='DRAFT' AND"
+                + " expires_at>=?")) {
       q.setString(1, cancel ? "CANCELLED" : "CREATING");
       q.setString(2, id);
       q.setString(3, owner);
@@ -139,7 +185,8 @@ public final class TicketDeskStore implements AutoCloseable {
   public synchronized void register(String kind, int id, String owner) throws SQLException {
     try (var q =
         db.prepareStatement(
-            "INSERT INTO desk_tickets(kind,id,owner) VALUES(?,?,?) ON CONFLICT(kind,id) DO NOTHING")) {
+            "INSERT INTO desk_tickets(kind,id,owner) VALUES(?,?,?) ON CONFLICT(kind,id) DO"
+                + " NOTHING")) {
       q.setString(1, kind);
       q.setInt(2, id);
       q.setString(3, Objects.toString(owner, ""));
@@ -172,12 +219,87 @@ public final class TicketDeskStore implements AutoCloseable {
   }
 
   public synchronized List<Ticket> owned(String owner, int offset) throws SQLException {
-    var out = new ArrayList<Ticket>();
-    try (var q = db.prepareStatement("SELECT * FROM desk_tickets WHERE owner=? ORDER BY id DESC LIMIT 6 OFFSET ?")) {
-      q.setString(1, owner); q.setInt(2, Math.max(0, offset));
-      try (var r = q.executeQuery()) { while(r.next()) out.add(ticket(r)); }
+    return owned(owner, "all", offset);
+  }
+
+  public synchronized List<Ticket> owned(String owner, String filter, int offset)
+      throws SQLException {
+    if (!Set.of("all", "active", "closed").contains(filter))
+      throw new IllegalArgumentException("Неизвестный фильтр");
+    String condition =
+        filter.equals("active")
+            ? " AND state!='CLOSED'"
+            : filter.equals("closed") ? " AND state='CLOSED'" : "";
+    var rows = new ArrayList<Ticket>();
+    try (var q =
+        db.prepareStatement(
+            "SELECT * FROM desk_tickets WHERE owner=?"
+                + condition
+                + " ORDER BY CASE WHEN work_state='WAITING' AND state!='CLOSED' THEN 0 ELSE 1"
+                + " END,id DESC,kind LIMIT 6 OFFSET ?")) {
+      q.setString(1, owner);
+      q.setInt(2, Math.max(0, offset));
+      try (var r = q.executeQuery()) {
+        while (r.next()) rows.add(ticket(r));
+      }
     }
-    return List.copyOf(out);
+    return List.copyOf(rows);
+  }
+
+  public synchronized void workDisplay(String kind, int id, String state, String assignee)
+      throws SQLException {
+    try (var q =
+        db.prepareStatement(
+            "UPDATE desk_tickets SET work_state=?,assignee=? WHERE kind=? AND id=? AND"
+                + " (work_state!=? OR assignee!=?)")) {
+      q.setString(1, state);
+      q.setString(2, assignee);
+      q.setString(3, kind);
+      q.setInt(4, id);
+      q.setString(5, state);
+      q.setString(6, assignee);
+      q.executeUpdate();
+    }
+  }
+
+  public synchronized void creationFailed(String kind, int id, String error, boolean definitive)
+      throws SQLException {
+    try (var q =
+        db.prepareStatement(
+            "UPDATE desk_tickets SET creation_error=?,creation_started=? WHERE kind=? AND id=? AND"
+                + " channel=''")) {
+      q.setString(1, error);
+      q.setBoolean(2, !definitive);
+      q.setString(3, kind);
+      q.setInt(4, id);
+      q.executeUpdate();
+    }
+  }
+
+  public synchronized String creationError(String kind, int id) throws SQLException {
+    try (var q =
+        db.prepareStatement("SELECT creation_error FROM desk_tickets WHERE kind=? AND id=?")) {
+      q.setString(1, kind);
+      q.setInt(2, id);
+      try (var r = q.executeQuery()) {
+        return r.next() ? r.getString(1) : "";
+      }
+    }
+  }
+
+  public synchronized void updateDraft(String id, String owner, Map<String, Object> data)
+      throws SQLException {
+    try (var q =
+        db.prepareStatement(
+            "UPDATE desk_drafts SET payload=? WHERE id=? AND owner=? AND state='DRAFT' AND"
+                + " expires_at>=?")) {
+      q.setString(1, JsonUtils.toJson(data));
+      q.setString(2, id);
+      q.setString(3, owner);
+      q.setLong(4, System.currentTimeMillis() / 1000);
+      if (q.executeUpdate() != 1)
+        throw new IllegalArgumentException("Форма истекла или уже отправлена");
+    }
   }
 
   public synchronized List<Ticket> active() throws SQLException {
@@ -185,7 +307,8 @@ public final class TicketDeskStore implements AutoCloseable {
     try (var q = db.createStatement();
         var r =
             q.executeQuery(
-                "SELECT * FROM desk_tickets WHERE state<>'CLOSED' OR notified=0 ORDER BY id LIMIT 1000")) {
+                "SELECT * FROM desk_tickets WHERE state<>'CLOSED' OR notified=0 ORDER BY id LIMIT"
+                    + " 1000")) {
       while (r.next()) rows.add(ticket(r));
     }
     return rows;
@@ -215,7 +338,8 @@ public final class TicketDeskStore implements AutoCloseable {
   public synchronized void channel(String kind, int id, String channel) throws SQLException {
     try (var q =
         db.prepareStatement(
-            "UPDATE desk_tickets SET channel=? WHERE kind=? AND id=? AND state IN ('OPEN','CLOSING')")) {
+            "UPDATE desk_tickets SET channel=?,creation_error='' WHERE kind=? AND id=? AND state IN"
+                + " ('OPEN','CLOSING')")) {
       q.setString(1, channel);
       q.setString(2, kind);
       q.setInt(3, id);
@@ -243,7 +367,8 @@ public final class TicketDeskStore implements AutoCloseable {
       throw new IllegalArgumentException("Объясните причину закрытия (5–4000 символов)");
     try (var q =
         db.prepareStatement(
-            "UPDATE desk_tickets SET state='CLOSING',actor=?,reason=? WHERE kind=? AND id=? AND state='OPEN'")) {
+            "UPDATE desk_tickets SET state='CLOSING',actor=?,reason=? WHERE kind=? AND id=? AND"
+                + " state='OPEN'")) {
       q.setString(1, actor);
       q.setString(2, reason.trim());
       q.setString(3, kind);
@@ -272,7 +397,9 @@ public final class TicketDeskStore implements AutoCloseable {
     long time = (Long.parseUnsignedLong(message) >>> 22) + 1420070400000L;
     try (var q =
         db.prepareStatement(
-            "INSERT INTO desk_transcript(kind,id,message_id,author_id,author_name,body,created_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(kind,id,message_id) DO UPDATE SET body=excluded.body,author_name=excluded.author_name")) {
+            "INSERT INTO desk_transcript(kind,id,message_id,author_id,author_name,body,created_at)"
+                + " VALUES(?,?,?,?,?,?,?) ON CONFLICT(kind,id,message_id) DO UPDATE SET"
+                + " body=excluded.body,author_name=excluded.author_name")) {
       q.setString(1, kind);
       q.setInt(2, id);
       q.setString(3, message);
@@ -315,7 +442,8 @@ public final class TicketDeskStore implements AutoCloseable {
     }
     try (var q =
         db.prepareStatement(
-            "INSERT INTO desk_files(kind,case_id,message_id,url,name,data) VALUES(?,?,?,?,?,?) ON CONFLICT DO NOTHING")) {
+            "INSERT INTO desk_files(kind,case_id,message_id,url,name,data) VALUES(?,?,?,?,?,?) ON"
+                + " CONFLICT DO NOTHING")) {
       q.setString(1, kind);
       q.setInt(2, id);
       q.setString(3, message);
@@ -331,7 +459,8 @@ public final class TicketDeskStore implements AutoCloseable {
     var rows = new ArrayList<Map<String, Object>>();
     try (var q =
         db.prepareStatement(
-            "SELECT * FROM desk_transcript WHERE kind=? AND id=? ORDER BY created_at,message_id LIMIT 100 OFFSET ?")) {
+            "SELECT * FROM desk_transcript WHERE kind=? AND id=? ORDER BY created_at,message_id"
+                + " LIMIT 100 OFFSET ?")) {
       q.setString(1, kind);
       q.setInt(2, id);
       q.setInt(3, Math.max(0, offset));
@@ -354,11 +483,25 @@ public final class TicketDeskStore implements AutoCloseable {
     return rows;
   }
 
+  public synchronized Optional<String> latestMessage(String kind, int id) throws SQLException {
+    try (var q =
+        db.prepareStatement(
+            "SELECT author_name,body FROM desk_transcript WHERE kind=? AND id=? ORDER BY created_at"
+                + " DESC,message_id DESC LIMIT 1")) {
+      q.setString(1, kind);
+      q.setInt(2, id);
+      try (var r = q.executeQuery()) {
+        return r.next() ? Optional.of(r.getString(1) + ": " + r.getString(2)) : Optional.empty();
+      }
+    }
+  }
+
   public synchronized List<Map<String, Object>> files(String kind, int id) throws SQLException {
     var rows = new ArrayList<Map<String, Object>>();
     try (var q =
         db.prepareStatement(
-            "SELECT id,message_id,name,length(data) AS size FROM desk_files WHERE kind=? AND case_id=? ORDER BY id LIMIT 1000")) {
+            "SELECT id,message_id,name,length(data) AS size FROM desk_files WHERE kind=? AND"
+                + " case_id=? ORDER BY id LIMIT 1000")) {
       q.setString(1, kind);
       q.setInt(2, id);
       try (var r = q.executeQuery()) {
@@ -413,7 +556,11 @@ public final class TicketDeskStore implements AutoCloseable {
   public synchronized boolean sending(String slot, String channel) throws SQLException {
     try (var q =
         db.prepareStatement(
-            "INSERT INTO desk_messages(slot,channel,state) VALUES(?,?,'SENDING') ON CONFLICT(slot) DO UPDATE SET state='SENDING',message=CASE WHEN desk_messages.channel=excluded.channel THEN desk_messages.message ELSE NULL END,channel=excluded.channel WHERE desk_messages.state IN ('READY','FAILED')")) {
+            "INSERT INTO desk_messages(slot,channel,state) VALUES(?,?,'SENDING') ON CONFLICT(slot)"
+                + " DO UPDATE SET state='SENDING',message=CASE WHEN"
+                + " desk_messages.channel=excluded.channel THEN desk_messages.message ELSE NULL"
+                + " END,channel=excluded.channel WHERE desk_messages.state IN"
+                + " ('READY','FAILED')")) {
       q.setString(1, slot);
       q.setString(2, channel);
       return q.executeUpdate() == 1;
@@ -483,7 +630,8 @@ public final class TicketDeskStore implements AutoCloseable {
     try (var q = db.createStatement();
         var r =
             q.executeQuery(
-                "SELECT slot,channel,message,state,error FROM desk_messages ORDER BY slot LIMIT 2000")) {
+                "SELECT slot,channel,message,state,error FROM desk_messages ORDER BY slot LIMIT"
+                    + " 2000")) {
       while (r.next())
         result.add(
             Map.of(
@@ -509,7 +657,8 @@ public final class TicketDeskStore implements AutoCloseable {
       throw new IllegalArgumentException("Некорректный ID сообщения");
     try (var q =
         db.prepareStatement(
-            "UPDATE desk_messages SET state='READY',message=?,error=NULL WHERE slot=? AND state='UNCERTAIN'")) {
+            "UPDATE desk_messages SET state='READY',message=?,error=NULL WHERE slot=? AND"
+                + " state='UNCERTAIN'")) {
       q.setString(1, message == null || message.isBlank() ? null : message);
       q.setString(2, slot);
       return q.executeUpdate() == 1;

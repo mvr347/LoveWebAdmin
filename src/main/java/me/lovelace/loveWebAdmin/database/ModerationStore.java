@@ -497,6 +497,21 @@ public final class ModerationStore implements AutoCloseable {
     }
   }
 
+  /** Only an explicit staff reconciliation can unlock a previously ambiguous channel creation. */
+  public synchronized Optional<Map<String,Object>> verifiedRejectedCreation(int id) throws SQLException {
+    try(var q=db.prepareStatement("SELECT payload FROM delivery_outbox WHERE id=? AND state='FAILED' AND error LIKE 'Проверил %'")) {
+      q.setInt(1,id);try(var r=q.executeQuery()) {
+        if(!r.next()) return Optional.empty();
+        var payload=me.lovelace.loveWebAdmin.utils.JsonUtils.parseObject(r.getString(1));
+        return switch(Objects.toString(payload.get("type"),"")) {
+          case "REPORT_TICKET" -> Optional.of(Map.of("kind","report","id",payload.get("reportId")));
+          case "APPEAL_TICKET" -> Optional.of(Map.of("kind","appeal","id",payload.get("appealId")));
+          default -> Optional.empty();
+        };
+      }
+    }
+  }
+
   public synchronized boolean retryDelivery(int id) throws SQLException {
     try (var q =
         db.prepareStatement(

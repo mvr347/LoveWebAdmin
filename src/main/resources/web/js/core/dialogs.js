@@ -86,6 +86,7 @@ export function explanationDialog(title, message) {
     const accept = document.createElement("button");
     accept.className = "primary";
     accept.textContent = "Подтвердить";
+    accept.disabled=true;
     let closed = false;
     function done(value) {
       if (closed) return;
@@ -103,7 +104,7 @@ export function explanationDialog(title, message) {
       }
       done(input.value.trim());
     };
-    input.oninput = () => input.setCustomValidity("");
+    input.oninput = () => {input.setCustomValidity("");accept.disabled=input.value.trim().length<5||input.value.length>2000;};
     dialog.addEventListener("cancel", (e) => {
       e.preventDefault();
       done(null);

@@ -268,6 +268,11 @@ public final class ApiCasesHandler extends ApiHandlerSupport {
       if (auth.isEmpty()) return;
       int id = Integer.parseInt(req.getPathInfo().split("/")[2]);
       try {
+        var rejectedCreation=plugin.moderation().verifiedRejectedCreation(id);
+        if(rejectedCreation.isPresent()) {
+          var reference=rejectedCreation.get();
+          plugin.getDiscordBridge().ticketDeskStore().creationFailed(reference.get("kind").toString(),((Number)reference.get("id")).intValue(),"Сотрудник подтвердил отсутствие канала; разрешена повторная попытка",true);
+        }
         if (!plugin.moderation().retryDelivery(id)) {
           sendError(resp, 409, "Повторить можно только неудачную доставку");
           return;

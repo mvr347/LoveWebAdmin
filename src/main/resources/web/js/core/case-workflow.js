@@ -1,10 +1,16 @@
 import { confirmCaseDecision } from "./decision-preview.js";
 import { confirmDialog, explanationDialog } from "./dialogs.js";
-export function installCaseWorkflow({ api, context, reload, fail }) {
+export function installCaseWorkflow({
+  api,
+  context,
+  reload,
+  fail,
+  root = document,
+}) {
   const host = document.createElement("section");
   host.id = "case-workflow";
   host.innerHTML = `<h2>Ожидание и шаблоны</h2><p id="case-wait"></p><label>Шаблон ответа<select id="case-template"></select></label><div class="row"><button id="template-reply" type="button">Вставить в ответ</button><button id="template-verdict" type="button">Вставить в решение</button><button id="template-edit" type="button">Редактировать</button></div><details><summary>Сохранить шаблон</summary><form id="template-form"><input id="template-id" type="hidden" value="0"><input id="template-revision" type="hidden" value="0"><label>Название<input id="template-name" maxlength="60" required></label><label>Назначение<select id="template-purpose"><option value="CLARIFY">Уточнение</option><option value="VERDICT">Решение</option></select></label><label>Текст<textarea id="template-text" minlength="5" maxlength="2000" required></textarea></label><label><input id="template-shared" type="checkbox">Общий для сотрудников</label><button>Сохранить</button><button id="template-delete" type="button">Удалить выбранный</button></form></details><h2>Новые доказательства после закрытия</h2><p class="muted">Принятие дополнения открывает отдельное рассмотрение. Прежнее решение сохраняется.</p><div id="review-requests"></div>`;
-  document.querySelector("main").append(host);
+  (root.querySelector("main") || root).append(host);
   const $ = (id) => host.querySelector("#" + id);
   let templates = [];
   const route = (action) => {
@@ -15,21 +21,27 @@ export function installCaseWorkflow({ api, context, reload, fail }) {
     templates.find((t) => String(t.id) === $("case-template").value);
   $("template-reply").onclick = () => {
     const t = selected(),
-      target = document.getElementById(
-        context().kind === "report" ? "clarify" : "reply",
+      target = root.querySelector(
+        context().kind === "report" ? "#clarify" : "#reply",
       );
     if (t && target) {
       target.value = t.text;
       target.dispatchEvent(new Event("input", { bubbles: true }));
+      target.dispatchEvent(
+        new CustomEvent("lwa:reveal-field", { bubbles: true }),
+      );
       target.scrollIntoView({ block: "center" });
     }
   };
   $("template-verdict").onclick = () => {
     const t = selected(),
-      target = document.getElementById("verdict");
+      target = root.querySelector("#verdict");
     if (t && target) {
       target.value = t.text;
       target.dispatchEvent(new Event("input", { bubbles: true }));
+      target.dispatchEvent(
+        new CustomEvent("lwa:reveal-field", { bubbles: true }),
+      );
       target.scrollIntoView({ block: "center" });
     }
   };

@@ -632,9 +632,11 @@ public class LoveCoreDiscordBridge implements Listener {
   static Outcome outcome(Object message, Throwable error) {
     if (error == null) return message == null ? Outcome.RETRY : Outcome.DELIVERED;
     Throwable cause = error;
-    while (cause instanceof java.util.concurrent.CompletionException && cause.getCause() != null)
+    while ((cause instanceof java.util.concurrent.CompletionException || cause instanceof java.util.concurrent.ExecutionException) && cause.getCause() != null)
       cause = cause.getCause();
     return cause instanceof java.util.concurrent.RejectedExecutionException
+            || DiscordMessagePublisher.definitive(cause)
+            || cause instanceof IllegalArgumentException && Objects.toString(cause.getMessage(), "").startsWith("Категория тикетов")
         ? Outcome.RETRY
         : Outcome.UNCERTAIN;
   }

@@ -1,6 +1,7 @@
 package me.lovelace.loveWebAdmin.integration;
 
 import static org.junit.jupiter.api.Assertions.*;
+
 import dev.lovelace.lovecore.api.discord.*;
 import java.lang.reflect.Proxy;
 import java.util.*;
@@ -87,11 +88,78 @@ class DiscordTicketDeskTest {
                 "11111",
                 "unused",
                 user,
-                "99999",
+                channel.equals("dm")?"":"99999",
                 name,
                 name.contains(":draft:") || name.contains(":submit:") ? 5 : 3,
                 fields)));
     return result.get(8, TimeUnit.SECONDS);
+  }
+
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(strings = {"lwa:desk:mine", "мои-обращения"})
+  void myCasesAlwaysOpensTheOwnerPrivateMenu(String action) throws Exception {
+    var result = click("10000", "70000", action, Map.of());
+    assertEquals("10000", discord.privateMenuOwner);
+    assertEquals("appeals", discord.privateMenuSection);
+    assertEquals(1, discord.privateMenuCalls.get());
+    assertTrue(result.get("content").toString().contains("открыты в личных"));
+    assertTrue(((List<?>) result.get("components")).isEmpty());
+    assertEquals(
+        64,
+        ((Number) ((Map<?, ?>) discord.lastAcknowledgement.get("data")).get("flags")).intValue());
+  }
+
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+  void blockedDirectMessagesNeverClaimTheMenuWasDelivered(boolean exceptional) throws Exception {
+    discord.privateMenuResult =
+        exceptional
+            ? CompletableFuture.failedFuture(new IllegalStateException("transport"))
+            : CompletableFuture.completedFuture(false);
+    var result = click("10000", "70000", "lwa:desk:mine", Map.of());
+    assertTrue(result.get("content").toString().contains("Разрешите сообщения"));
+    assertFalse(result.get("content").toString().contains("открыты в личных"));
+    assertTrue(((List<?>) result.get("components")).isEmpty());
+  }
+
+  @Test
+  void myCasesDoesNotSendAnythingAfterARejectedAcknowledgement() {
+    discord.acknowledgementAccepted = false;
+    assertTrue(
+        desk.onInteraction(
+            new DiscordInteraction(
+                "ignored",
+                "11111",
+                "unused",
+                "10000",
+                "99999",
+                "lwa:desk:mine",
+                3,
+                Map.of("_channelId", "70000"))));
+    assertEquals(0, discord.privateMenuCalls.get());
+  }
+
+  @Test
+  void myCasesWaitsForDiscordBeforeConfirmingDelivery() throws Exception {
+    discord.privateMenuResult = new CompletableFuture<>();
+    var reply = new CompletableFuture<Map<String, Object>>();
+    discord.responses.put("pending", reply);
+    assertTrue(
+        desk.onInteraction(
+            new DiscordInteraction(
+                "pending",
+                "11111",
+                "unused",
+                "10000",
+                "99999",
+                "lwa:desk:mine",
+                3,
+                Map.of("_channelId", "70000"))));
+    await(() -> discord.privateMenuCalls.get() == 1);
+    assertFalse(reply.isDone());
+    discord.privateMenuResult.complete(true);
+    assertTrue(
+        reply.get(8, TimeUnit.SECONDS).get("content").toString().contains("открыты в личных"));
   }
 
   @SuppressWarnings("unchecked")
@@ -107,6 +175,10 @@ class DiscordTicketDeskTest {
   }
 
   int createReport() throws Exception {
+    int id=savedReport();desk.create("report",id,"10000").get(8,TimeUnit.SECONDS);return id;
+  }
+
+  int savedReport() throws Exception {
     var preview =
         click(
             "10000",
@@ -122,8 +194,72 @@ class DiscordTicketDeskTest {
     var reports = plugin.getDatabaseManager().getAllReports(null, null, 200, 0);
     assertEquals(1, reports.size());
     int id = reports.getFirst().id();
-    desk.create("report", id, "10000").get(8, TimeUnit.SECONDS);
     return id;
+  }
+
+  @Test
+  void rejectedChannelCreationRetainsTheCaseAndCanBeRetried() throws Exception {
+    int id=savedReport();discord.creationFailure=new DiscordRequestRejectedException(403);
+    assertThrows(Exception.class,()->desk.create("report",id,"10000").get(8,TimeUnit.SECONDS));
+    assertFalse(desk.store().creationStarted("report",id));
+    assertTrue(desk.store().creationError("report",id).contains("403"));
+    assertTrue(plugin.getDatabaseManager().getReportById(id).isPresent());
+    discord.creationFailure=null;
+    assertEquals("200000",desk.create("report",id,"10000").get(8,TimeUnit.SECONDS));
+    assertEquals(2,discord.creationCalls.get());assertEquals("",desk.store().creationError("report",id));
+  }
+
+  @Test
+  void unknownCreationCannotPostAgainAndCanRecoverAnExistingChannel() throws Exception {
+    int id=savedReport();discord.creationFailure=new java.io.IOException("lost response");discord.recoveredChannel=null;
+    assertThrows(Exception.class,()->desk.create("report",id,"10000").get(8,TimeUnit.SECONDS));
+    assertThrows(Exception.class,()->desk.create("report",id,"10000").get(8,TimeUnit.SECONDS));
+    assertEquals(1,discord.creationCalls.get());assertTrue(desk.store().creationStarted("report",id));
+    discord.recoveryFailure=new DiscordRequestRejectedException(403);
+    assertThrows(Exception.class,()->desk.create("report",id,"10000").get(8,TimeUnit.SECONDS));
+    assertTrue(desk.store().creationStarted("report",id));
+    assertEquals(1,discord.creationCalls.get());
+    discord.recoveryFailure=null;
+    discord.creationFailure=null;discord.recoveredChannel="200000";
+    assertEquals("200000",desk.create("report",id,"10000").get(8,TimeUnit.SECONDS));assertEquals(1,discord.creationCalls.get());
+  }
+
+  @Test
+  void threeStepWizardKeepsInvalidDetailsAndPublishesOnlyAfterReview() throws Exception {
+    var step2=click("10000","70000","lwa:desk:identity:report",Map.of("target","Griefer"));
+    String draft=confirm(step2).split(":")[3];
+    assertEquals(2,((Number)desk.store().draft(draft,"10000").data().get("_step")).intValue());
+    var early=click("10000","70000","lwa:desk:confirm:"+draft,Map.of());assertTrue(early.get("content").toString().contains("Сначала"));
+    var invalid=click("10000","70000","lwa:desk:details-submit:"+draft,Map.of("reason","Подробное описание нарушения","evidence","javascript:alert(1)"));
+    assertTrue(invalid.get("content").toString().contains("http"));assertEquals("javascript:alert(1)",desk.store().draft(draft,"10000").data().get("evidence"));
+    assertTrue(plugin.getDatabaseManager().getAllReports(null,null,200,0).isEmpty());
+    var preview=click("10000","70000","lwa:desk:details-submit:"+draft,Map.of("reason","Подробное описание нарушения","when","Вчера вечером","where","Арена","evidence","https://example.com/evidence"));
+    assertTrue(JsonUtils.toJson(preview).contains("Шаг 3 из 3"));assertTrue(JsonUtils.toJson(preview).contains("Reporter"));
+    click("10000","70000",confirm(preview),Map.of());
+    var report=plugin.getDatabaseManager().getAllReports(null,null,200,0).getFirst();assertTrue(report.description().contains("https://example.com/evidence"));assertTrue(report.description().contains("Вчера вечером"));
+  }
+
+  @Test
+  void onlyTheOwnerCanReplyFromThePrivateCardAndShortTextNeverSends() throws Exception {
+    int id=createReport();
+    assertThrows(IllegalArgumentException.class,()->desk.replyFromOwner("report",id,"30000","wrong","Чужое сообщение"));
+    assertThrows(IllegalArgumentException.class,()->desk.replyFromOwner("report",id,"10000","short","ок"));
+    assertEquals(0,discord.replySends.get());
+    desk.replyFromOwner("report",id,"10000","own","Сообщение для сотрудника");
+    assertEquals(1,discord.replySends.get());
+    assertTrue(discord.lastReply.get("content").toString().contains("> Сообщение"));
+    assertEquals(List.of(),((Map<?,?>)discord.lastReply.get("allowed_mentions")).get("parse"));
+    assertFalse(plugin.getDatabaseManager().reportDiscussion(id).isEmpty());
+  }
+
+  @Test
+  void privateWithdrawalIsOwnerBoundAndKeepsTheArchiveIntent() throws Exception {
+    int id=createReport();String action="lwa:desk:submit:close:report:"+id;
+    click("30000","dm",action,Map.of("reason","Не своё обращение"));
+    assertEquals("OPEN",desk.store().get("report",id).orElseThrow().state());
+    click("10000","dm",action,Map.of("reason","Проблема решена самостоятельно"));
+    assertEquals("CLOSING",desk.store().get("report",id).orElseThrow().state());
+    assertEquals(0,discord.deleted.get());
   }
 
   @Test
@@ -420,8 +556,21 @@ class DiscordTicketDeskTest {
     assertTrue(templates.get("content").toString().contains("Выберите текст"));
   }
 
+  public interface PrivateMenuApi {
+    CompletableFuture<Boolean> openPrivateMenu(String owner, String section);
+  }
+
   static class FakeDiscord {
-    volatile Throwable publicationFailure;
+    volatile boolean acknowledgementAccepted = true;
+    volatile Map<String, Object> lastAcknowledgement;
+    volatile String privateMenuOwner, privateMenuSection;
+    final AtomicInteger privateMenuCalls = new AtomicInteger();
+    volatile CompletableFuture<Boolean> privateMenuResult = CompletableFuture.completedFuture(true);
+    volatile Throwable publicationFailure, creationFailure, recoveryFailure;
+    volatile String recoveredChannel="200000";
+    volatile Map<String,Object> lastReply;
+    final AtomicInteger replySends=new AtomicInteger();
+    final AtomicInteger creationCalls=new AtomicInteger();
     final AtomicInteger publicationCalls = new AtomicInteger();
     final AtomicInteger ids = new AtomicInteger(10000),
         deleted = new AtomicInteger(),
@@ -438,7 +587,7 @@ class DiscordTicketDeskTest {
         (DiscordService)
             Proxy.newProxyInstance(
                 DiscordService.class.getClassLoader(),
-                new Class[] {DiscordService.class},
+                new Class[] {DiscordService.class, PrivateMenuApi.class},
                 (proxy, method, args) -> {
                   return switch (method.getName()) {
                     case "isEnabled" -> true;
@@ -452,13 +601,20 @@ class DiscordTicketDeskTest {
                     case "getMemberRoleIds" ->
                         CompletableFuture.completedFuture(
                             args[0].equals("50000") ? Set.of("60000") : Set.of());
+                    case "openPrivateMenu" -> {
+                      privateMenuOwner = args[0].toString();
+                      privateMenuSection = args[1].toString();
+                      privateMenuCalls.incrementAndGet();
+                      yield privateMenuResult;
+                    }
                     case "respond" -> {
                       var data = JsonUtils.parseObject(args[1].toString());
+                      lastAcknowledgement = data;
                       if (((Number) data.get("type")).intValue() != 5)
                         responses
                             .get(((DiscordInteraction) args[0]).id())
                             .complete((Map<String, Object>) data.get("data"));
-                      yield CompletableFuture.completedFuture(true);
+                      yield CompletableFuture.completedFuture(acknowledgementAccepted);
                     }
                     case "editInteractionResponse" -> {
                       responses
@@ -466,8 +622,14 @@ class DiscordTicketDeskTest {
                           .complete(JsonUtils.parseObject(args[1].toString()));
                       yield CompletableFuture.completedFuture(true);
                     }
-                    case "recoverManagedTicket" -> CompletableFuture.completedFuture("200000");
+                    case "recoverManagedTicket" -> recoveryFailure==null?CompletableFuture.completedFuture(recoveredChannel):CompletableFuture.failedFuture(recoveryFailure);
+                    case "sendMessage" -> {
+                      lastReply=JsonUtils.parseObject(args[1].toString());replySends.incrementAndGet();
+                      yield CompletableFuture.completedFuture("100000000000"+ids.incrementAndGet());
+                    }
                     case "createManagedTicket" -> {
+                      creationCalls.incrementAndGet();
+                      if(creationFailure!=null) yield CompletableFuture.failedFuture(creationFailure);
                       created = (ManagedTicketRequest) args[0];
                       lastMembers = created.memberIds();
                       lastRoles = created.supervisorRoleIds();

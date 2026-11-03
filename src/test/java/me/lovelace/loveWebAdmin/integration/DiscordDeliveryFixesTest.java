@@ -9,6 +9,11 @@ import me.lovelace.loveWebAdmin.utils.ActionRejectedException;
 import org.junit.jupiter.api.Test;
 
 class DiscordDeliveryFixesTest {
+  @org.junit.jupiter.api.Test
+  void explicitChannelRejectionIsRetryableEvenWhenWrapped() {
+    org.junit.jupiter.api.Assertions.assertEquals(LoveCoreDiscordBridge.Outcome.RETRY,LoveCoreDiscordBridge.outcome(null,new java.util.concurrent.CompletionException(new java.util.concurrent.ExecutionException(new dev.lovelace.lovecore.api.discord.DiscordRequestRejectedException(403)))));
+    org.junit.jupiter.api.Assertions.assertEquals(LoveCoreDiscordBridge.Outcome.RETRY,LoveCoreDiscordBridge.outcome(null,new java.util.concurrent.CompletionException(new java.util.concurrent.ExecutionException(new IllegalArgumentException("Категория тикетов: указан текстовый канал")))));
+  }
   @Test
   void onlyALostAnswerNeedsAManualCheck() {
     assertEquals(LoveCoreDiscordBridge.Outcome.DELIVERED, LoveCoreDiscordBridge.outcome("123", null));

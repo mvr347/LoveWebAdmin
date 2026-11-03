@@ -13,9 +13,13 @@ final class PrivateDiscordMenus implements AutoCloseable {
   private final DiscordService service;
   private final DiscordActions authority;
 
-  private record View(int page, String kind, int id, int history) {
+  private record View(int page, String kind, int id, int history, String filter) {
     View(int page, String kind, int id) {
-      this(page, kind, id, 0);
+      this(page, kind, id, 0, "active");
+    }
+
+    View(int page, String kind, int id, int history) {
+      this(page, kind, id, history, "active");
     }
   }
 
@@ -36,15 +40,7 @@ final class PrivateDiscordMenus implements AutoCloseable {
 
   void register() {
     register("appeals", "Мои обращения", this::mine);
-    register(
-        "newcase",
-        "Создать обращение",
-        u ->
-            body(
-                "**Новое обращение**\nФорму и результат увидите только вы и допущенная модерация.",
-                List.of(
-                    button("lwa:desk:new:report", "Жалоба"),
-                    button("lwa:desk:new:appeal", "Апелляция"))));
+    register("newcase", "Создать обращение", this::newCase);
     register("penalties", "Мои наказания", this::penalties);
     try {
       service
@@ -77,6 +73,34 @@ final class PrivateDiscordMenus implements AutoCloseable {
     }
   }
 
+  private Map<String, Object> newCase(String owner) {
+    var buttons =
+        new ArrayList<Map<String, Object>>(
+            List.of(
+                button("lwa:desk:new:report", "Жалоба"),
+                button("lwa:desk:new:appeal", "Апелляция")));
+    try {
+      for (var draft : plugin.getDiscordBridge().ticketDeskStore().drafts(owner)) {
+        int step = ((Number) draft.data().getOrDefault("_step", 3)).intValue();
+        buttons.add(
+            button(
+                (step == 1 ? "lwa:desk:identity-edit:" : "lwa:desk:details:") + draft.id(),
+                "Продолжить "
+                    + (draft.kind().equals("report") ? "жалобу" : "апелляцию")
+                    + " · шаг "
+                    + Math.min(3, step)));
+      }
+    } catch (java.sql.SQLException error) {
+      throw new IllegalStateException("Не удалось загрузить черновики", error);
+    }
+    return body(
+        "**Новое обращение**\n"
+            + "Три шага: участник → описание и доказательства → проверка.\n"
+            + "Форму и результат видите только вы и допущенные сотрудники.\n"
+            + "Незавершённый черновик можно продолжить здесь в течение 10 минут.",
+        buttons);
+  }
+
   private Map<String, Object> mine(String owner) {
     try {
       View view = views.getOrDefault(owner, new View(0, "", 0));
@@ -84,6 +108,7 @@ final class PrivateDiscordMenus implements AutoCloseable {
       if (view.id > 0) {
         var t =
             store.get(view.kind, view.id).filter(row -> row.owner().equals(owner)).orElseThrow();
+        var work = plugin.moderation().work(t.kind(), t.id());
         var lines =
             new StringBuilder(
                 "**"
@@ -91,9 +116,45 @@ final class PrivateDiscordMenus implements AutoCloseable {
                     + " №"
                     + t.id()
                     + "**\nСтатус: "
-                    + state(t.state())
+                    + caseState(t, work)
                     + "\n");
+        String workState = Objects.toString(work.get("state"), "");
+        String assigned = Objects.toString(work.get("assignee"), "");
+        lines
+            .append("Ответственный: ")
+            .append(assigned.isBlank() ? "Ожидается назначение" : assigned)
+            .append("\n");
+        if (!t.state().equals("CLOSED"))
+          lines
+              .append("Далее: ")
+              .append(
+                  workState.equals("WAITING")
+                      ? "ответьте сотруднику — ожидается ваш ответ."
+                      : "можно дополнить обращение; сотрудник увидит сообщение.")
+              .append("\n");
         var controls = new ArrayList<Map<String, Object>>();
+        if (t.state().equals("OPEN") && !t.channel().isBlank()) {
+          controls.add(button("lwa:mine:reply:" + t.kind() + ":" + t.id(), "Ответить"));
+          controls.add(
+              Map.of(
+                  "type",
+                  2,
+                  "style",
+                  4,
+                  "label",
+                  "Отозвать обращение",
+                  "custom_id",
+                  "lwa:desk:form:close:" + t.kind() + ":" + t.id()));
+        } else if (t.state().equals("OPEN") && t.channel().isBlank()) {
+          String issue = store.creationError(t.kind(), t.id());
+          lines.append("Канал: ").append(issue.isBlank() ? "Создаётся" : issue).append("\n");
+          controls.add(
+              button(
+                  "lwa:mine:retry:" + t.kind() + ":" + t.id(),
+                  store.creationStarted(t.kind(), t.id())
+                      ? "Проверить создание канала"
+                      : "Повторить создание канала"));
+        }
         if (t.channel() != null && !t.channel().isBlank() && !t.state().equals("CLOSED"))
           controls.add(
               Map.of(
@@ -102,12 +163,20 @@ final class PrivateDiscordMenus implements AutoCloseable {
                   "style",
                   5,
                   "label",
-                  "Открыть переписку",
+                  "Переписка и файлы",
                   "url",
                   "https://discord.com/channels/"
                       + CoreDiscordExtensions.guild(service)
                       + "/"
                       + t.channel()));
+        store
+            .latestMessage(t.kind(), t.id())
+            .ifPresent(
+                message ->
+                    lines
+                        .append("\nПоследнее сообщение: ")
+                        .append(capMessage(message))
+                        .append("\n"));
         var transcript = store.transcript(t.kind(), t.id(), view.history * 5);
         int shown = 0;
         for (var message : transcript.stream().limit(5).toList()) {
@@ -140,12 +209,20 @@ final class PrivateDiscordMenus implements AutoCloseable {
         result.put("components", rows);
         return result;
       }
-      var tickets = store.owned(owner, view.page * 5);
+      var tickets = store.owned(owner, view.filter, view.page * 5);
       var buttons = new ArrayList<Map<String, Object>>();
-      var lines = new StringBuilder("**Мои обращения**\nСтраница " + (view.page + 1) + "\n");
+      var lines =
+          new StringBuilder(
+              "**Мои обращения**\n"
+                  + (view.filter.equals("closed") ? "Завершённые" : "Активные")
+                  + " · Страница "
+                  + (view.page + 1)
+                  + "\n");
       for (var t : tickets.stream().limit(5).toList()) {
         String label = (t.kind().equals("report") ? "Жалоба" : "Апелляция") + " №" + t.id();
-        lines.append("\n").append(label).append(" · ").append(state(t.state()));
+        var work = plugin.moderation().work(t.kind(), t.id());
+        String status = caseState(t, work);
+        lines.append("\n").append(label).append(" · ").append(status);
         buttons.add(button("lwa:mine:open:" + t.kind() + ":" + t.id(), label));
       }
       if (tickets.isEmpty()) lines.append("\nОбращений пока нет.");
@@ -155,6 +232,10 @@ final class PrivateDiscordMenus implements AutoCloseable {
       if (view.page > 0) navigation.add(button("lwa:mine:page:" + (view.page - 1), "Предыдущая"));
       if (tickets.size() > 5)
         navigation.add(button("lwa:mine:page:" + (view.page + 1), "Следующая"));
+      navigation.add(
+          button(
+              "lwa:mine:filter:" + (view.filter.equals("closed") ? "active" : "closed"),
+              view.filter.equals("closed") ? "Активные" : "Завершённые"));
       navigation.add(button("lwa:mine:page:" + view.page, "Обновить"));
       rows.add(Map.of("type", 1, "components", navigation));
       result.put("components", rows);
@@ -247,7 +328,7 @@ final class PrivateDiscordMenus implements AutoCloseable {
           .append(": ")
           .append(b.ruleReason())
           .append("\nСрок: ")
-          .append(b.expiresAt() < 0 ? "бессрочно" : "<t:" + b.expiresAt() + ":R>")
+          .append(b.expiresAt() <= 0 ? "бессрочно" : "<t:" + b.expiresAt() + ":R>")
           .append("\n");
       buttons.add(button("lwa:appeal:new:" + b.id(), "Обжаловать №" + b.id()));
     }
@@ -256,114 +337,237 @@ final class PrivateDiscordMenus implements AutoCloseable {
   }
 
   boolean interaction(DiscordInteraction i) {
-    if (!i.name().equals("мои-обращения") && !i.name().startsWith("lwa:mine:")) return false;
+    if (i.name().equals("мои-обращения") || i.name().equals("lwa:desk:mine")) {
+      openFromInteraction(i);
+      return true;
+    }
+    if (!i.name().startsWith("lwa:mine:")) return false;
+    if (i.name().startsWith("lwa:mine:reply:")) {
+      var field =
+          Map.<String, Object>of(
+              "type",
+              4,
+              "custom_id",
+              "text",
+              "label",
+              "Сообщение сотруднику",
+              "style",
+              2,
+              "required",
+              true,
+              "min_length",
+              5,
+              "max_length",
+              1800);
+      var modal =
+          Map.of(
+              "custom_id",
+              i.name().replace(":reply:", ":send:"),
+              "title",
+              "Ответить по обращению",
+              "components",
+              List.of(Map.of("type", 1, "components", List.of(field))));
+      service.respond(i, JsonUtils.toJson(Map.of("type", 9, "data", modal)));
+      return true;
+    }
     service
         .respond(
             i,
-            i.name().startsWith("lwa:mine:")
-                ? "{\"type\":6}"
-                : JsonUtils.toJson(
-                    Map.of(
-                        "type",
-                        4,
-                        "data",
-                        Map.of("content", "Обращения открыты в личном меню бота.", "flags", 64))))
-        .thenRun(
-            () ->
-                plugin
-                    .io()
-                    .run(
-                        () -> {
-                          try {
-                            if (i.name().startsWith("lwa:mine:file:")) {
-                              String[] parts = i.name().split(":");
-                              String kind = parts[3];
-                              int id = Integer.parseInt(parts[4]);
-                              int fileId = Integer.parseInt(parts[5]);
-                              var store = plugin.getDiscordBridge().ticketDeskStore();
-                              store
-                                  .get(kind, id)
-                                  .filter(t -> t.owner().equals(i.userId()))
-                                  .orElseThrow();
-                              var meta =
-                                  store.files(kind, id).stream()
-                                      .filter(
-                                          file -> ((Number) file.get("id")).intValue() == fileId)
-                                      .findFirst()
-                                      .orElseThrow();
-                              byte[] bytes = store.file(kind, id, fileId).orElseThrow();
-                              @SuppressWarnings("unchecked")
-                              var sent =
-                                  (CompletableFuture<String>)
-                                      service
-                                          .getClass()
-                                          .getMethod(
-                                              "sendDirectAttachment",
-                                              String.class,
-                                              String.class,
-                                              byte[].class)
-                                          .invoke(
-                                              service,
-                                              i.userId(),
-                                              meta.get("name").toString(),
-                                              bytes);
-                              sent.thenAccept(
-                                  message ->
+            i.name().startsWith("lwa:mine:send:")
+                ? "{\"type\":5,\"data\":{\"flags\":64}}"
+                : "{\"type\":6}")
+        .thenAccept(
+            acknowledged -> {
+              if (!Boolean.TRUE.equals(acknowledged)) return;
+              plugin
+                  .io()
+                  .run(
+                      () -> {
+                        try {
+                          if (!plugin.operations().allow("discord:" + i.userId()))
+                            throw new IllegalArgumentException(
+                                "Слишком много нажатий. Подождите минуту.");
+                          if (i.name().startsWith("lwa:mine:filter:")) {
+                            String filter = i.name().substring("lwa:mine:filter:".length());
+                            if (!Set.of("active", "closed").contains(filter))
+                              throw new IllegalArgumentException();
+                            views.put(i.userId(), new View(0, "", 0, 0, filter));
+                          } else if (i.name().startsWith("lwa:mine:retry:")) {
+                            String[] parts = i.name().split(":");
+                            var ticket =
+                                plugin
+                                    .getDiscordBridge()
+                                    .ticketDeskStore()
+                                    .get(parts[3], Integer.parseInt(parts[4]))
+                                    .filter(t -> t.owner().equals(i.userId()))
+                                    .orElseThrow();
+                            plugin
+                                .getDiscordBridge()
+                                .ticketDesk()
+                                .create(ticket.kind(), ticket.id(), i.userId())
+                                .handle((channel, error) -> null)
+                                .get(50, TimeUnit.SECONDS);
+                          } else if (i.name().startsWith("lwa:mine:send:")) {
+                            String[] parts = i.name().split(":");
+                            plugin
+                                .getDiscordBridge()
+                                .ticketDesk()
+                                .replyFromOwner(
+                                    parts[3],
+                                    Integer.parseInt(parts[4]),
+                                    i.userId(),
+                                    i.id(),
+                                    i.values().getOrDefault("text", ""));
+                          } else if (i.name().startsWith("lwa:mine:file:")) {
+                            String[] parts = i.name().split(":");
+                            String kind = parts[3];
+                            int id = Integer.parseInt(parts[4]);
+                            int fileId = Integer.parseInt(parts[5]);
+                            var store = plugin.getDiscordBridge().ticketDeskStore();
+                            store
+                                .get(kind, id)
+                                .filter(t -> t.owner().equals(i.userId()))
+                                .orElseThrow();
+                            var meta =
+                                store.files(kind, id).stream()
+                                    .filter(file -> ((Number) file.get("id")).intValue() == fileId)
+                                    .findFirst()
+                                    .orElseThrow();
+                            byte[] bytes = store.file(kind, id, fileId).orElseThrow();
+                            @SuppressWarnings("unchecked")
+                            var sent =
+                                (CompletableFuture<String>)
+                                    service
+                                        .getClass()
+                                        .getMethod(
+                                            "sendDirectAttachment",
+                                            String.class,
+                                            String.class,
+                                            byte[].class)
+                                        .invoke(
+                                            service,
+                                            i.userId(),
+                                            meta.get("name").toString(),
+                                            bytes);
+                            sent.thenAccept(
+                                message ->
+                                    service.editResponse(
+                                        i,
+                                        message == null
+                                            ? "Не удалось отправить вложение."
+                                            : "Вложение отправлено в личные сообщения."));
+                            return;
+                          } else if (i.name().startsWith("lwa:mine:history:")) {
+                            var old = views.get(i.userId());
+                            if (old == null || old.id <= 0) throw new IllegalArgumentException();
+                            int page =
+                                Math.clamp(
+                                    Integer.parseInt(
+                                        i.name().substring("lwa:mine:history:".length())),
+                                    0,
+                                    10000);
+                            views.put(
+                                i.userId(), new View(old.page, old.kind, old.id, page, old.filter));
+                          } else if (i.name().startsWith("lwa:mine:open:")) {
+                            String[] p = i.name().split(":");
+                            int id = Integer.parseInt(p[4]);
+                            String kind = p[3];
+                            var t =
+                                plugin
+                                    .getDiscordBridge()
+                                    .ticketDeskStore()
+                                    .get(kind, id)
+                                    .filter(row -> row.owner().equals(i.userId()))
+                                    .orElseThrow();
+                            views.put(
+                                i.userId(),
+                                new View(
+                                    views.getOrDefault(i.userId(), new View(0, "", 0)).page,
+                                    t.kind(),
+                                    t.id(),
+                                    0,
+                                    views.getOrDefault(i.userId(), new View(0, "", 0)).filter));
+                          } else if (i.name().startsWith("lwa:mine:page:")) {
+                            int page =
+                                Integer.parseInt(i.name().substring("lwa:mine:page:".length()));
+                            var old = views.getOrDefault(i.userId(), new View(0, "", 0));
+                            views.put(
+                                i.userId(),
+                                new View(Math.clamp(page, 0, 10000), "", 0, 0, old.filter));
+                          }
+                          open(i.userId())
+                              .thenAccept(
+                                  ok -> {
+                                    if (i.name().startsWith("lwa:mine:send:"))
                                       service.editResponse(
                                           i,
-                                          message == null
-                                              ? "Не удалось отправить вложение."
-                                              : "Вложение отправлено в личные сообщения."));
-                              return;
-                            } else if (i.name().startsWith("lwa:mine:history:")) {
-                              var old = views.get(i.userId());
-                              if (old == null || old.id <= 0) throw new IllegalArgumentException();
-                              int page =
-                                  Math.clamp(
-                                      Integer.parseInt(
-                                          i.name().substring("lwa:mine:history:".length())),
-                                      0,
-                                      10000);
-                              views.put(i.userId(), new View(old.page, old.kind, old.id, page));
-                            } else if (i.name().startsWith("lwa:mine:open:")) {
-                              String[] p = i.name().split(":");
-                              int id = Integer.parseInt(p[4]);
-                              String kind = p[3];
-                              var t =
-                                  plugin
-                                      .getDiscordBridge()
-                                      .ticketDeskStore()
-                                      .get(kind, id)
-                                      .filter(row -> row.owner().equals(i.userId()))
-                                      .orElseThrow();
-                              views.put(
-                                  i.userId(),
-                                  new View(
-                                      views.getOrDefault(i.userId(), new View(0, "", 0)).page,
-                                      t.kind(),
-                                      t.id()));
-                            } else if (i.name().startsWith("lwa:mine:page:")) {
-                              int page =
-                                  Integer.parseInt(i.name().substring("lwa:mine:page:".length()));
-                              views.put(i.userId(), new View(Math.clamp(page, 0, 10000), "", 0));
-                            }
-                            open(i.userId());
-                          } catch (Exception error) {
-                            service.editResponse(i, "Обращение недоступно.");
-                          }
-                        }));
+                                          Boolean.TRUE.equals(ok)
+                                              ? "Сообщение отправлено сотруднику."
+                                              : "Сообщение отправлено. Откройте личное меню ещё"
+                                                  + " раз.");
+                                  });
+                        } catch (Exception error) {
+                          service.editResponse(
+                              i,
+                              error instanceof IllegalArgumentException
+                                  ? error.getMessage()
+                                  : "Не удалось выполнить действие. Проверьте переписку перед"
+                                      + " повтором.");
+                        }
+                      });
+            });
     return true;
   }
 
-  void open(String owner) throws Exception {
+  private void openFromInteraction(DiscordInteraction i) {
     service
-        .getClass()
-        .getMethod("openPrivateMenu", String.class, String.class)
-        .invoke(service, owner, "appeals");
+        .respond(i, JsonUtils.toJson(Map.of("type", 5, "data", Map.of("flags", 64))))
+        .thenAccept(
+            acknowledged -> {
+              if (!Boolean.TRUE.equals(acknowledged)) return;
+              plugin
+                  .io()
+                  .run(
+                      () -> {
+                        if (!plugin.operations().allow("discord:" + i.userId())) {
+                          service.editInteractionResponse(
+                              i,
+                              JsonUtils.toJson(
+                                  body("Слишком много нажатий. Подождите минуту.", List.of())));
+                          return;
+                        }
+                        open(i.userId())
+                            .handle(
+                                (opened, error) ->
+                                    Boolean.TRUE.equals(opened) && error == null
+                                        ? "Мои обращения открыты в личных сообщениях бота."
+                                        : "Не удалось открыть личные сообщения. Разрешите сообщения"
+                                            + " от участников этого сервера в настройках"
+                                            + " конфиденциальности Discord и нажмите «Мои"
+                                            + " обращения» ещё раз.")
+                            .thenCompose(
+                                message ->
+                                    service.editInteractionResponse(
+                                        i,
+                                        JsonUtils.toJson(
+                                            Map.of(
+                                                "content",
+                                                message,
+                                                "components",
+                                                List.of(),
+                                                "allowed_mentions",
+                                                Map.of("parse", List.of())))));
+                      });
+            });
+  }
+
+  CompletableFuture<Boolean> open(String owner) {
+    return CoreDiscordExtensions.managed(
+        service, "openPrivateMenu", new Class<?>[] {String.class, String.class}, owner, "appeals");
   }
 
   static Map<String, Object> button(String id, String label) {
-    return Map.of("type", 2, "style", 2, "custom_id", id, "label", label);
+    return Map.of("type", 2, "style", 1, "custom_id", id, "label", label);
   }
 
   static Map<String, Object> body(String content, List<Map<String, Object>> controls) {
@@ -373,15 +577,31 @@ final class PrivateDiscordMenus implements AutoCloseable {
     out.put(
         "components",
         controls.isEmpty() ? List.of() : List.of(Map.of("type", 1, "components", controls)));
-    return out;
+    return DiscordCards.decorate(
+        out,
+        content.contains("Закрыто")
+            ? DiscordCards.GRAY
+            : content.contains("ожидается ваш ответ") ? DiscordCards.AMBER : DiscordCards.BLUE);
   }
 
   private static String capMessage(String value) {
-    return value.length() > 240 ? value.substring(0, 240) + "…" : value;
+    return value.length() > 240 ? DiscordCards.cap(value, 240) + "…" : value;
   }
 
   private static String cap(String value) {
-    return value.length() > 1900 ? value.substring(0, 1900) : value;
+    return DiscordCards.cap(value, 1900);
+  }
+
+  private static String caseState(
+      me.lovelace.loveWebAdmin.database.TicketDeskStore.Ticket ticket, Map<String, Object> work) {
+    if (ticket.state().equals("CLOSED")) return "Завершено";
+    if (Set.of("CLOSING", "ARCHIVED").contains(ticket.state())) return "Сохраняется история";
+    return switch (Objects.toString(work.get("state"), "")) {
+      case "WAITING" -> "Нужен ваш ответ";
+      case "IN_PROGRESS" -> "В работе";
+      case "CLOSED" -> "Рассмотрение завершено";
+      default -> "Ожидает сотрудника";
+    };
   }
 
   private static String state(String state) {

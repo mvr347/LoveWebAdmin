@@ -12,6 +12,40 @@ class TicketDeskStoreTest {
   @TempDir Path dir;
 
   @Test
+  void privateFiltersPrioritizeWaitingCasesAndPreserveOwnershipAfterRestart() throws Exception {
+    Path file=dir.resolve("filters.db");
+    try(var store=new TicketDeskStore(file)) {
+      store.register("report",1,"owner");store.register("report",2,"owner");store.register("report",3,"other");store.register("appeal",4,"owner");
+      store.workDisplay("report",1,"WAITING","Moderator");
+      store.beginClose("appeal",4,"System","Closed");store.transition("appeal",4,"CLOSING","ARCHIVED");store.transition("appeal",4,"ARCHIVED","CLOSED");
+      assertEquals(List.of(1,2),store.owned("owner","active",0).stream().map(TicketDeskStore.Ticket::id).toList());
+      assertEquals(List.of(4),store.owned("owner","closed",0).stream().map(TicketDeskStore.Ticket::id).toList());
+    }
+    try(var store=new TicketDeskStore(file)) {
+      assertEquals(1,store.owned("owner","active",0).getFirst().id());
+      assertTrue(store.owned("stranger","active",0).isEmpty());
+    }
+  }
+
+  @Test
+  void draftEditsAreDurableAndCannotChangeAnotherOwnersOrConsumedForm() throws Exception {
+    Path file=dir.resolve("draft-edit.db");String id;
+    try(var store=new TicketDeskStore(file)) {
+      id=store.draft("owner","report",Map.of("_step",2));
+      String key=id;
+      assertThrows(IllegalArgumentException.class,()->store.updateDraft(key,"other",Map.of("_step",3)));
+      store.updateDraft(id,"owner",Map.of("_step",3,"reason","Проверить нарушение"));
+      assertEquals(1,store.drafts("owner").size());assertTrue(store.drafts("other").isEmpty());
+    }
+    try(var store=new TicketDeskStore(file)) {
+      assertEquals(3,((Number)store.draft(id,"owner").data().get("_step")).intValue());
+      store.consume(id,"owner",false);
+      String key=id;
+      assertThrows(IllegalArgumentException.class,()->store.updateDraft(key,"owner",Map.of("_step",2)));
+    }
+  }
+
+  @Test
   void confirmationIsOwnedAndAdmittedOnce() throws Exception {
     try (var store = new TicketDeskStore(dir.resolve("desk.db"));
         var pool = Executors.newVirtualThreadPerTaskExecutor()) {

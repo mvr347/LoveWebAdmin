@@ -1,12 +1,17 @@
+import {
+  bindValidation,
+  refreshValidation,
+} from "./js/core/form-validation.js";
 import { installCaseWorkflow } from "./js/core/case-workflow.js";
 import { requestFetch } from "./js/core/requests.js";
 import { installWorkspace, confirmDialog } from "./js/core/workspace.js";
-installWorkspace();
-(() => {
-  "use strict";
+export function mountCase({ root = document, search = location.search } = {}) {
+  let alive = true;
+  const lifetime = new AbortController();
+  ("use strict");
   const browserStorage = window.LovePreview?.storage || window.localStorage;
-  const $ = (id) => document.getElementById(id),
-    q = new URLSearchParams(location.search),
+  const $ = (id) => root.querySelector("#" + CSS.escape(id)),
+    q = new URLSearchParams(search),
     kind = q.get("kind"),
     id = q.get("id");
   let data,
@@ -17,6 +22,7 @@ installWorkspace();
   async function api(method, path, body) {
     const r = await requestFetch(path, {
       method,
+      signal: lifetime.signal,
       headers: {
         Authorization: "Bearer " + (key || ""),
         "Content-Type": "application/json",
@@ -24,10 +30,12 @@ installWorkspace();
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     const j = await r.json();
+    if (!alive) throw new DOMException("Дело закрыто", "AbortError");
     if (!r.ok || !j.success) throw Error(j.error || "Запрос не выполнен");
     return j.data;
   }
   function fail(e) {
+    if (!alive || e.name === "AbortError") return;
     $("status").textContent = e.message;
     $("status").className = "error";
   }
@@ -112,11 +120,17 @@ installWorkspace();
       button.disabled = archiveOffset < 0;
     }
   };
+  const decisionScope = $("verdict").closest("section");
+  decisionScope.dataset.validationScope = "";
+  $("verdict").required = true;
+  $("reduce").dataset.requires = "#remaining";
+  bindValidation(decisionScope, [$("approve"), $("reject"), $("reduce")]);
   const workflow = installCaseWorkflow({
     api,
     context: () => ({ kind, id, identity }),
     reload: load,
     fail,
+    root,
   });
   async function load() {
     if (!["report", "appeal"].includes(kind) || !/^\d+$/.test(id))
@@ -134,11 +148,12 @@ installWorkspace();
     const manage =
       can(kind === "report" ? "MANAGE_REPORTS" : "MANAGE_APPEALS") &&
       d.status === "PENDING";
-    for (const form of document.querySelectorAll("form"))
+    for (const form of root.querySelectorAll("form"))
       for (const input of form.querySelectorAll(
         "button,input,textarea,select",
       )) {
         input.disabled = !manage;
+        input.dataset.permissionDisabled = String(!manage);
         input.title = manage
           ? ""
           : d.status !== "PENDING"
@@ -151,6 +166,7 @@ installWorkspace();
         (kind === "appeal" &&
           ["approve", "reduce"].includes(name) &&
           !can("MANAGE_BANS"));
+      $(name).dataset.permissionDisabled = String($(name).disabled);
       $(name).title = $(name).disabled
         ? "Действие недоступно: проверьте права и состояние дела"
         : "";
@@ -261,8 +277,15 @@ installWorkspace();
     $("appeal").hidden = kind !== "appeal";
     if (kind === "appeal") messages("messages", data.messages || []);
     await workflow.render();
+    refreshValidation(decisionScope);
     $("remaining").hidden = kind !== "appeal";
     $("reduce").hidden = kind !== "appeal";
+    const durationLabel = root.querySelector('label[for="remaining"]');
+    if (durationLabel) durationLabel.hidden = kind !== "appeal";
+    $("approve").textContent =
+      kind === "report" ? "Подтвердить жалобу" : "Одобрить апелляцию";
+    $("reject").textContent =
+      kind === "report" ? "Отклонить жалобу" : "Отклонить апелляцию";
     $("status").textContent =
       "Обновлено: " + new Date().toLocaleTimeString("ru-RU");
   }
@@ -337,6 +360,18 @@ installWorkspace();
     $("evidence-type").value = "CHAT";
     $("evidence-value").value = selected;
   };
+  const evidenceMode = () => {
+    const type = $("evidence-type").value;
+    $("evidence-file").hidden = type !== "IMAGE";
+    $("evidence-value").placeholder =
+      type === "LINK"
+        ? "Полная ссылка https://…"
+        : type === "IMAGE"
+          ? "Что подтверждает скриншот"
+          : "Описание или выбранные сообщения";
+  };
+  $("evidence-type").addEventListener("change", evidenceMode);
+  evidenceMode();
   $("evidence-form").onsubmit = async (event) => {
     event.preventDefault();
     try {
@@ -364,4 +399,12 @@ installWorkspace();
     }
   };
   load().catch(fail);
-})();
+  return () => {
+    alive = false;
+    lifetime.abort();
+  };
+}
+if (location.pathname.endsWith("/case.html")) {
+  installWorkspace();
+  mountCase();
+}
