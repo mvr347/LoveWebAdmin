@@ -116,7 +116,8 @@ public class LoveCoreDiscordBridge implements Listener {
                               }
                               try {
                                 for (var ticket : store.tickets())
-                                  if (database
+                                  if (ticket.get("kind").equals("report")
+                                      && database
                                       .getReportById(((Number) ticket.get("id")).intValue())
                                       .filter(report -> report.status().equals("PENDING"))
                                       .isPresent())
@@ -131,6 +132,18 @@ public class LoveCoreDiscordBridge implements Listener {
                                 if (appeal.discordChannelId() != null)
                                   service.restoreTicket(
                                       String.valueOf(appeal.id()), appeal.discordChannelId());
+                              try {
+                                for (var ticket : this.ticketDeskStore.active())
+                                  if (ticket.kind().equals("support")
+                                      && ticket.state().equals("OPEN")
+                                      && !ticket.channel().isBlank())
+                                    service.restoreTicket(
+                                        TicketType.SUPPORT,
+                                        "support:" + ticket.id(),
+                                        ticket.channel());
+                              } catch (java.sql.SQLException error) {
+                                throw new IllegalStateException(error);
+                              }
                             }
                             deliver(service);
                             ticketDesk.tick();
@@ -910,6 +923,7 @@ public class LoveCoreDiscordBridge implements Listener {
   }
 
   public void notifyTicketCreated(String kind, int id) {
+    if (kind.equals("support")) return; // support has no staff notice outside its own channel
     if (kind.equals("appeal")) database.getAppealById(id).ifPresent(this::notifyAppealCreated);
     else database.getReportById(id).ifPresent(report -> notifyReportCreated(report, true));
   }

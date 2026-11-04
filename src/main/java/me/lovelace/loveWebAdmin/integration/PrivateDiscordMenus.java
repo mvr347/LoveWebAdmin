@@ -121,7 +121,11 @@ final class PrivateDiscordMenus implements AutoCloseable {
                     ? button("lwa:desk:new:appeal", "Апелляция")
                     : button("lc:menu:loginhelp", "Не могу войти")));
     try {
+      var topics = plugin.getDiscordBridge().ticketDesk().supportTopics();
+      if (topics.enabled()) buttons.add(button("lwa:desk:new:support", "Поддержка"));
       for (var draft : plugin.getDiscordBridge().ticketDeskStore().drafts(owner)) {
+        // A support draft is already at the review step; it is confirmed from its own message.
+        if (draft.kind().equals("support")) continue;
         int step = ((Number) draft.data().getOrDefault("_step", 3)).intValue();
         buttons.add(
             button(
@@ -153,7 +157,7 @@ final class PrivateDiscordMenus implements AutoCloseable {
         var lines =
             new StringBuilder(
                 "**"
-                    + (t.kind().equals("report") ? "Жалоба" : "Апелляция")
+                    + DiscordTicketDesk.caseLabel(t.kind())
                     + " №"
                     + t.id()
                     + "**\nСтатус: "
@@ -271,7 +275,7 @@ final class PrivateDiscordMenus implements AutoCloseable {
                   + (view.page + 1)
                   + "\n");
       for (var t : tickets.stream().limit(5).toList()) {
-        String label = (t.kind().equals("report") ? "Жалоба" : "Апелляция") + " №" + t.id();
+        String label = DiscordTicketDesk.caseLabel(t.kind()) + " №" + t.id();
         var work = plugin.moderation().work(t.kind(), t.id());
         String status = caseState(t, work);
         lines.append("\n").append(label).append(" · ").append(status);
@@ -330,15 +334,13 @@ final class PrivateDiscordMenus implements AutoCloseable {
         if (authority
             .staffMember(
                 owner,
-                ticket.kind().equals("report")
-                    ? me.lovelace.loveWebAdmin.models.Permission.MANAGE_REPORTS
-                    : me.lovelace.loveWebAdmin.models.Permission.MANAGE_APPEALS)
+                DiscordTicketDesk.permission(ticket.kind()))
             .isEmpty()) continue;
         if (!assignee.equals(admin.username())
             || ticket.channel().isBlank()
             || ticket.state().equals("CLOSED")) continue;
         String label =
-            (ticket.kind().equals("report") ? "Жалоба" : "Апелляция") + " №" + ticket.id();
+            DiscordTicketDesk.caseLabel(ticket.kind()) + " №" + ticket.id();
         lines.append("\n").append(label);
         if (buttons.size() < 5)
           buttons.add(
@@ -631,9 +633,16 @@ final class PrivateDiscordMenus implements AutoCloseable {
     var out = new LinkedHashMap<String, Object>();
     out.put("content", content);
     out.put("allowed_mentions", Map.of("parse", List.of()));
-    out.put(
-        "components",
-        controls.isEmpty() ? List.of() : List.of(Map.of("type", 1, "components", controls)));
+    // Discord allows at most five buttons in a row and five rows in a message.
+    var rows = new ArrayList<Map<String, Object>>();
+    for (int from = 0; from < controls.size() && rows.size() < 5; from += 5)
+      rows.add(
+          Map.of(
+              "type",
+              1,
+              "components",
+              List.copyOf(controls.subList(from, Math.min(controls.size(), from + 5)))));
+    out.put("components", rows);
     return DiscordCards.decorate(
         out,
         content.contains("Закрыто")

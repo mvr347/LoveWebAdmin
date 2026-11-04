@@ -514,10 +514,36 @@ public final class DiscordActions implements DiscordInteractionListener, TicketM
     return plugin.getConfig().getString("web.public-url", "").replaceAll("/+$", "");
   }
 
+  /**
+   * A message in a support channel: answer from staff reaches the author as a direct message. The
+   * conversation itself stays in the channel and is archived when the request is closed.
+   */
+  private boolean supportMessage(TicketMessage msg) throws Exception {
+    var desk = plugin.getDiscordBridge().ticketDesk();
+    var ticket =
+        desk.store().active().stream()
+            .filter(
+                t ->
+                    t.kind().equals("support")
+                        && !t.channel().isBlank()
+                        && t.channel().equals(msg.channelId()))
+            .findFirst();
+    if (ticket.isEmpty()) return false;
+    var t = ticket.get();
+    if (!t.state().equals("OPEN") || t.owner().equals(msg.authorId())) return true;
+    if (!desk.permitsMessage("support", t.id(), msg.authorId())) return true;
+    String content = conversationText(msg);
+    if (!content.isBlank())
+      desk.notifyOwner(
+          "support", t.id(), "message:" + msg.messageId(), "Ответ по обращению №" + t.id(), content);
+    return true;
+  }
+
   @Override
   public void onTicketMessage(TicketMessage msg) {
     if (closed) return;
     try {
+      if (supportMessage(msg)) return;
       var ticket =
           plugin.moderation().tickets().stream()
               .filter(
