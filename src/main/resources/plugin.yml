@@ -12,7 +12,7 @@ softdepend: [LuckPerms, Vesuvio, LoveAuth]
 commands:
   lovewebadmin:
     description: LoveWebAdmin управление
-    usage: /lovewebadmin <reload>
+    usage: /lovewebadmin <reload|info|generatetoken|resetowner|discord purge>
     aliases: [ lwa ]
     permission: lovewebadmin.admin
     permission-message: ""

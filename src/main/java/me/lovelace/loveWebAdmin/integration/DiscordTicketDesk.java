@@ -25,6 +25,8 @@ public final class DiscordTicketDesk {
       new me.lovelace.loveWebAdmin.utils.SubmissionLimiter();
   private final Object writes = new Object();
   private final Map<String, Long> retryAfter = new ConcurrentHashMap<>();
+  /** Last warning logged per ticket, so an unchanged failure is not repeated every minute. */
+  private final Map<String, String> lastWarning = new ConcurrentHashMap<>();
   private volatile boolean closed;
   private volatile DiscordService service;
   private DiscordActions actions;
@@ -237,6 +239,33 @@ public final class DiscordTicketDesk {
         .get(45, TimeUnit.SECONDS);
   }
 
+  /**
+   * Test tool: deletes every message the bot wrote in the guild text channels and known direct
+   * messages. Stored message ids become dangling on purpose: publishing edits a deleted message,
+   * gets 404 and creates a replacement, so the panel and cards come back by themselves.
+   */
+  public int purgeBotMessages(java.util.function.Consumer<String> out) throws Exception {
+    if (service == null || !service.isEnabled()) throw new IllegalStateException("Бот Discord выключен");
+    List<String> channels = call("listPurgeableChannels", new Class<?>[] {});
+    int total = 0;
+    for (String channel : channels) {
+      try {
+        Integer deleted =
+            CoreDiscordExtensions.<Integer>managed(
+                    service, "purgeOwnMessages", new Class<?>[] {String.class}, channel)
+                .get(10, TimeUnit.MINUTES);
+        total += deleted == null ? 0 : deleted;
+        out.accept(channel + " → удалено " + deleted);
+      } catch (Exception error) {
+        out.accept(channel + " → пропущен: " + DiscordMessagePublisher.explanation(error));
+      }
+    }
+    published.clear();
+    publishedBodies.clear();
+    retryAfter.clear();
+    return total;
+  }
+
   private String publish(String slot, String channel, Map<String, Object> payload)
       throws Exception {
     String json = JsonUtils.toJson(payload),
@@ -359,15 +388,20 @@ public final class DiscordTicketDesk {
                       }
                     } else finishClose(ticket);
                     retryAfter.remove(retryKey);
+                    if (lastWarning.remove(retryKey) != null)
+                      plugin
+                          .getLogger()
+                          .info("Обращение №" + ticket.id() + ": синхронизация восстановлена");
                   } catch (Exception error) {
                     retryAfter.put(retryKey, System.currentTimeMillis() + 60000);
-                    plugin
-                        .getLogger()
-                        .warning(
-                            "Обращение №"
-                                + ticket.id()
-                                + ": " + (ticket.channel().isBlank() ? "канал не создан. " : "Канал сохранён. ")
-                                + ticketFailure(ticket,error));
+                    String warning =
+                        "Обращение №"
+                            + ticket.id()
+                            + ": "
+                            + (ticket.channel().isBlank() ? "канал не создан. " : "Канал сохранён. ")
+                            + ticketFailure(ticket, error);
+                    if (!warning.equals(lastWarning.put(retryKey, warning)))
+                      plugin.getLogger().warning(warning);
                   }
                 }
                 reminders.scan();
@@ -390,6 +424,54 @@ public final class DiscordTicketDesk {
     try {
       return DiscordTicketFailure.describe(new java.util.concurrent.RejectedExecutionException("Не удалось проверить каналы обращения; новый канал не создавался",error),store.creationStarted(ticket.kind(),ticket.id()));
     }catch(java.sql.SQLException unavailable) {return "Не удалось прочитать состояние создания канала из базы; обращение не удалено";}
+  }
+
+  /** Discord confirmed (HTTP 404) or the core already forgot the channel: it no longer exists. */
+  static boolean channelGone(Throwable error) {
+    for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+      if (cause instanceof IllegalArgumentException
+          && "Канал не является активным обращением".equals(cause.getMessage())) return true;
+      try {
+        if (((Number) cause.getClass().getMethod("getStatusCode").invoke(cause)).intValue() == 404)
+          return true;
+      } catch (ReflectiveOperationException ignored) {
+      }
+    }
+    return false;
+  }
+
+  /** Reconcile a lost creation result without staff once Discord can no longer answer late. */
+  long autoReconcileMs = 3 * 60_000L; // package-private: tests shorten it
+
+  private boolean reconcileLostCreation(TicketDeskStore.Ticket ticket) throws Exception {
+    if (!ticket.channel().isBlank() || !store.creationStarted(ticket.kind(), ticket.id()))
+      return false;
+    long at = store.creationAt(ticket.kind(), ticket.id());
+    if (at <= 0 || System.currentTimeMillis() - at < autoReconcileMs) return false;
+    boolean report = ticket.kind().equals("report");
+    Boolean pending;
+    try {
+      var type = report ? TicketType.REPORT : TicketType.BAN_APPEAL;
+      String key = report ? "report:" + ticket.id() : String.valueOf(ticket.id());
+      pending =
+          (Boolean)
+              Objects.requireNonNull(service)
+                  .getClass()
+                  .getMethod("isTicketCreationPending", TicketType.class, String.class)
+                  .invoke(service, type, key);
+    } catch (ReflectiveOperationException oldCore) {
+      return false; // An older core cannot confirm that nothing is in flight: stay manual.
+    }
+    if (Boolean.TRUE.equals(pending)) return false;
+    store.creationFailed(
+        ticket.kind(),
+        ticket.id(),
+        "Автосверка: канал не найден, создание не выполняется; повтор разрешён",
+        true);
+    plugin
+        .getLogger()
+        .info("Обращение " + ticket.kind() + " №" + ticket.id() + ": автосверка, повторное создание канала");
+    return true;
   }
 
   private String closureReason(TicketDeskStore.Ticket ticket) {
@@ -522,6 +604,11 @@ public final class DiscordTicketDesk {
 
   private void sync(TicketDeskStore.Ticket ticket) throws Exception {
     ticket = recoverChannel(ticket);
+    if (ticket.channel().isBlank() && reconcileLostCreation(ticket)) {
+      create(ticket.kind(), ticket.id(), ticket.owner().isBlank() ? null : ticket.owner())
+          .handle((channel, error) -> null);
+      return;
+    }
     if (ticket.channel().isBlank()) throw new IllegalStateException("Канал ещё не создан: "+store.creationError(ticket.kind(),ticket.id()));
     if (!ticket.state().equals("OPEN")) return;
     var members = members(ticket);
@@ -585,7 +672,7 @@ public final class DiscordTicketDesk {
                     + "\n\n"
                     + description.substring(0, Math.min(description.length(), 900))
                     + "\n\nПереписка и вложения сохраняются. Закрытие канала не снимает наказание.",
-                controls(ticket)));
+                channelControls(ticket)));
     String queue = ticket.queueCard();
     if (!queueChannel.isBlank())
       queue =
@@ -608,6 +695,20 @@ public final class DiscordTicketDesk {
                                   1))))));
     store.display(ticket.kind(), ticket.id(), card, queue, acl);
     plugin.getDiscordBridge().notifyAssigned(ticket.kind(),ticket.id(),assigned,ticket.channel());
+  }
+
+  /**
+   * Buttons on the card inside the private channel. The author sits in that channel and Discord
+   * cannot hide a button from one member, so the staff actions are not placed here: only an entry
+   * point whose result is an ephemeral panel, visible to the staff member who pressed it.
+   */
+  private List<Map<String, Object>> channelControls(TicketDeskStore.Ticket ticket) {
+    String key = ticket.kind() + ":" + ticket.id();
+    return List.of(
+        row(
+            List.of(
+                button("Действия сотрудника", "lwa:desk:panel:" + key, 1),
+                button("Отозвать обращение", "lwa:desk:form:close:" + key, 2))));
   }
 
   private List<Map<String, Object>> controls(TicketDeskStore.Ticket ticket) {
@@ -920,6 +1021,11 @@ public final class DiscordTicketDesk {
                         "Нужны действующие права сотрудника и подтверждённый аккаунт"));
     boolean boss = supervisor(admin, i.userId());
     String assigned = assignee(ticket);
+    if (action.equals("panel"))
+      return body(
+          "**Действия по обращению №" + id + "** · видно только вам\nОтветственный: "
+              + (assigned.isBlank() ? "не назначен" : assigned),
+          controls(ticket));
     if (action.equals("claim")) {
       if (!assigned.isBlank() && !assigned.equals(admin.username()) && !boss)
         throw new IllegalArgumentException("Обращение уже назначено другому сотруднику");
@@ -1297,22 +1403,33 @@ public final class DiscordTicketDesk {
             store,
             new DiscordTicketArchive.Transport() {
               public void readOnly(String channel) throws Exception {
-                Boolean ok =
-                    call(
-                        "setTicketReadOnly",
-                        new Class<?>[] {String.class, boolean.class},
-                        channel,
-                        true);
+                Boolean ok;
+                try {
+                  ok =
+                      call(
+                          "setTicketReadOnly",
+                          new Class<?>[] {String.class, boolean.class},
+                          channel,
+                          true);
+                } catch (Exception error) {
+                  if (channelGone(error)) throw new DiscordTicketArchive.ChannelGoneException(error);
+                  throw error;
+                }
                 if (!Boolean.TRUE.equals(ok))
                   throw new IllegalStateException("Канал не заблокирован");
               }
 
               public List<TicketMessage> history(String channel, String before) throws Exception {
-                return call(
-                    "getTicketHistory",
-                    new Class<?>[] {String.class, String.class},
-                    channel,
-                    before);
+                try {
+                  return call(
+                      "getTicketHistory",
+                      new Class<?>[] {String.class, String.class},
+                      channel,
+                      before);
+                } catch (Exception error) {
+                  if (channelGone(error)) throw new DiscordTicketArchive.ChannelGoneException(error);
+                  throw error;
+                }
               }
 
               public byte[] attachment(String channel, String message, String url)
@@ -1326,13 +1443,28 @@ public final class DiscordTicketDesk {
               }
 
               public void delete(String channel) throws Exception {
-                Boolean ok = call("deleteTicketChannel", new Class<?>[] {String.class}, channel);
+                Boolean ok;
+                try {
+                  ok = call("deleteTicketChannel", new Class<?>[] {String.class}, channel);
+                } catch (Exception error) {
+                  // Already deleted outside the bot: the goal of this step is reached.
+                  if (channelGone(error)) return;
+                  throw error;
+                }
                 if (!Boolean.TRUE.equals(ok))
                   throw new IllegalStateException("Удаление не подтверждено");
               }
             },
             () -> !closed);
     archive.finish(ticket);
+    if (archive.lastChannelGone)
+      plugin
+          .moderation()
+          .note(
+              ticket.kind(),
+              ticket.id(),
+              "Система",
+              "Канал обращения удалён вне бота: сохранена история до удаления, позднее сообщения недоступны");
     var current = store.get(ticket.kind(), ticket.id()).orElseThrow();
     if (current.state().equals("CLOSED")) {
       if (ticket.kind().equals("appeal"))

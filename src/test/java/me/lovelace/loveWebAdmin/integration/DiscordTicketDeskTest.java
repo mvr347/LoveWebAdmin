@@ -224,6 +224,66 @@ class DiscordTicketDeskTest {
     assertEquals("200000",desk.create("report",id,"10000").get(8,TimeUnit.SECONDS));assertEquals(1,discord.creationCalls.get());
   }
 
+  String ticketState(int id) {
+    try {
+      return desk.store().get("report", id).orElseThrow().state();
+    } catch (java.sql.SQLException error) {
+      throw new IllegalStateException(error);
+    }
+  }
+
+  String ticketChannel(int id) {
+    try {
+      return desk.store().get("report", id).orElseThrow().channel();
+    } catch (java.sql.SQLException error) {
+      throw new IllegalStateException(error);
+    }
+  }
+
+  @Test
+  void channelDeletedOutsideTheBotStillClosesTheCase() throws Exception {
+    int id = createReport();
+    discord.readOnlyFailure = new DiscordRequestRejectedException(404);
+    click("10000", "200000", "lwa:desk:submit:close:report:" + id, Map.of("reason", "Канал удалён вручную"));
+    desk.tick();
+    await(() -> ticketState(id).equals("CLOSED"));
+  }
+
+  /** A desk without the per-ticket retry back-off of an earlier failed tick. */
+  DiscordTicketDesk freshDesk() {
+    var fresh = new DiscordTicketDesk(plugin, plugin.getDiscordBridge().ticketDeskStore());
+    fresh.attach(discord.service, new DiscordActions(plugin, discord.service));
+    return fresh;
+  }
+
+  @Test
+  void lostCreationIsReconciledWithoutStaffOnlyWhenCoreIsNotStillCreating() throws Exception {
+    int id = savedReport();
+    discord.creationFailure = new java.io.IOException("lost response");
+    discord.recoveredChannel = null;
+    assertThrows(Exception.class, () -> desk.create("report", id, "10000").get(8, TimeUnit.SECONDS));
+    assertTrue(desk.store().creationStarted("report", id));
+    // Too early: the late answer could still arrive, so the case stays blocked.
+    desk.tick();
+    Thread.sleep(300);
+    assertEquals(1, discord.creationCalls.get());
+    // Past the window but the core still has the request in flight: stay blocked.
+    var waiting = freshDesk();
+    waiting.autoReconcileMs = 0;
+    discord.creationPending = true;
+    waiting.tick();
+    Thread.sleep(300);
+    assertEquals(1, discord.creationCalls.get());
+    // Past the window, nothing in flight, lookup finds nothing: the channel is created again.
+    var reconciling = freshDesk();
+    reconciling.autoReconcileMs = 0;
+    discord.creationPending = false;
+    discord.creationFailure = null;
+    reconciling.tick();
+    await(() -> discord.creationCalls.get() == 2);
+    await(() -> !ticketChannel(id).isBlank());
+  }
+
   @Test
   void threeStepWizardKeepsInvalidDetailsAndPublishesOnlyAfterReview() throws Exception {
     var step2=click("10000","70000","lwa:desk:identity:report",Map.of("target","Griefer"));
@@ -377,6 +437,26 @@ class DiscordTicketDeskTest {
     assertThrows(IllegalArgumentException.class, other::publishPanel);
     assertEquals(0, discord.publicationCalls.get());
     other.close();
+  }
+
+  @Test
+  void channelCardShowsTheAuthorNoStaffButtonsAndStaffGetAPrivatePanel() throws Exception {
+    int id = createReport();
+    desk.tick();
+    await(() -> discord.messages.containsKey("200000"));
+    String card = JsonUtils.toJson(discord.messages.get("200000"));
+    assertTrue(card.contains("lwa:desk:panel:report:" + id));
+    assertTrue(card.contains("lwa:desk:form:close:report:" + id));
+    for (String hidden :
+        List.of("claim", "form:approve", "form:reject", "form:transfer", "form:clarify", "form:escalate", "lwa:flow:templates"))
+      assertFalse(card.contains(hidden), hidden);
+    var panel = click("20000", "200000", "lwa:desk:panel:report:" + id, Map.of());
+    String buttons = JsonUtils.toJson(panel);
+    assertTrue(buttons.contains("lwa:desk:claim:report:" + id));
+    assertTrue(buttons.contains("lwa:desk:form:approve:report:" + id));
+    var author = click("10000", "200000", "lwa:desk:panel:report:" + id, Map.of());
+    assertTrue(author.get("content").toString().contains("права сотрудника"));
+    assertFalse(JsonUtils.toJson(author).contains("lwa:desk:claim"));
   }
 
   @Test
@@ -639,7 +719,13 @@ class DiscordTicketDeskTest {
     void unregisterPrivateMenu(String id);
   }
 
+  public interface PendingApi {
+    boolean isTicketCreationPending(TicketType type, String ticketId);
+  }
+
   static class FakeDiscord {
+    volatile Throwable readOnlyFailure;
+    volatile boolean creationPending;
     final Map<String,java.util.function.Function<String,Map<String,Object>>> renderers=new ConcurrentHashMap<>();
     final Map<String,java.util.function.Predicate<String>> visible=new ConcurrentHashMap<>();
     volatile boolean acknowledgementAccepted = true;
@@ -668,7 +754,7 @@ class DiscordTicketDeskTest {
         (DiscordService)
             Proxy.newProxyInstance(
                 DiscordService.class.getClassLoader(),
-                new Class[] {DiscordService.class, PrivateMenuApi.class},
+                new Class[] {DiscordService.class, PrivateMenuApi.class, PendingApi.class},
                 (proxy, method, args) -> {
                   return switch (method.getName()) {
                     case "isEnabled" -> true;
@@ -741,7 +827,11 @@ class DiscordTicketDeskTest {
                               ? String.valueOf(ids.incrementAndGet())
                               : args[1].toString());
                     }
-                    case "setTicketReadOnly" -> CompletableFuture.completedFuture(true);
+                    case "isTicketCreationPending" -> creationPending;
+                    case "setTicketReadOnly" ->
+                        readOnlyFailure == null
+                            ? CompletableFuture.completedFuture(true)
+                            : CompletableFuture.failedFuture(readOnlyFailure);
                     case "getTicketHistory" ->
                         CompletableFuture.completedFuture(
                             List.of(
