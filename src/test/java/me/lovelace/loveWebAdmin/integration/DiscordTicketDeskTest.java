@@ -30,6 +30,14 @@ class DiscordTicketDeskTest {
     config.set("discord.tickets.panel-channel-id", "70000");
     config.set("discord.tickets.queue-channel-id", "80000");
     config.set("discord.tickets.supervisor-role-ids", List.of("60000"));
+    config.set("discord.tickets.support.enabled", true);
+    config.set(
+        "discord.tickets.support.topics",
+        List.of(
+            Map.of("id", "question", "label", "Вопрос по игре", "description", "Как что-то работает"),
+            Map.of("id", "bug", "label", "Ошибка / баг", "description", "Что-то сломалось"),
+            Map.of("id", "donate", "label", "Донат", "description", "Покупки"),
+            Map.of("id", "other", "label", "Другое", "description", "Ничего не подходит")));
     plugin = MockBukkit.loadWithConfig(LoveWebAdmin.class, config);
     discord = new FakeDiscord();
     desk = plugin.getDiscordBridge().ticketDesk();
@@ -282,6 +290,159 @@ class DiscordTicketDeskTest {
     reconciling.tick();
     await(() -> discord.creationCalls.get() == 2);
     await(() -> !ticketChannel(id).isBlank());
+  }
+
+  @Test
+  void supportPanelHasFourButtonsOnlyWhenSupportIsOffered() {
+    int offered = buttonCount(DiscordPanelMessages.body("lwa:desk:", false, true));
+    int withheld = buttonCount(DiscordPanelMessages.body("lwa:desk:", false, false));
+    int preview = buttonCount(DiscordPanelMessages.body("test:", true, true));
+    assertEquals(4, offered);
+    assertEquals(3, withheld);
+    assertEquals(3, preview, "the test panel never offers support");
+  }
+
+  @SuppressWarnings("unchecked")
+  static int buttonCount(Map<String, Object> panel) {
+    return ((List<?>)
+            ((Map<String, Object>) ((List<?>) panel.get("components")).getFirst()).get("components"))
+        .size();
+  }
+
+  @Test
+  void supportAsksForATopicThenOnlyForTheDescriptionOfALinkedPlayer() throws Exception {
+    var picker = click("10000", "70000", "lwa:desk:new:support", Map.of());
+    String json = JsonUtils.toJson(picker);
+    assertTrue(json.contains("lwa:desk:support:topic"));
+    for (String topic : List.of("question", "bug", "donate", "other")) assertTrue(json.contains(topic));
+
+    var linked = click("10000", "70000", "lwa:desk:support:topic", Map.of("selected", "bug"));
+    assertEquals("lwa:desk:sdraft:bug", linked.get("custom_id"));
+    String linkedFields = JsonUtils.toJson(linked);
+    assertTrue(linkedFields.contains("\"reason\""));
+    assertFalse(linkedFields.contains("\"nick\""), "a linked account already knows the nick");
+
+    var unlinked = click("77777", "70000", "lwa:desk:support:topic", Map.of("selected", "bug"));
+    assertTrue(JsonUtils.toJson(unlinked).contains("\"nick\""));
+
+    var gone = click("10000", "70000", "lwa:desk:support:topic", Map.of("selected", "missing"));
+    assertTrue(gone.get("content").toString().contains("недоступна"));
+  }
+
+  @Test
+  void supportRequestGetsItsOwnChannelAndNeverOffersVerdicts() throws Exception {
+    var modal = click("10000", "70000", "lwa:desk:support:topic", Map.of("selected", "bug"));
+    var preview =
+        click("10000", "70000", (String) modal.get("custom_id"), Map.of("reason", "Не работает магазин на спавне"));
+    assertTrue(preview.get("content").toString().contains("Ошибка / баг"));
+    var saved = click("10000", "70000", confirm(preview), Map.of());
+    assertTrue(saved.get("content").toString().contains("сохранена"), saved.toString());
+    await(() -> discord.creationCalls.get() == 1);
+    assertEquals("mine-ticket-1", discord.created.channelName());
+    assertEquals(TicketType.SUPPORT, discord.created.routing().type());
+    assertEquals("support:1", discord.created.routing().ticketId());
+    assertEquals(List.of("10000"), discord.lastMembers);
+    await(() -> ticketChannel("support", 1).equals("200000"));
+    assertEquals("OPEN", plugin.moderation().support(1).orElseThrow().get("status"));
+
+    desk.tick();
+    await(() -> discord.messages.containsKey("200000"));
+    String card = JsonUtils.toJson(discord.messages.get("200000"));
+    assertTrue(card.contains("Поддержка №1"));
+    assertTrue(card.contains("Ошибка / баг"));
+    assertTrue(card.contains("lwa:desk:panel:support:1"));
+    assertFalse(card.contains("approve") || card.contains("reject"));
+
+    var panel = JsonUtils.toJson(click("20000", "200000", "lwa:desk:panel:support:1", Map.of()));
+    assertTrue(panel.contains("lwa:desk:claim:support:1"));
+    assertTrue(panel.contains("lwa:desk:form:close:support:1"));
+    for (String hidden : List.of("form:approve", "form:reject", "form:reduce", "lwa:flow:templates"))
+      assertFalse(panel.contains(hidden), hidden);
+
+    click("20000", "200000", "lwa:desk:claim:support:1", Map.of());
+    assertEquals("Moderator", plugin.moderation().work("support", 1).get("assignee"));
+    var verdict =
+        click("20000", "200000", "lwa:desk:submit:approve:support:1", Map.of("reason", "Подтверждаю"));
+    assertTrue(verdict.get("content").toString().contains("нет вердиктов"));
+    assertEquals("OPEN", ticketState("support", 1));
+  }
+
+  @Test
+  void supportRequestClosesWithItsHistoryArchivedAndTheRecordClosed() throws Exception {
+    var modal = click("10000", "70000", "lwa:desk:support:topic", Map.of("selected", "question"));
+    var preview =
+        click("10000", "70000", (String) modal.get("custom_id"), Map.of("reason", "Как получить привилегию?"));
+    var saved = click("10000", "70000", confirm(preview), Map.of());
+    assertTrue(saved.get("content").toString().contains("сохранена"), saved.toString());
+    await(() -> ticketChannel("support", 1).equals("200000"));
+    click("10000", "200000", "lwa:desk:submit:close:support:1", Map.of("reason", "Вопрос решён"));
+    desk.tick();
+    await(() -> ticketState("support", 1).equals("CLOSED"));
+    assertEquals(1, discord.deleted.get());
+    assertEquals("CLOSED", plugin.moderation().support(1).orElseThrow().get("status"));
+  }
+
+  @Test
+  void staffAnswerInASupportChannelReachesTheAuthorAndStrangersAreIgnored() throws Exception {
+    var modal = click("10000", "70000", "lwa:desk:support:topic", Map.of("selected", "other"));
+    var preview =
+        click("10000", "70000", (String) modal.get("custom_id"), Map.of("reason", "Нужна помощь с кланом"));
+    click("10000", "70000", confirm(preview), Map.of());
+    await(() -> ticketChannel("support", 1).equals("200000"));
+    click("20000", "200000", "lwa:desk:claim:support:1", Map.of());
+    var actions = new DiscordActions(plugin, discord.service);
+    actions.onTicketMessage(
+        new TicketMessage("SUPPORT:support:1", "200000", "100000000000000010", "20000", "Moderator",
+            "Откройте меню клана командой /clan", List.of()));
+    actions.onTicketMessage(
+        new TicketMessage("SUPPORT:support:1", "200000", "100000000000000011", "90000", "Stranger",
+            "Посторонний текст", List.of()));
+    actions.onTicketMessage(
+        new TicketMessage("SUPPORT:support:1", "200000", "100000000000000012", "10000", "Reporter",
+            "Это сообщение автора", List.of()));
+    var events = plugin.moderation().deliveries().stream().map(row -> row.get("event").toString()).toList();
+    assertTrue(events.stream().anyMatch(e -> e.startsWith("owner-notice:support:1:message:100000000000000010")), events.toString());
+    assertTrue(events.stream().noneMatch(e -> e.contains("100000000000000011")), "strangers get no relay");
+    assertTrue(events.stream().noneMatch(e -> e.contains("100000000000000012")), "the author is not told their own text");
+    // A support channel is never mistaken for a report with the same number.
+    assertTrue(plugin.getDatabaseManager().reportDiscussion(1).isEmpty());
+  }
+
+  @Test
+  void supportDoesNotTouchTheReportTicketRegistry() throws Exception {
+    var modal = click("10000", "70000", "lwa:desk:support:topic", Map.of("selected", "other"));
+    var preview =
+        click("10000", "70000", (String) modal.get("custom_id"), Map.of("reason", "Нужна помощь с кланом"));
+    click("10000", "70000", confirm(preview), Map.of());
+    await(() -> ticketChannel("support", 1).equals("200000"));
+    assertTrue(
+        plugin.moderation().tickets().stream().noneMatch(t -> "support".equals(t.get("kind"))),
+        "case_tickets feeds the report restore loop and must never contain support");
+  }
+
+  @Test
+  void supportDraftWithAnUnknownTopicOrAShortTextIsRejected() throws Exception {
+    var unknown = click("10000", "70000", "lwa:desk:sdraft:nope", Map.of("reason", "Достаточно длинный текст"));
+    assertTrue(unknown.get("content").toString().contains("недоступна"));
+    var shortText = click("10000", "70000", "lwa:desk:sdraft:bug", Map.of("reason", "коротко"));
+    assertTrue(shortText.get("content").toString().contains("от 10 до 2000"));
+    assertEquals(0, discord.creationCalls.get());
+  }
+
+  String ticketState(String kind, int id) {
+    try {
+      return desk.store().get(kind, id).orElseThrow().state();
+    } catch (java.sql.SQLException error) {
+      throw new IllegalStateException(error);
+    }
+  }
+
+  String ticketChannel(String kind, int id) {
+    try {
+      return desk.store().get(kind, id).map(t -> t.channel()).orElse("");
+    } catch (java.sql.SQLException error) {
+      throw new IllegalStateException(error);
+    }
   }
 
   @Test
@@ -546,9 +707,10 @@ class DiscordTicketDeskTest {
     await(() -> discord.messages.containsKey("70000"));
     var first = discord.messages.get("70000");
     assertEquals(
-        3,
+        4,
         ((List<?>) ((Map<?, ?>) ((List<?>) first.get("components")).getFirst()).get("components"))
             .size());
+    assertTrue(JsonUtils.toJson(first).contains("lwa:desk:new:support"));
     var second = new DiscordTicketDesk(plugin, plugin.getDiscordBridge().ticketDeskStore());
     second.attach(discord.service, new DiscordActions(plugin, discord.service));
     second.tick();

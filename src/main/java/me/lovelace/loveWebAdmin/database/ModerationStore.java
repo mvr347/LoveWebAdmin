@@ -88,6 +88,9 @@ public final class ModerationStore implements AutoCloseable {
           "CREATE TABLE IF NOT EXISTS appeal_access_parent(appeal_id INTEGER PRIMARY KEY,parent_id INTEGER NOT NULL)");
       s.execute(
           "CREATE TABLE IF NOT EXISTS staff_identity(admin_id INTEGER PRIMARY KEY,uuid TEXT NOT NULL)");
+      // Support requests have no punishment behind them, so they are not reports or appeals.
+      s.execute(
+          "CREATE TABLE IF NOT EXISTS support_cases(id INTEGER PRIMARY KEY AUTOINCREMENT,discord_id TEXT NOT NULL,nick TEXT NOT NULL,topic TEXT NOT NULL,body TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'OPEN',created_at INTEGER NOT NULL)");
       s.execute("CREATE INDEX IF NOT EXISTS idx_delivery_due ON delivery_outbox(state,next_at,id)");
       s.execute(
           "CREATE INDEX IF NOT EXISTS idx_delivery_ticket ON delivery_outbox(recipient,id,state)");
@@ -104,9 +107,53 @@ public final class ModerationStore implements AutoCloseable {
   }
 
   private static String kind(String kind) {
-    if (!Set.of("report", "appeal").contains(kind))
+    if (!Set.of("report", "appeal", "support").contains(kind))
       throw new IllegalArgumentException("Неизвестный тип дела");
     return kind;
+  }
+
+  public synchronized int createSupport(String discord, String nick, String topic, String body)
+      throws SQLException {
+    try (var q =
+        db.prepareStatement(
+            "INSERT INTO support_cases(discord_id,nick,topic,body,created_at) VALUES(?,?,?,?,?)",
+            Statement.RETURN_GENERATED_KEYS)) {
+      q.setString(1, discord);
+      q.setString(2, nick);
+      q.setString(3, topic);
+      q.setString(4, body);
+      q.setLong(5, System.currentTimeMillis() / 1000);
+      q.executeUpdate();
+      try (var keys = q.getGeneratedKeys()) {
+        if (keys.next()) return keys.getInt(1);
+      }
+    }
+    throw new SQLException("Обращение в поддержку не сохранено");
+  }
+
+  public synchronized Optional<Map<String, Object>> support(int id) throws SQLException {
+    try (var q = db.prepareStatement("SELECT * FROM support_cases WHERE id=?")) {
+      q.setInt(1, id);
+      try (var r = q.executeQuery()) {
+        if (!r.next()) return Optional.empty();
+        return Optional.of(
+            Map.of(
+                "id", r.getInt("id"),
+                "discordId", r.getString("discord_id"),
+                "nick", r.getString("nick"),
+                "topic", r.getString("topic"),
+                "body", r.getString("body"),
+                "status", r.getString("status"),
+                "createdAt", r.getLong("created_at")));
+      }
+    }
+  }
+
+  public synchronized boolean closeSupport(int id) throws SQLException {
+    try (var q = db.prepareStatement("UPDATE support_cases SET status='CLOSED' WHERE id=?")) {
+      q.setInt(1, id);
+      return q.executeUpdate() == 1;
+    }
   }
 
   public synchronized Map<String, Object> work(String kind, int id) throws SQLException {

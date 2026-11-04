@@ -33,6 +33,8 @@ public final class DiscordTicketDesk {
   private final DiscordCaseWorkflowActions caseWorkflowActions;
   private final CaseReminderDelivery reminders;
   private final DiscordTicketWizard wizard;
+  private final DiscordSupportFlow supportFlow;
+  private final SupportTopics supportTopics;
 
   public DiscordTicketDesk(LoveWebAdmin plugin, TicketDeskStore store) {
     this.plugin = plugin;
@@ -40,7 +42,14 @@ public final class DiscordTicketDesk {
     this.caseWorkflowActions = new DiscordCaseWorkflowActions(plugin, this);
     this.reminders = new CaseReminderDelivery(plugin, this);
     this.wizard = new DiscordTicketWizard(plugin,this,store);
+    this.supportFlow = new DiscordSupportFlow(plugin, this);
     var config = plugin.getConfig();
+    this.supportTopics =
+        SupportTopics.parse(
+            config.getBoolean("discord.tickets.support.enabled", false),
+            config.getMapList("discord.tickets.support.topics"));
+    if (config.getBoolean("discord.tickets.support.enabled", false) && !supportTopics.enabled())
+      plugin.getLogger().warning("Поддержка отключена: " + supportTopics.problem());
     panelChannel = config.getString("discord.tickets.panel-channel-id", "").trim();
     queueChannel = config.getString("discord.tickets.queue-channel-id", "").trim();
     publicUrl = config.getString("web.public-url", "").replaceAll("/+$", "");
@@ -101,6 +110,63 @@ public final class DiscordTicketDesk {
 
   public boolean enabled() {
     return !closed && service != null;
+  }
+
+  DiscordService service() {
+    return service;
+  }
+
+  SupportTopics supportTopics() {
+    return supportTopics;
+  }
+
+  /** Why support is not offered although it was switched on; empty when it is working. */
+  public String supportProblem() {
+    return supportTopics.problem();
+  }
+
+  static boolean isSupport(String kind) {
+    return "support".equals(kind);
+  }
+
+  static String caseLabel(String kind) {
+    return switch (kind) {
+      case "report" -> "Жалоба";
+      case "support" -> "Поддержка";
+      default -> "Апелляция";
+    };
+  }
+
+  /** The core ticket type a desk kind is created with. */
+  static TicketType coreType(String kind) {
+    return switch (kind) {
+      case "appeal" -> TicketType.BAN_APPEAL;
+      case "support" -> TicketType.SUPPORT;
+      default -> TicketType.REPORT;
+    };
+  }
+
+  /** Appeals keep their bare numeric id for compatibility; other kinds are namespaced. */
+  static String coreKey(String kind, int id) {
+    return kind.equals("appeal") ? String.valueOf(id) : kind + ":" + id;
+  }
+
+  /**
+   * The core accepts only {@code mine-ticket-N} with an optional {@code -a} or {@code -r}. Support
+   * uses the bare form: lookups also compare the ticket id in the topic ("support:N"), so it
+   * cannot be mistaken for a report or an appeal with the same number.
+   */
+  static String channelName(String kind, int id) {
+    return "mine-ticket-" + id + switch (kind) {
+      case "appeal" -> "-a";
+      case "support" -> "";
+      default -> "-r";
+    };
+  }
+
+  /** Closing a conversation only changes a punishment for reports and appeals. */
+  static String punishmentNote(String kind) {
+    return isSupport(kind) ? "" : " Наказание не меняется.";
   }
 
   public void refreshMessage(String slot) {
@@ -298,13 +364,15 @@ public final class DiscordTicketDesk {
   }
 
   private Map<String, Object> productionPanel() {
-    return DiscordPanelMessages.body("lwa:desk:", false);
+    return DiscordPanelMessages.body("lwa:desk:", false, supportTopics.enabled());
   }
 
   public Map<String, Object> panelStatus() throws Exception {
     var result = new LinkedHashMap<String, Object>();
     result.put("channelId", panelChannel);
     result.put("botAvailable", enabled());
+    result.put("supportEnabled", supportTopics.enabled());
+    result.put("supportProblem", supportTopics.problem());
     result.put(
         "state",
         panelChannel.isBlank()
@@ -448,11 +516,10 @@ public final class DiscordTicketDesk {
       return false;
     long at = store.creationAt(ticket.kind(), ticket.id());
     if (at <= 0 || System.currentTimeMillis() - at < autoReconcileMs) return false;
-    boolean report = ticket.kind().equals("report");
     Boolean pending;
     try {
-      var type = report ? TicketType.REPORT : TicketType.BAN_APPEAL;
-      String key = report ? "report:" + ticket.id() : String.valueOf(ticket.id());
+      var type = coreType(ticket.kind());
+      String key = coreKey(ticket.kind(), ticket.id());
       pending =
           (Boolean)
               Objects.requireNonNull(service)
@@ -483,6 +550,17 @@ public final class DiscordTicketDesk {
   }
 
   private boolean domainOpen(TicketDeskStore.Ticket ticket) {
+    if (isSupport(ticket.kind())) {
+      try {
+        return plugin
+            .moderation()
+            .support(ticket.id())
+            .filter(row -> "OPEN".equals(row.get("status")))
+            .isPresent();
+      } catch (java.sql.SQLException error) {
+        throw new IllegalStateException(error);
+      }
+    }
     return ticket.kind().equals("report")
         ? plugin
             .getDatabaseManager()
@@ -541,7 +619,8 @@ public final class DiscordTicketDesk {
   }
 
   static Permission permission(String kind) {
-    return kind.equals("report") ? Permission.MANAGE_REPORTS : Permission.MANAGE_APPEALS;
+    // Support has no punishment behind it, so it is handled with the report permissions.
+    return kind.equals("appeal") ? Permission.MANAGE_APPEALS : Permission.MANAGE_REPORTS;
   }
 
   private boolean allowed(WebAdmin admin, Permission permission) {
@@ -580,23 +659,22 @@ public final class DiscordTicketDesk {
       String recovered =
           CoreDiscordExtensions.managedTicket(
                   service,
-                  ticket.kind().equals("appeal") ? TicketType.BAN_APPEAL : TicketType.REPORT,
-                  ticket.kind().equals("appeal")
-                      ? String.valueOf(ticket.id())
-                      : "report:" + ticket.id(),
+                  coreType(ticket.kind()),
+                  coreKey(ticket.kind(), ticket.id()),
                   "",
                   "",
                   ticket.owner().isBlank() ? null : ticket.owner(),
                   supervisorRoles,
                   members(ticket),
-                  "mine-ticket-" + ticket.id() + (ticket.kind().equals("appeal") ? "-a" : "-r"),
+                  channelName(ticket.kind(), ticket.id()),
                   true)
               .get(45, TimeUnit.SECONDS);
       if (recovered == null) return ticket;
       store.channel(ticket.kind(), ticket.id(), recovered);
       if (ticket.kind().equals("appeal"))
         plugin.getDatabaseManager().setAppealDiscordChannelId(ticket.id(), recovered);
-      else plugin.moderation().ticketChannel(ticket.kind(), ticket.id(), recovered);
+      else if (!isSupport(ticket.kind()))
+        plugin.moderation().ticketChannel(ticket.kind(), ticket.id(), recovered);
       ticket = store.get(ticket.kind(), ticket.id()).orElseThrow();
     }
     return ticket;
@@ -607,6 +685,20 @@ public final class DiscordTicketDesk {
     if (ticket.channel().isBlank() && reconcileLostCreation(ticket)) {
       create(ticket.kind(), ticket.id(), ticket.owner().isBlank() ? null : ticket.owner())
           .handle((channel, error) -> null);
+      return;
+    }
+    if (ticket.channel().isBlank()
+        && isSupport(ticket.kind())
+        && !store.creationStarted(ticket.kind(), ticket.id())) {
+      // Support has no outbox that retries channel creation, so the desk does it itself, at most
+      // once a minute per request (tick() runs every few seconds).
+      long now = System.currentTimeMillis();
+      String createKey = "create:" + ticket.kind() + ":" + ticket.id();
+      if (now >= retryAfter.getOrDefault(createKey, 0L)) {
+        retryAfter.put(createKey, now + 60_000);
+        create(ticket.kind(), ticket.id(), ticket.owner().isBlank() ? null : ticket.owner())
+            .handle((channel, error) -> null);
+      }
       return;
     }
     if (ticket.channel().isBlank()) throw new IllegalStateException("Канал ещё не создан: "+store.creationError(ticket.kind(),ticket.id()));
@@ -637,12 +729,25 @@ public final class DiscordTicketDesk {
         };
     if ("HIGH".equals(plugin.moderation().work(ticket.kind(), ticket.id()).get("priority")))
       state = "Передано руководству · " + state;
-    String title = (ticket.kind().equals("appeal") ? "Апелляция" : "Жалоба") + " №" + ticket.id();
-    String description =
-        ticket.kind().equals("appeal")
-            ? plugin.getDatabaseManager().getAppealById(ticket.id()).orElseThrow().reason()
-            : plugin.getDatabaseManager().getReportById(ticket.id()).orElseThrow().description();
-    var waiting = plugin.workflows().waiting(ticket.kind(), ticket.id());
+    String title = caseLabel(ticket.kind()) + " №" + ticket.id();
+    String description;
+    if (isSupport(ticket.kind())) {
+      var support = plugin.moderation().support(ticket.id()).orElseThrow();
+      description =
+          "Тема: "
+              + supportTopics.find(support.get("topic").toString()).map(SupportTopics.Topic::label).orElse(support.get("topic").toString())
+              + "\n\n"
+              + support.get("body");
+    } else
+      description =
+          ticket.kind().equals("appeal")
+              ? plugin.getDatabaseManager().getAppealById(ticket.id()).orElseThrow().reason()
+              : plugin.getDatabaseManager().getReportById(ticket.id()).orElseThrow().description();
+    // Reminders and wait deadlines are computed from report/appeal discussions only.
+    var waiting =
+        isSupport(ticket.kind())
+            ? Map.<String, Object>of("mode", "NONE")
+            : plugin.workflows().waiting(ticket.kind(), ticket.id());
     String waitText =
         waiting.get("mode").equals("NONE")
             ? ""
@@ -671,7 +776,9 @@ public final class DiscordTicketDesk {
                     + waitText
                     + "\n\n"
                     + description.substring(0, Math.min(description.length(), 900))
-                    + "\n\nПереписка и вложения сохраняются. Закрытие канала не снимает наказание.",
+                    + (isSupport(ticket.kind())
+                        ? "\n\nПереписка и вложения сохраняются до закрытия обращения."
+                        : "\n\nПереписка и вложения сохраняются. Закрытие канала не снимает наказание."),
                 channelControls(ticket)));
     String queue = ticket.queueCard();
     if (!queueChannel.isBlank())
@@ -720,6 +827,10 @@ public final class DiscordTicketDesk {
                 button("Передать", "lwa:desk:form:transfer:" + key, 2),
                 button("Уточнить", "lwa:desk:form:clarify:" + key, 2),
                 button("Руководству", "lwa:desk:form:escalate:" + key, 2)));
+    if (isSupport(ticket.kind()))
+      return List.of(
+          row(first),
+          row(List.of(button("Закрыть / отозвать", "lwa:desk:form:close:" + key, 2))));
     var second =
         new ArrayList<Map<String, Object>>(
             List.of(
@@ -755,40 +866,32 @@ public final class DiscordTicketDesk {
                     if (ticket.channel().isBlank()) throw new IllegalStateException("Результат создания неизвестен: нужна сверка каналов сотрудником");
                   }
                   if (ticket.channel().isBlank()) {
-                    String name =
-                        kind.equals("appeal")
-                            ? plugin
-                                .getDatabaseManager()
-                                .getAppealById(id)
-                                .orElseThrow()
-                                .playerName()
-                            : plugin
-                                .getDatabaseManager()
-                                .getReportById(id)
-                                .orElseThrow()
-                                .reporterName();
+                    String name, reason;
+                    if (isSupport(kind)) {
+                      var support = plugin.moderation().support(id).orElseThrow();
+                      name = support.get("nick").toString();
+                      reason = support.get("body").toString();
+                    } else if (kind.equals("appeal")) {
+                      var appeal = plugin.getDatabaseManager().getAppealById(id).orElseThrow();
+                      name = appeal.playerName();
+                      reason = appeal.reason();
+                    } else {
+                      var report = plugin.getDatabaseManager().getReportById(id).orElseThrow();
+                      name = report.reporterName();
+                      reason = report.description();
+                    }
                     store.startCreation(kind, id);
                     String channel =
                         CoreDiscordExtensions.managedTicket(
                                 service,
-                                kind.equals("appeal") ? TicketType.BAN_APPEAL : TicketType.REPORT,
-                                kind.equals("appeal") ? String.valueOf(id) : "report:" + id,
+                                coreType(kind),
+                                coreKey(kind, id),
                                 name,
-                                kind.equals("appeal")
-                                    ? plugin
-                                        .getDatabaseManager()
-                                        .getAppealById(id)
-                                        .orElseThrow()
-                                        .reason()
-                                    : plugin
-                                        .getDatabaseManager()
-                                        .getReportById(id)
-                                        .orElseThrow()
-                                        .description(),
+                                reason,
                                 owner,
                                 supervisorRoles,
                                 members(ticket),
-                                "mine-ticket-" + id + (kind.equals("appeal") ? "-a" : "-r"))
+                                channelName(kind, id))
                             .get(45, TimeUnit.SECONDS);
                     if (channel == null)
                       throw new IllegalStateException("Создание канала не подтверждено");
@@ -796,12 +899,13 @@ public final class DiscordTicketDesk {
                     if (kind.equals("appeal")) {
                       if (!plugin.getDatabaseManager().setAppealDiscordChannelId(id, channel))
                         throw new IllegalStateException("Не сохранён канал");
-                    } else {
+                    } else if (!isSupport(kind)) {
+                      // case_tickets is the report ticket registry; support lives in desk_tickets.
                       plugin.moderation().ticketOwner(kind, id, owner);
                       plugin.moderation().ticketChannel(kind, id, channel);
                     }
                     ticket = store.get(kind, id).orElseThrow();
-                    plugin.getDiscordBridge().notifyTicketCreated(kind, id);
+                    if (!isSupport(kind)) plugin.getDiscordBridge().notifyTicketCreated(kind, id);
                   }
                   sync(ticket);
                   return ticket.channel();
@@ -844,11 +948,12 @@ public final class DiscordTicketDesk {
     }
     if (name.equals("lwa:desk:mine") || name.equals("мои-обращения"))
       return actions.openMyCases(interaction);
+    if (supportFlow.onInteraction(interaction, service)) return true;
     if(wizard.modal(interaction,service)) return true;
     if (name.startsWith("lwa:desk:form:")) {
       String[] parts = name.split(":");
       if (parts.length != 6
-          || !Set.of("report", "appeal").contains(parts[4])
+          || !Set.of("report", "appeal", "support").contains(parts[4])
           || !parts[5].matches("[0-9]{1,9}")) {
         answer(interaction, body("Кнопка недоступна.", List.of()));
         return true;
@@ -952,6 +1057,7 @@ public final class DiscordTicketDesk {
                       button("Отправить обращение", "lwa:desk:confirm:" + id, 3),
                       button("Отменить", "lwa:desk:cancel:" + id, 2)))));
     }
+    if (name.startsWith("lwa:desk:sdraft:")) return supportFlow.draft(i);
     if (name.startsWith("lwa:desk:confirm:") || name.startsWith("lwa:desk:cancel:")) {
       String id = name.substring(name.lastIndexOf(':') + 1);
       var draft = store.draft(id, i.userId());
@@ -992,7 +1098,7 @@ public final class DiscordTicketDesk {
     boolean submit = parts[2].equals("submit");
     String action = submit ? parts[3] : parts[2], kind = submit ? parts[4] : parts[3];
     int id = Integer.parseInt(submit ? parts[5] : parts[4]);
-    if (!Set.of("report", "appeal").contains(kind))
+    if (!Set.of("report", "appeal", "support").contains(kind))
       throw new IllegalArgumentException("Неизвестное обращение");
     var ticket =
         store.get(kind, id).orElseThrow(() -> new IllegalArgumentException("Обращение не найдено"));
@@ -1009,7 +1115,8 @@ public final class DiscordTicketDesk {
     if (action.equals("close") && ticket.owner().equals(i.userId())) {
       requestClose(ticket, "Автор обращения", reason(i));
       return body(
-          "Обращение отозвано. История сохраняется, затем канал будет удалён. Наказание не изменяется.",
+          "Обращение отозвано. История сохраняется, затем канал будет удалён."
+              + (isSupport(kind) ? "" : " Наказание не изменяется."),
           List.of());
     }
     var admin =
@@ -1041,8 +1148,12 @@ public final class DiscordTicketDesk {
           "Сначала возьмите обращение; чужим делом управляет ответственный или руководство");
     conflict(ticket, admin.username());
     String reason = reason(i);
-    if (Set.of("approve", "reject", "reduce").contains(action))
+    if (Set.of("approve", "reject", "reduce").contains(action)) {
+      if (isSupport(kind))
+        throw new IllegalArgumentException(
+            "Для обращений в поддержку нет вердиктов: ответьте игроку и закройте обращение");
       return caseWorkflowActions.preview(i, kind, id, admin, action, reason);
+    }
     String fingerprint =
         me.lovelace.loveWebAdmin.web.MutationRequests.fingerprint(
             "DISCORD",
@@ -1134,7 +1245,7 @@ public final class DiscordTicketDesk {
         sync(store.get(kind, id).orElseThrow());
       return body(
           action.equals("close")
-              ? "Сначала сохраняются переписка и файлы; затем канал будет удалён. Наказание не меняется."
+              ? "Сначала сохраняются переписка и файлы; затем канал будет удалён." + punishmentNote(kind)
               : "Действие сохранено.",
           List.of());
     } catch (Exception error) {
@@ -1157,6 +1268,7 @@ public final class DiscordTicketDesk {
   }
 
   private void conflict(TicketDeskStore.Ticket ticket, String staff) throws Exception {
+    if (isSupport(ticket.kind())) return; // nobody is being judged in a support request
     if (ticket.kind().equals("appeal")) {
       var appeal = plugin.getDatabaseManager().getAppealById(ticket.id()).orElseThrow();
       var source = plugin.moderation().source(appeal.banId());
@@ -1174,6 +1286,8 @@ public final class DiscordTicketDesk {
   }
 
   Map<String, Object> validate(String kind, String discord, Map<String, ?> input) {
+    if (isSupport(kind))
+      return supportFlow.validate(discord, Objects.toString(input.get("topic"), ""), input);
     var context=new DiscordPlayerContext(plugin,service);
     var identity=context.linked(discord);
     var linked=identity.map(DiscordPlayerContext.Identity::uuid);
@@ -1211,6 +1325,14 @@ public final class DiscordTicketDesk {
 
   private int createRecord(String kind, String discord, Map<String, Object> data, String draftId) throws Exception {
     String nick = data.get("nick").toString(), reason = data.get("reason").toString();
+    if (isSupport(kind)) {
+      if (!supportTopics.enabled()) throw new IllegalArgumentException("Поддержка сейчас недоступна");
+      int id = plugin.moderation().createSupport(discord, nick, data.get("topic").toString(), reason);
+      store.register("support", id, discord);
+      // The channel is created on the io thread; "Мои обращения" shows its state meanwhile.
+      create("support", id, discord).handle((channel, error) -> null);
+      return id;
+    }
     if (kind.equals("appeal")) {
       int banId = ((Number) data.get("banId")).intValue();
       var existing = plugin.getDatabaseManager().getAppealByBanId(banId);
@@ -1277,7 +1399,7 @@ public final class DiscordTicketDesk {
   private Map<String, Object> existing(String kind, int id) throws Exception {
     var ticket = store.get(kind, id);
     return body(
-        (kind.equals("report") ? "Жалоба" : "Апелляция")
+        caseLabel(kind)
             + " №"
             + id
             + " сохранена. "
@@ -1302,7 +1424,9 @@ public final class DiscordTicketDesk {
       if(message==null) throw new IllegalStateException("Отправка не подтверждена; проверьте переписку перед повтором");
       store.archiveMessage(kind,id,message,owner,"Автор обращения",parts.get(index));
     }
-    actions.onTicketMessage(new TicketMessage(kind.equals("report")?"report:"+id:String.valueOf(id),ticket.channel(),message,owner,"Автор обращения",text.trim(),List.of()));
+    // A support conversation lives only in the channel and its archive; nothing to mirror.
+    if (!isSupport(kind))
+      actions.onTicketMessage(new TicketMessage(kind.equals("report")?"report:"+id:String.valueOf(id),ticket.channel(),message,owner,"Автор обращения",text.trim(),List.of()));
   }
 
   void notifyOwner(String kind,int id,String event,String title,String text) throws Exception {
@@ -1315,6 +1439,10 @@ public final class DiscordTicketDesk {
   private void sendConversation(TicketDeskStore.Ticket ticket, String actor, String message) {
     try { notifyOwner(ticket.kind(),ticket.id(),"reply:"+UUID.randomUUID(),"Сотрудник ответил · №"+ticket.id(),message); }
     catch(Exception error) { throw new IllegalStateException(error); }
+    if (isSupport(ticket.kind())) {
+      postToChannel(ticket, actor, message);
+      return;
+    }
     if (ticket.kind().equals("appeal"))
       plugin
           .getDatabaseManager()
@@ -1335,6 +1463,29 @@ public final class DiscordTicketDesk {
             .addReportDiscussion(
                 ticket.id(), actor, true, message, "discord-staff:" + UUID.randomUUID());
       plugin.getDiscordBridge().sendReportConversation(ticket.id(), actor, message);
+    }
+  }
+
+  /** Staff text for a support request goes straight into its private channel. */
+  private void postToChannel(TicketDeskStore.Ticket ticket, String actor, String message) {
+    if (ticket.channel().isBlank()) return;
+    try {
+      var parts = LoveCoreDiscordBridge.quotedParts(actor, message);
+      for (int index = 0; index < parts.size(); index++) {
+        var payload = new LinkedHashMap<String, Object>(body(parts.get(index), List.of()));
+        payload.put(
+            "nonce",
+            me.lovelace.loveWebAdmin.database.ModerationStore.hash(
+                    "support-staff:" + ticket.id() + ":" + UUID.randomUUID() + ":" + index)
+                .substring(0, 24));
+        payload.put("enforce_nonce", true);
+        String sent =
+            service.sendMessage(ticket.channel(), JsonUtils.toJson(payload), null).get(45, TimeUnit.SECONDS);
+        if (sent == null) throw new IllegalStateException("Отправка не подтверждена");
+        store.archiveMessage(ticket.kind(), ticket.id(), sent, "staff", actor, parts.get(index));
+      }
+    } catch (Exception error) {
+      throw new IllegalStateException(error);
     }
   }
 
@@ -1374,7 +1525,9 @@ public final class DiscordTicketDesk {
       throws Exception {
     if (reason == null || reason.trim().length() < 5 || reason.length() > 4000)
       throw new IllegalArgumentException("Объяснение: от 5 до 4000 символов");
-    if (ticket.kind().equals("appeal")) {
+    if (isSupport(ticket.kind())) {
+      plugin.moderation().closeSupport(ticket.id());
+    } else if (ticket.kind().equals("appeal")) {
       plugin.getDatabaseManager().closeAppealConversation(ticket.id());
       if (plugin
           .getDatabaseManager()
@@ -1390,7 +1543,7 @@ public final class DiscordTicketDesk {
               ticket.kind(),
               ticket.id(),
               actor,
-              "Закрытие переписки: " + reason + ". Наказание не меняется.");
+              "Закрытие переписки: " + reason + "." + punishmentNote(ticket.kind()));
       audit(actor, ticket, "Закрытие: " + reason);
 
     }
@@ -1469,7 +1622,8 @@ public final class DiscordTicketDesk {
     if (current.state().equals("CLOSED")) {
       if (ticket.kind().equals("appeal"))
         plugin.getDatabaseManager().setAppealDiscordChannelId(ticket.id(), null);
-      else plugin.moderation().ticketChannel(ticket.kind(), ticket.id(), "");
+      else if (!isSupport(ticket.kind()))
+        plugin.moderation().ticketChannel(ticket.kind(), ticket.id(), "");
       String event = "desk-close:" + ticket.kind() + ":" + ticket.id();
       if (!ticket.owner().isBlank())
         plugin
@@ -1481,16 +1635,20 @@ public final class DiscordTicketDesk {
                     explainedBody(
                         "Обращение №"
                             + ticket.id()
-                            + " закрыто. Переписка сохранена. Закрытие канала не меняет наказание.",
+                            + " закрыто. Переписка сохранена."
+                            + (isSupport(ticket.kind()) ? "" : " Закрытие канала не меняет наказание."),
                         ticket.reason().isBlank() ? "Переписка завершена" : ticket.reason(),
                         List.of(
                             row(
-                                List.of(
-                                    button("Открыть обращение","lwa:mine:open:"+ticket.kind()+":"+ticket.id(),1),
-                                    button(
-                                        "Есть новые доказательства",
-                                        "lwa:flow:review:new:" + ticket.kind() + ":" + ticket.id(),
-                                        1)))))));
+                                isSupport(ticket.kind())
+                                    ? List.of(
+                                        button("Открыть обращение","lwa:mine:open:"+ticket.kind()+":"+ticket.id(),1))
+                                    : List.of(
+                                        button("Открыть обращение","lwa:mine:open:"+ticket.kind()+":"+ticket.id(),1),
+                                        button(
+                                            "Есть новые доказательства",
+                                            "lwa:flow:review:new:" + ticket.kind() + ":" + ticket.id(),
+                                            1)))))));
 
       if (!queueChannel.isBlank())
         publish(

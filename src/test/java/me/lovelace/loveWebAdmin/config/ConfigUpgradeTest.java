@@ -34,6 +34,25 @@ class ConfigUpgradeTest {
   }
 
   @Test
+  void anOldConfigGainsSupportTopicsAndAnOwnerEditedListSurvives() throws Exception {
+    var file = dir.resolve("config.yml");
+    Files.writeString(file, "config-version: 3\nweb:\n  port: 9090\n");
+    ConfigUpgrade.upgrade(file, template());
+    var after = YamlConfiguration.loadConfiguration(file.toFile());
+    assertTrue(after.getBoolean("discord.tickets.support.enabled"));
+    assertEquals(4, after.getMapList("discord.tickets.support.topics").size());
+
+    Files.writeString(
+        file,
+        "config-version: 3\ndiscord:\n  tickets:\n    support:\n      enabled: true\n      topics:\n"
+            + "        - id: only\n          label: Единственная\n          description: ''\n");
+    ConfigUpgrade.upgrade(file, template());
+    var kept = YamlConfiguration.loadConfiguration(file.toFile()).getMapList("discord.tickets.support.topics");
+    assertEquals(1, kept.size());
+    assertEquals("only", kept.getFirst().get("id"));
+  }
+
+  @Test
   void missingBlocksAreAddedButExplicitValuesSecretsListsAndUnknownKeysSurvive() throws Exception {
     var path = dir.resolve("config.yml");
     String original =
