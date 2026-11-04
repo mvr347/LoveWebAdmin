@@ -116,6 +116,9 @@ public class WebServer {
             context.addServlet(economyHolder, "/api/economy");
             context.addServlet(economyHolder, "/api/economy/*");
 
+            ServletHolder supportHolder = new ServletHolder(new me.lovelace.loveWebAdmin.web.handlers.ApiSupportHandler(plugin));
+            context.addServlet(supportHolder, "/api/support");
+            context.addServlet(supportHolder, "/api/support/*");
             ServletHolder reportsHolder = new ServletHolder(new me.lovelace.loveWebAdmin.web.handlers.ApiReportsHandler(plugin));
             context.addServlet(reportsHolder, "/api/reports");
             context.addServlet(reportsHolder, "/api/reports/*");

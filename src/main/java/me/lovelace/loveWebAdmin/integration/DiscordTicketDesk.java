@@ -125,6 +125,42 @@ public final class DiscordTicketDesk {
     return supportTopics.problem();
   }
 
+  /** Human title of a configured topic; the raw id when the topic was removed from config. */
+  public String supportTopicLabel(String id) {
+    return supportTopics.find(id).map(SupportTopics.Topic::label).orElse(id);
+  }
+
+  /** A staff answer written in the web panel: into the private channel and to the author. */
+  public void supportReply(int id, String actor, String text) throws Exception {
+    if (!enabled()) throw new IllegalArgumentException("Обращения временно недоступны");
+    if (text == null || text.trim().length() < 5 || text.length() > 1800)
+      throw new IllegalArgumentException("Сообщение: от 5 до 1800 символов");
+    synchronized (writes) {
+      var ticket =
+          store
+              .get("support", id)
+              .filter(t -> t.state().equals("OPEN") && domainOpen(t))
+              .orElseThrow(() -> new IllegalArgumentException("Обращение уже закрыто"));
+      if (ticket.channel().isBlank())
+        throw new IllegalArgumentException("Канал обращения ещё не создан");
+      sendConversation(ticket, actor, text.trim());
+      audit(actor, ticket, "Ответ из панели");
+    }
+  }
+
+  /** Closes a case from the web panel through the same pipeline as the Discord button. */
+  public void closeFromPanel(String kind, int id, String actor, String reason) throws Exception {
+    if (!enabled()) throw new IllegalArgumentException("Обращения временно недоступны");
+    synchronized (writes) {
+      var ticket =
+          store
+              .get(kind, id)
+              .filter(t -> t.state().equals("OPEN"))
+              .orElseThrow(() -> new IllegalArgumentException("Обращение уже закрывается или закрыто"));
+      requestClose(ticket, actor, reason == null ? "" : reason.trim());
+    }
+  }
+
   static boolean isSupport(String kind) {
     return "support".equals(kind);
   }

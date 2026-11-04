@@ -58,7 +58,7 @@
           ><button>Добавить заметку</button>
         </form>
       </section>
-      <section>
+      <section id="evidence-section">
         <h2>Доказательства</h2>
         <p class="muted">
           Текст, выбранные сообщения, ссылки и скриншоты PNG/JPEG/WebP до 700
@@ -119,6 +119,38 @@
           ><button>Запросить уточнение</button>
         </form>
       </section>
+      <section id="support" hidden>
+        <h2>Ответ игроку</h2>
+        <p class="muted">
+          Сообщение попадёт в закрытый канал обращения и придёт автору личным
+          сообщением в Discord.
+        </p>
+        <form id="support-reply-form">
+          <textarea
+            id="support-reply"
+            minlength="5"
+            maxlength="1800"
+            required
+          ></textarea
+          ><button>Ответить игроку</button>
+        </form>
+      </section>
+      <section id="support-close" hidden>
+        <h2>Закрыть обращение</h2>
+        <p class="muted">
+          Переписка и файлы сохранятся в архив, затем канал будет удалён.
+        </p>
+        <form id="support-close-form">
+          <textarea
+            id="support-close-reason"
+            minlength="5"
+            maxlength="4000"
+            placeholder="Причина закрытия (видна автору)"
+            required
+          ></textarea
+          ><button class="danger">Закрыть обращение</button>
+        </form>
+      </section>
       <section id="appeal" hidden>
         <h2>Переписка с игроком</h2>
         <div id="messages"></div>
@@ -127,7 +159,7 @@
           ><button>Ответить игроку</button>
         </form>
       </section>
-      <section>
+      <section id="decision-section">
         <h2>Решение</h2>
         <textarea
           id="verdict"

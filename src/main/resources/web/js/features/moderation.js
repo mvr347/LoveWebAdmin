@@ -129,6 +129,7 @@ export async function renderPunishmentsView(
                     <span>${renderSvgIcon("scales", "violet", 15)}</span>
                     <span>АПЕЛЛЯЦИИ (DISCORD)</span>
                 </button>
+                <button type="button" class="segmented-nav-tab ${state.currentPunishmentsSubtab === "support" ? "active" : ""}" data-subtab="support">ПОДДЕРЖКА</button>
                 <button type="button" class="segmented-nav-tab" data-subtab="restrictions">ОГРАНИЧЕНИЯ</button>
             </div>
 
@@ -184,7 +185,113 @@ export async function renderPunishmentsView(
     else if (tab === "reports") loadReportsSubtab();
     else if (tab === "bans") loadBansSubtab();
     else if (tab === "appeals") loadAppealsSubtab(param || initialBanId);
+    else if (tab === "support") loadSupportSubtab();
   };
+
+  // ----------------------------------------------------------------------
+  // SUBTAB: SUPPORT (ПОДДЕРЖКА) - requests that have no punishment behind them
+  // ----------------------------------------------------------------------
+  async function loadSupportSubtab() {
+    const container = document.getElementById("punishments-subtab-container");
+    if (!container) return;
+    let status = "open";
+    let offset = 0;
+    container.innerHTML = `
+                <div style="background:var(--card-bg); border:1px solid var(--border); border-radius:var(--radius-md); padding:14px; margin-bottom:18px; display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
+                    <div style="display:flex; gap:6px; flex-wrap:wrap;" id="support-status-filters">
+                        <button type="button" class="filter-tag-btn active" data-status="open">Открытые <span class="badge yellow" id="support-open-count" style="margin-left:4px;">0</span></button>
+                        <button type="button" class="filter-tag-btn" data-status="closed">Закрытые</button>
+                        <button type="button" class="filter-tag-btn" data-status="all">Все</button>
+                    </div>
+                    <button type="button" class="secondary btn-sm" id="support-refresh">Обновить</button>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="width:55px;">ID</th>
+                                <th>ИГРОК</th>
+                                <th>ТЕМА</th>
+                                <th>ОТВЕТСТВЕННЫЙ</th>
+                                <th>СОЗДАНО</th>
+                                <th>СОСТОЯНИЕ</th>
+                                <th style="text-align:right;">ДЕЙСТВИЯ</th>
+                            </tr>
+                        </thead>
+                        <tbody id="support-subtab-tbody">
+                            <tr><td colspan="7" style="text-align:center; padding:32px; color:var(--text-dim);">Загрузка обращений...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div id="support-pager" style="display:flex; gap:8px; align-items:center; margin-top:12px;"></div>`;
+    const stateText = (item) => {
+      if (item.status === "CLOSED") return "Закрыто";
+      if (item.deskState === "CLOSING") return "Закрывается";
+      if (!item.hasChannel) return "Канал создаётся";
+      return "Открыто";
+    };
+    const load = async () => {
+      const tbody = document.getElementById("support-subtab-tbody");
+      const pager = document.getElementById("support-pager");
+      if (!tbody || !pager) return;
+      try {
+        const data = await api(
+          "GET",
+          `/api/support?status=${encodeURIComponent(status)}&offset=${offset}`,
+        );
+        const openCount = document.getElementById("support-open-count");
+        if (openCount) openCount.textContent = data.open || 0;
+        const items = data.items || [];
+        tbody.innerHTML = items.length
+          ? items
+              .map(
+                (item) => `
+                        <tr>
+                            <td>#${esc(String(item.id))}</td>
+                            <td><strong>${esc(item.nick)}</strong></td>
+                            <td>${esc(item.topicLabel || item.topic)}</td>
+                            <td>${esc(item.assignee || "Не назначен")}</td>
+                            <td>${esc(new Date(item.createdAt * 1000).toLocaleString("ru-RU"))}</td>
+                            <td>${esc(stateText(item))}</td>
+                            <td style="text-align:right;"><a class="secondary btn-sm" href="/case.html?kind=support&id=${encodeURIComponent(item.id)}">РАБОТА С ОБРАЩЕНИЕМ</a></td>
+                        </tr>`,
+              )
+              .join("")
+          : `<tr><td colspan="7" style="text-align:center; padding:32px; color:var(--text-dim);">Обращений нет</td></tr>`;
+        const size = data.pageSize || 20;
+        const total = data.total || 0;
+        pager.innerHTML = `
+                    <button type="button" class="secondary btn-sm" id="support-prev" ${offset <= 0 ? "disabled" : ""}>Назад</button>
+                    <span style="color:var(--text-dim);">${total ? offset + 1 : 0}–${Math.min(total, offset + size)} из ${total}</span>
+                    <button type="button" class="secondary btn-sm" id="support-next" ${offset + size >= total ? "disabled" : ""}>Вперёд</button>`;
+        document.getElementById("support-prev").onclick = () => {
+          offset = Math.max(0, offset - size);
+          load();
+        };
+        document.getElementById("support-next").onclick = () => {
+          offset += size;
+          load();
+        };
+      } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:32px; color:var(--text-dim);">${esc(e.message || "Не удалось загрузить обращения")}</td></tr>`;
+      }
+    };
+    document
+      .querySelectorAll("#support-status-filters .filter-tag-btn")
+      .forEach((button) => {
+        button.addEventListener("click", () => {
+          document
+            .querySelectorAll("#support-status-filters .filter-tag-btn")
+            .forEach((other) => other.classList.remove("active"));
+          button.classList.add("active");
+          status = button.dataset.status;
+          offset = 0;
+          load();
+        });
+      });
+    document.getElementById("support-refresh").onclick = load;
+    load();
+  }
 
   // ----------------------------------------------------------------------
   // 1. SUBTAB: REPORTS (ЖАЛОБЫ) - NO STAT CARDS, 4+ OFFENDERS PROMINENT

@@ -15,9 +15,18 @@ public final class ApiCasesHandler extends ApiHandlerSupport {
 
   private String[] path(HttpServletRequest req) {
     String[] p = Objects.toString(req.getPathInfo(), "").split("/");
-    if (p.length < 3 || !Set.of("report", "appeal").contains(p[1]))
+    if (p.length < 3 || !Set.of("report", "appeal", "support").contains(p[1]))
       throw new IllegalArgumentException("Укажите тип и номер дела");
     return p;
+  }
+
+  /** Support is handled with the report permissions: nobody is being judged there. */
+  private static Permission viewPermission(String kind) {
+    return kind.equals("appeal") ? Permission.VIEW_APPEALS : Permission.VIEW_REPORTS;
+  }
+
+  private static Permission managePermission(String kind) {
+    return kind.equals("appeal") ? Permission.MANAGE_APPEALS : Permission.MANAGE_REPORTS;
   }
 
   @Override
@@ -62,20 +71,27 @@ public final class ApiCasesHandler extends ApiHandlerSupport {
     }
     String[] p = path(req);
     int id = Integer.parseInt(p[2]);
-    var auth =
-        requirePermission(
-            req, resp, p[1].equals("report") ? Permission.VIEW_REPORTS : Permission.VIEW_APPEALS);
+    var auth = requirePermission(req, resp, viewPermission(p[1]));
     if (auth.isEmpty()) return;
-    boolean exists =
-        p[1].equals("report")
-            ? plugin.getDatabaseManager().getReportById(id).isPresent()
-            : plugin.getDatabaseManager().getAppealById(id).isPresent();
+    boolean exists;
+    try {
+      exists =
+          switch (p[1]) {
+            case "support" -> plugin.moderation().support(id).isPresent();
+            case "report" -> plugin.getDatabaseManager().getReportById(id).isPresent();
+            default -> plugin.getDatabaseManager().getAppealById(id).isPresent();
+          };
+    } catch (SQLException error) {
+      throw new IllegalStateException(error);
+    }
     if (!exists) {
       sendError(resp, 404, "Дело не найдено");
       return;
     }
     try {
-      if (new CaseWorkflowRoutes(plugin).get(req, resp, p, id, auth.get())) return;
+      // Decisions, templates and reviews exist for reports and appeals only.
+      if (!p[1].equals("support") && new CaseWorkflowRoutes(plugin).get(req, resp, p, id, auth.get()))
+        return;
       if (p.length >= 4 && p[3].equals("transcript")) {
         resp.setHeader("Cache-Control", "no-store");
         var archive = plugin.getDiscordBridge().ticketDeskStore();
@@ -290,14 +306,11 @@ public final class ApiCasesHandler extends ApiHandlerSupport {
     String[] p = path(req);
     int id = Integer.parseInt(p[2]);
     if (p.length != 4) throw new IllegalArgumentException("Укажите действие");
-    var auth =
-        requirePermission(
-            req,
-            resp,
-            p[1].equals("report") ? Permission.MANAGE_REPORTS : Permission.MANAGE_APPEALS);
+    var auth = requirePermission(req, resp, managePermission(p[1]));
     if (auth.isEmpty()) return;
     try {
-      if (new CaseWorkflowRoutes(plugin).post(req, resp, p, id, auth.get())) return;
+      if (!p[1].equals("support") && new CaseWorkflowRoutes(plugin).post(req, resp, p, id, auth.get()))
+        return;
     } catch (me.lovelace.loveWebAdmin.utils.ActionRejectedException error) {
       throw error;
     } catch (IllegalArgumentException error) {
@@ -307,18 +320,32 @@ public final class ApiCasesHandler extends ApiHandlerSupport {
       throw new IllegalStateException(error);
     }
     String actor = auth.get().adminUsername();
-    boolean open =
-        p[1].equals("report")
-            ? plugin
-                .getDatabaseManager()
-                .getReportById(id)
-                .filter(r -> r.status().equals("PENDING"))
-                .isPresent()
-            : plugin
-                .getDatabaseManager()
-                .getAppealById(id)
-                .filter(a -> a.status().equals("PENDING"))
-                .isPresent();
+    boolean open;
+    try {
+      open =
+          switch (p[1]) {
+            case "support" ->
+                plugin
+                    .moderation()
+                    .support(id)
+                    .filter(row -> "OPEN".equals(row.get("status")))
+                    .isPresent();
+            case "report" ->
+                plugin
+                    .getDatabaseManager()
+                    .getReportById(id)
+                    .filter(r -> r.status().equals("PENDING"))
+                    .isPresent();
+            default ->
+                plugin
+                    .getDatabaseManager()
+                    .getAppealById(id)
+                    .filter(a -> a.status().equals("PENDING"))
+                    .isPresent();
+          };
+    } catch (SQLException error) {
+      throw new IllegalStateException(error);
+    }
     if (!open) {
       sendError(resp, 409, "Дело закрыто или не найдено");
       return;
@@ -336,6 +363,9 @@ public final class ApiCasesHandler extends ApiHandlerSupport {
       }
       switch (p[3]) {
         case "evidence" -> {
+          if (p[1].equals("support"))
+            throw new IllegalArgumentException(
+                "Для обращений в поддержку доказательства не используются");
           int evidenceId =
               me.lovelace.loveWebAdmin.managers.CaseEvidence.add(
                   plugin.moderation(), p[1], id, actor, body);
@@ -359,6 +389,9 @@ public final class ApiCasesHandler extends ApiHandlerSupport {
               .ifPresent(plugin.getDiscordBridge()::notifyReportCreated);
         }
         case "clarify" -> {
+          if (p[1].equals("support"))
+            throw new IllegalArgumentException(
+                "В обращении поддержки ответьте игроку: действие «Ответ игроку»");
           if (!p[1].equals("report"))
             throw new IllegalArgumentException(
                 "Уточнения по апелляциям отправляются в их переписку");
@@ -371,6 +404,27 @@ public final class ApiCasesHandler extends ApiHandlerSupport {
         }
         case "note" -> {
           plugin.moderation().note(p[1], id, actor, stringOrNull(body.get("text")));
+          ok = true;
+        }
+        case "reply", "close" -> {
+          if (!p[1].equals("support"))
+            throw new IllegalArgumentException("Действие доступно только для поддержки");
+          try {
+            if (p[3].equals("reply"))
+              plugin
+                  .getDiscordBridge()
+                  .ticketDesk()
+                  .supportReply(id, actor, stringOrNull(body.get("text")));
+            else
+              plugin
+                  .getDiscordBridge()
+                  .ticketDesk()
+                  .closeFromPanel("support", id, actor, stringOrNull(body.get("reason")));
+          } catch (IllegalArgumentException error) {
+            throw error;
+          } catch (Exception error) {
+            throw new IllegalStateException(error);
+          }
           ok = true;
         }
         case "work" -> {
