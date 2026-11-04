@@ -633,9 +633,16 @@ final class PrivateDiscordMenus implements AutoCloseable {
     var out = new LinkedHashMap<String, Object>();
     out.put("content", content);
     out.put("allowed_mentions", Map.of("parse", List.of()));
-    out.put(
-        "components",
-        controls.isEmpty() ? List.of() : List.of(Map.of("type", 1, "components", controls)));
+    // Discord allows at most five buttons in a row and five rows in a message.
+    var rows = new ArrayList<Map<String, Object>>();
+    for (int from = 0; from < controls.size() && rows.size() < 5; from += 5)
+      rows.add(
+          Map.of(
+              "type",
+              1,
+              "components",
+              List.copyOf(controls.subList(from, Math.min(controls.size(), from + 5)))));
+    out.put("components", rows);
     return DiscordCards.decorate(
         out,
         content.contains("Закрыто")

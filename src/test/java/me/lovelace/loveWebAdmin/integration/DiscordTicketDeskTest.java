@@ -421,6 +421,27 @@ class DiscordTicketDeskTest {
   }
 
   @Test
+  @SuppressWarnings("unchecked")
+  void newCaseMenuNeverPutsMoreThanFiveButtonsInARow() throws Exception {
+    for (int i = 0; i < 3; i++)
+      desk.store()
+          .draft(
+              "10000",
+              "report",
+              new LinkedHashMap<>(Map.of("nick", "Reporter", "target", "Griefer", "reason", "Описание " + i, "_step", 2)));
+    new PrivateDiscordMenus(plugin, discord.service, new DiscordActions(plugin, discord.service)).register();
+    var menu = discord.renderers.get("newcase").apply("10000");
+    var rows = (List<Map<String, Object>>) menu.get("components");
+    int buttons = 0;
+    for (var row : rows) {
+      int inRow = ((List<?>) row.get("components")).size();
+      assertTrue(inRow <= 5, "a row holds " + inRow + " buttons");
+      buttons += inRow;
+    }
+    assertEquals(6, buttons, "report, appeal, support and three drafts must all stay reachable");
+  }
+
+  @Test
   void supportDraftWithAnUnknownTopicOrAShortTextIsRejected() throws Exception {
     var unknown = click("10000", "70000", "lwa:desk:sdraft:nope", Map.of("reason", "Достаточно длинный текст"));
     assertTrue(unknown.get("content").toString().contains("недоступна"));
