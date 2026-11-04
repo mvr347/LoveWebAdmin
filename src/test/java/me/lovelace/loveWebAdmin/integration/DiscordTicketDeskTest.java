@@ -408,6 +408,45 @@ class DiscordTicketDeskTest {
     assertTrue(plugin.getDatabaseManager().reportDiscussion(1).isEmpty());
   }
 
+  void openSupportRequest() throws Exception {
+    var modal = click("10000", "70000", "lwa:desk:support:topic", Map.of("selected", "question"));
+    var preview =
+        click("10000", "70000", (String) modal.get("custom_id"), Map.of("reason", "Как получить привилегию?"));
+    click("10000", "70000", confirm(preview), Map.of());
+    await(() -> ticketChannel("support", 1).equals("200000"));
+  }
+
+  @Test
+  void aWebPanelReplyReachesTheChannelAndTheAuthorAndIsValidated() throws Exception {
+    openSupportRequest();
+    int sent = discord.replySends.get();
+    assertThrows(IllegalArgumentException.class, () -> desk.supportReply(1, "Moderator", "ок"));
+    desk.supportReply(1, "Moderator", "Привилегию можно получить в магазине на спавне");
+    assertEquals(sent + 1, discord.replySends.get());
+    assertTrue(JsonUtils.toJson(discord.lastReply).contains("магазине на спавне"));
+    assertTrue(
+        plugin.moderation().deliveries().stream()
+            .anyMatch(row -> row.get("event").toString().startsWith("owner-notice:support:1:reply:")));
+    desk.closeFromPanel("support", 1, "Moderator", "Вопрос решён");
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> desk.supportReply(1, "Moderator", "Ещё одно сообщение после закрытия"));
+  }
+
+  @Test
+  void closingFromTheWebPanelUsesTheSamePipelineAsDiscord() throws Exception {
+    openSupportRequest();
+    assertThrows(IllegalArgumentException.class, () -> desk.closeFromPanel("support", 1, "Moderator", "ок"));
+    desk.closeFromPanel("support", 1, "Moderator", "Вопрос решён");
+    assertEquals("CLOSING", ticketState("support", 1));
+    assertEquals("CLOSED", plugin.moderation().support(1).orElseThrow().get("status"));
+    desk.tick();
+    await(() -> ticketState("support", 1).equals("CLOSED"));
+    assertEquals(1, discord.deleted.get());
+    assertThrows(
+        IllegalArgumentException.class, () -> desk.closeFromPanel("support", 1, "Moderator", "Повторное закрытие"));
+  }
+
   @Test
   void supportDoesNotTouchTheReportTicketRegistry() throws Exception {
     var modal = click("10000", "70000", "lwa:desk:support:topic", Map.of("selected", "other"));

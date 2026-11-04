@@ -13,7 +13,9 @@ export function mountCase({ root = document, search = location.search } = {}) {
   const $ = (id) => root.querySelector("#" + CSS.escape(id)),
     q = new URLSearchParams(search),
     kind = q.get("kind"),
-    id = q.get("id");
+    id = q.get("id"),
+    // Support has no punishment behind it: no verdicts, evidence or workflow templates.
+    isSupport = kind === "support";
   let data,
     revision = 0,
     identity;
@@ -125,28 +127,38 @@ export function mountCase({ root = document, search = location.search } = {}) {
   $("verdict").required = true;
   $("reduce").dataset.requires = "#remaining";
   bindValidation(decisionScope, [$("approve"), $("reject"), $("reduce")]);
-  const workflow = installCaseWorkflow({
-    api,
-    context: () => ({ kind, id, identity }),
-    reload: load,
-    fail,
-    root,
-  });
+  // Templates, wait deadlines and post-closure evidence belong to reports and appeals.
+  const workflow = isSupport
+    ? null
+    : installCaseWorkflow({
+        api,
+        context: () => ({ kind, id, identity }),
+        reload: load,
+        fail,
+        root,
+      });
   async function load() {
-    if (!["report", "appeal"].includes(kind) || !/^\d+$/.test(id))
+    if (!["report", "appeal", "support"].includes(kind) || !/^\d+$/.test(id))
       throw Error("Некорректная ссылка на дело");
     const workspace = await api("GET", "/api/cases/" + kind + "/" + id);
     data = await api(
       "GET",
-      "/api/" + (kind === "report" ? "reports" : "appeals") + "/" + id,
+      isSupport
+        ? "/api/support/" + id
+        : "/api/" + (kind === "report" ? "reports" : "appeals") + "/" + id,
     );
-    const d = kind === "report" ? data.report : data;
+    // The support record is open/closed; the rest of the page speaks PENDING/CLOSED.
+    const d = isSupport
+      ? { ...data, status: data.status === "OPEN" ? "PENDING" : "CLOSED" }
+      : kind === "report"
+        ? data.report
+        : data;
     revision = workspace.revision || 0;
     identity ||= await api("GET", "/api/me");
     const can = (permission) =>
       identity.isOwner || identity.permissions?.includes(permission);
     const manage =
-      can(kind === "report" ? "MANAGE_REPORTS" : "MANAGE_APPEALS") &&
+      can(kind === "appeal" ? "MANAGE_APPEALS" : "MANAGE_REPORTS") &&
       d.status === "PENDING";
     for (const form of root.querySelectorAll("form"))
       for (const input of form.querySelectorAll(
@@ -222,9 +234,28 @@ export function mountCase({ root = document, search = location.search } = {}) {
     }
 
     $("heading").textContent =
-      (kind === "report" ? "Жалоба" : "Апелляция") + " №" + id;
-    $("summary").textContent =
-      (d.targetName || d.playerName) +
+      { report: "Жалоба", appeal: "Апелляция", support: "Поддержка" }[kind] +
+      " №" +
+      id;
+    $("evidence-section").hidden = isSupport;
+    $("decision-section").hidden = isSupport;
+    $("support").hidden = !isSupport;
+    $("support-close").hidden = !isSupport;
+    $("summary").textContent = isSupport
+      ? data.nick +
+        " · " +
+        (data.topicLabel || data.topic) +
+        " — " +
+        data.body +
+        " · " +
+        (d.status === "PENDING"
+          ? data.hasChannel
+            ? "Открыто"
+            : "Канал создаётся"
+          : "Закрыто") +
+        " · Discord автора: " +
+        data.discordId
+      : (d.targetName || d.playerName) +
       " — " +
       (d.description || d.reason || "") +
       " · " +
@@ -276,7 +307,7 @@ export function mountCase({ root = document, search = location.search } = {}) {
     }
     $("appeal").hidden = kind !== "appeal";
     if (kind === "appeal") messages("messages", data.messages || []);
-    await workflow.render();
+    if (!isSupport) await workflow.render();
     refreshValidation(decisionScope);
     $("remaining").hidden = kind !== "appeal";
     $("reduce").hidden = kind !== "appeal";
@@ -312,6 +343,28 @@ export function mountCase({ root = document, search = location.search } = {}) {
     })
       .then(() => ($("note-text").value = ""))
       .catch(fail);
+  };
+  $("support-reply-form").onsubmit = (e) => {
+    e.preventDefault();
+    post("reply", { text: $("support-reply").value })
+      .then(() => ($("support-reply").value = ""))
+      .catch(fail);
+  };
+  $("support-close-form").onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      if (
+        await confirmDialog(
+          "Закрытие обращения",
+          "Закрыть обращение №" +
+            id +
+            "? Переписка сохранится в архиве, канал будет удалён.",
+        )
+      )
+        await post("close", { reason: $("support-close-reason").value });
+    } catch (error) {
+      fail(error);
+    }
   };
   $("reply-form").onsubmit = (e) => {
     e.preventDefault();

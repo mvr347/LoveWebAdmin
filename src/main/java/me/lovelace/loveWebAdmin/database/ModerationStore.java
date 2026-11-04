@@ -149,6 +149,48 @@ public final class ModerationStore implements AutoCloseable {
     }
   }
 
+  /** Newest first. {@code status} is OPEN, CLOSED or ALL (anything else counts as ALL). */
+  public synchronized List<Map<String, Object>> supportList(String status, int offset, int limit)
+      throws SQLException {
+    boolean filtered = status.equals("OPEN") || status.equals("CLOSED");
+    var rows = new ArrayList<Map<String, Object>>();
+    try (var q =
+        db.prepareStatement(
+            "SELECT * FROM support_cases"
+                + (filtered ? " WHERE status=?" : "")
+                + " ORDER BY id DESC LIMIT ? OFFSET ?")) {
+      int index = 1;
+      if (filtered) q.setString(index++, status);
+      q.setInt(index++, Math.clamp(limit, 1, 100));
+      q.setInt(index, Math.max(0, offset));
+      try (var r = q.executeQuery()) {
+        while (r.next())
+          rows.add(
+              Map.of(
+                  "id", r.getInt("id"),
+                  "discordId", r.getString("discord_id"),
+                  "nick", r.getString("nick"),
+                  "topic", r.getString("topic"),
+                  "body", r.getString("body"),
+                  "status", r.getString("status"),
+                  "createdAt", r.getLong("created_at")));
+      }
+    }
+    return rows;
+  }
+
+  public synchronized int supportCount(String status) throws SQLException {
+    boolean filtered = status.equals("OPEN") || status.equals("CLOSED");
+    try (var q =
+        db.prepareStatement(
+            "SELECT COUNT(*) FROM support_cases" + (filtered ? " WHERE status=?" : ""))) {
+      if (filtered) q.setString(1, status);
+      try (var r = q.executeQuery()) {
+        return r.next() ? r.getInt(1) : 0;
+      }
+    }
+  }
+
   public synchronized boolean closeSupport(int id) throws SQLException {
     try (var q = db.prepareStatement("UPDATE support_cases SET status='CLOSED' WHERE id=?")) {
       q.setInt(1, id);
