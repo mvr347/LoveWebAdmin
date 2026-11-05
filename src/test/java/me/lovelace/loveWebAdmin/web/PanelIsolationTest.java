@@ -475,6 +475,114 @@ class PanelIsolationTest {
     StringWriter body = new StringWriter();
   }
 
+  @Test
+  void sensitiveApiResponsesAreNotCachedAndPolicyBlocksBaseAndObjectInjection() throws Exception {
+    var headers=new HashMap<String,String>();
+    var request=(HttpServletRequest)Proxy.newProxyInstance(getClass().getClassLoader(),new Class[]{HttpServletRequest.class},(p,m,a)->switch(m.getName()) {
+      case "getHeader" -> "Origin".equals(a[0]) ? "https://panel.example" : null;
+      case "getScheme" -> "https"; case "getServerName" -> "panel.example";
+      case "getServerPort" -> 443; case "getMethod" -> "GET"; case "getRequestURI" -> "/api/bans";
+      default -> null;
+    });
+    var response=(HttpServletResponse)Proxy.newProxyInstance(getClass().getClassLoader(),new Class[]{HttpServletResponse.class},(p,m,a)->{
+      if(m.getName().equals("setHeader"))headers.put((String)a[0],(String)a[1]);return null;
+    });
+    var called=new java.util.concurrent.atomic.AtomicBoolean();
+    new CorsFilter(plugin).doFilter(request,response,(q,r)->called.set(true));
+    assertTrue(called.get());assertEquals("no-store",headers.get("Cache-Control"));
+    assertTrue(headers.get("Content-Security-Policy").contains("base-uri 'none'"));
+    assertTrue(headers.get("Content-Security-Policy").contains("object-src 'none'"));
+    assertTrue(headers.get("Access-Control-Allow-Headers").contains("Idempotency-Key"));
+    assertEquals("https://panel.example",headers.get("Access-Control-Allow-Origin"));
+  }
+
+  private int report(String name) {
+    return plugin.getDatabaseManager().createPlayerReport(UUID.randomUUID().toString(), "Reporter", null,
+        UUID.randomUUID().toString(), name, List.of("Причина"), "Описание", false, 0);
+  }
+
+  private WebBan ban(String name) {
+    return plugin.getDatabaseManager().saveBan(new WebBan(0, name, null, null, "Issuer", "Причина", "", "[]", true, "ACTIVE", -1, 100, -1));
+  }
+
+  @Test
+  void banRightsDoNotAllowClosingAReportByAttachingIt() throws Exception {
+    var actor = account("BanOnly", Set.of(Permission.MANAGE_BANS));
+    var ban = ban("Ada123"); int report = report("Ada123");
+    var headers = Map.of("Authorization", "Bearer " + actor.token());
+    requestMethod = "POST"; requestBody = "{\"reportId\":" + report + "}";
+    assertEquals(403, call(new ApiBansHandler(plugin), "/api/bans", "/"+ban.id()+"/attach-report", headers).status);
+    requestBody = "{\"targetName\":\"Ada123\",\"ruleReason\":\"Причина\",\"description\":\"Доказательства\",\"linkedReportId\":"+report+"}";
+    assertEquals(403, call(new ApiBansHandler(plugin), "/api/bans", null, headers).status);
+    assertNull(plugin.getDatabaseManager().getBanById(ban.id()).orElseThrow().linkedReportId());
+    assertEquals("PENDING", plugin.getDatabaseManager().getReportById(report).orElseThrow().status());
+  }
+
+  @Test
+  void wrongOrClosedReportCannotChangeAnExistingBan() throws Exception {
+    var db = plugin.getDatabaseManager();
+    var actor = account("BanAndReport", Set.of(Permission.MANAGE_BANS,Permission.MANAGE_REPORTS));
+    var ban = ban("Ada123"); int wrong = report("OtherPlayer"), correct = report("Ada123");
+    requestMethod = "POST"; requestBody = "{\"reportId\":"+wrong+"}";
+    assertEquals(409,call(new ApiBansHandler(plugin),"/api/bans","/"+ban.id()+"/attach-report",Map.of("Authorization","Bearer "+actor.token())).status);
+    assertNull(db.getBanById(ban.id()).orElseThrow().linkedReportId());
+    assertEquals("PENDING",db.getReportById(wrong).orElseThrow().status());
+    assertFalse(db.linkBanAndReport(ban.id(),999999,"Staff"));
+    assertNull(db.getBanById(ban.id()).orElseThrow().linkedReportId());
+    assertTrue(db.linkBanAndReport(ban.id(),correct,"Staff"));
+    assertFalse(db.linkBanAndReport(ban.id(),correct,"Staff"));
+    assertEquals(correct,db.getBanById(ban.id()).orElseThrow().linkedReportId());
+    assertEquals(ban.id(),db.getReportById(correct).orElseThrow().linkedBanId());
+    assertFalse(db.linkBanAndReport(ban.id(),report("Ada123"),"Staff"));
+  }
+
+  @Test
+  void reportWriteFailureRollsBackTheBanLink() throws Exception {
+    var db=plugin.getDatabaseManager();var ban=ban("Ada123");int report=report("Ada123");
+    var field=db.getClass().getDeclaredField("connection");field.setAccessible(true);
+    var connection=(java.sql.Connection)field.get(db);
+    try(var statement=connection.createStatement()) {
+      statement.execute("CREATE TEMP TRIGGER fail_report_update BEFORE UPDATE ON player_reports BEGIN SELECT RAISE(ABORT, 'test write failure'); END");
+    }
+    assertFalse(db.linkBanAndReport(ban.id(),report,"Staff"));
+    assertNull(db.getBanById(ban.id()).orElseThrow().linkedReportId());
+    assertEquals("PENDING",db.getReportById(report).orElseThrow().status());
+    assertTrue(connection.getAutoCommit());
+  }
+
+  @Test
+  void invalidReportCannotApplyAPunishmentThroughTheManager() {
+    int wrong=report("OtherPlayer");
+    assertThrows(IllegalArgumentException.class,()->plugin.getBanManager().finalizeBan(0,"Staff","Ada123","Причина","Описание",List.of(),true,3600,wrong));
+    assertTrue(plugin.getDatabaseManager().getAllBans(null).isEmpty());
+    int closed=report("Ada123");plugin.getDatabaseManager().resolveReport(closed,"CLOSED","Staff");
+    assertThrows(IllegalArgumentException.class,()->plugin.getBanManager().finalizeBan(0,"Staff","Ada123","Причина","Описание",List.of(),true,3600,closed));
+    assertTrue(plugin.getDatabaseManager().getAllBans(null).isEmpty());
+  }
+
+  @Test
+  void fractionalOrMalformedIdsDoNotCreateAnotherBan() throws Exception {
+    var actor=account("StrictIds",Set.of(Permission.MANAGE_BANS));requestMethod="POST";
+    for(String bad:List.of("1.5","-1","2147483648","\"broken\"")) {
+      requestBody="{\"id\":"+bad+",\"targetName\":\"Ada123\",\"ruleReason\":\"Причина\",\"description\":\"Описание\"}";
+      assertEquals(400,call(new ApiBansHandler(plugin),"/api/bans",null,Map.of("Authorization","Bearer "+actor.token())).status);
+    }
+    assertTrue(plugin.getDatabaseManager().getAllBans(null).isEmpty());
+  }
+
+  @Test
+  void contextAndCompactReportQueriesStayScopedAndBounded() {
+    var db=plugin.getDatabaseManager();ban("Ada123");ban("OtherPlayer");
+    db.saveBan(new WebBan(0,"Ada123",null,null,"Staff","Expired","","[]",true,"ACTIVE",60,100,160));
+    var summary=db.getBanContext("ada123");assertEquals(2L,summary.get("total"));assertEquals(1L,summary.get("active"));
+    for(int i=0;i<53;i++)report("Ada123");report("OtherPlayer");
+    var first=db.getPendingReportsForPlayer("ada123",null,51,0);
+    var last=db.getPendingReportsForPlayer("ADA123",null,51,50);
+    assertEquals(51,first.size());assertEquals(3,last.size());assertEquals(first.get(50).id(),last.getFirst().id());
+    assertTrue(db.getPendingReportsForPlayer("ada123","does-not-exist",51,0).isEmpty());
+    assertEquals(1,db.getPendingReportsForPlayer("ada123",null,-1,0).size());
+  }
+
   private Response call(
       HttpServlet servlet, String servletPath, String path, Map<String, String> headers)
       throws Exception {

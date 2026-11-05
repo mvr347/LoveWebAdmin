@@ -56,19 +56,9 @@ public class ApiReportsHandler extends ApiHandlerSupport {
         int limit = 50;
         int offset = 0;
 
-        if (target != null && !target.isBlank()) {
-            List<PlayerReport> list = plugin.getDatabaseManager().getPendingReportsForPlayer(target);
-            List<Map<String, Object>> mapped = new ArrayList<>();
-            for (PlayerReport r : list) {
-                mapped.add(toReportMap(r));
-            }
-            sendSuccess(resp, Map.of("reports", mapped));
-            return;
-        }
-
         if (req.getParameter("limit") != null) {
             try {
-                limit = Math.min(200, Integer.parseInt(req.getParameter("limit")));
+                limit = Math.clamp(Integer.parseInt(req.getParameter("limit")), 1, 200);
             } catch (NumberFormatException e) {
                 limit = 50;
             }
@@ -81,6 +71,16 @@ public class ApiReportsHandler extends ApiHandlerSupport {
             }
         }
 
+        if (target != null && !target.isBlank()) {
+            var list = plugin.getDatabaseManager().getPendingReportsForPlayer(target, search, limit, offset);
+            sendSuccess(resp, Map.of("reports", list.stream().map(this::toReportMap).toList()));
+            return;
+        }
+        if ("true".equals(req.getParameter("compact"))) {
+            var list = plugin.getDatabaseManager().getAllReports(status, search, limit, offset);
+            sendSuccess(resp, Map.of("reports", list.stream().map(this::toReportMap).toList()));
+            return;
+        }
         List<PlayerReport> reports = plugin.getDatabaseManager().getAllReports(status, search, limit, offset);
         Map<String, Object> stats = plugin.getDatabaseManager().getReportsStats();
 

@@ -1,6 +1,6 @@
 import { renderRestrictions } from "./restrictions.js";
 import { confirmCaseDecision } from "../core/decision-preview.js";
-import { explanationDialog, noticeDialog } from "../core/dialogs.js";
+import { confirmDialog, explanationDialog, noticeDialog } from "../core/dialogs.js";
 import { state } from "../state.js";
 import {
   api,
@@ -14,6 +14,7 @@ import {
   hasPerm,
   isModeratorRole,
   openModal,
+  openChildModal,
   openReportPickerModal,
   renderSvgIcon,
   showToast,
@@ -693,13 +694,13 @@ export async function renderPunishmentsView(
                                 <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
                                     <span class="badge red">${esc(b.ruleReason)}</span>
                                     ${b.linkedReportId ? `<button type="button" class="btn-tag-link" style="color:#c084fc; border-color:rgba(192, 132, 252, 0.4); display:inline-flex; align-items:center; gap:4px;" onclick="window.openReportDetailModal(${b.linkedReportId})" title="Открыть прикрепленную жалобу #${b.linkedReportId}">${renderSvgIcon("fileText", "violet", 12)} ЖАЛОБА #${b.linkedReportId}</button>` : ""}
-                                    ${proofUrl ? `<button type="button" class="screenshot-thumb-btn" onclick="window.openScreenshotLightbox('${esc(proofUrl)}')">${renderSvgIcon("fileText", "gray", 12)} СКРИНШОТ</button>` : ""}
+                                    ${proofUrl ? `<button type="button" class="screenshot-thumb-btn" data-evidence-src="${esc(proofUrl)}">${renderSvgIcon("fileText", "gray", 12)} СКРИНШОТ</button>` : ""}
                                 </div>
                                 ${b.description ? `<div style="font-size:11.5px; color:var(--text-muted); margin-top:4px;">${esc(b.description)}</div>` : ""}
                             </td>
                             <td style="font-weight:600; color:var(--accent-light);">${esc(b.sourceDisplay || b.creatorName)}</td>
                             <td class="font-mono" style="font-size:12px; color:var(--text-muted);">${fmtTime(b.createdAt)}</td>
-                            <td><span class="badge purple">БЕССРОЧНО</span></td>
+                            <td><span class="badge purple">${b.expiresAt > 0 ? "До " + fmtTime(b.expiresAt) : "Бессрочно"}</span></td>
                             <td>
                                 <span class="badge ${isActive ? "red" : "green"}">${isActive ? "АКТИВЕН" : "СНЯТ"}</span>
                             </td>
@@ -1019,13 +1020,16 @@ export function exposeRefreshPunishmentsView() {
   // --------------------------------------------------------------------------
 }
 export function exposeOpenQuickBanModal() {
+  let opening = 0;
   window.openQuickBanModal = async function (
     defaultPlayer = "",
     defaultReason = "",
     defaultComment = "",
     defaultReportId = null,
   ) {
+    const request = ++opening, account = state.token, view = state.requestGeneration;
     const reasons = await getBanReasons();
+    if (request !== opening || account !== state.token || view !== state.requestGeneration) return;
     const isManagement =
       state.me &&
       (state.me.isOwner ||
@@ -1057,9 +1061,9 @@ export function exposeOpenQuickBanModal() {
                 <div class="form-group">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
                         <label style="margin-bottom:0;">Никнейм игрока-нарушителя</label>
-                        <button type="button" class="btn-tag-link" id="btn-browse-reports-picker" style="font-size:11px; padding:2px 8px; display:inline-flex; align-items:center; gap:5px;">${renderSvgIcon("fileText", "violet", 12)} Выбрать жалобу</button>
+                        <button type="button" class="btn-tag-link" id="btn-browse-reports-picker" ${hasPerm("VIEW_REPORTS") && hasPerm("MANAGE_REPORTS") ? "" : 'disabled title="Нужны права просмотра и обработки жалоб"'} style="font-size:11px; padding:2px 8px; display:inline-flex; align-items:center; gap:5px;">${renderSvgIcon("fileText", "violet", 12)} Выбрать жалобу</button>
                     </div>
-                    <input type="text" id="ban-target-name" placeholder="Введите ник игрока..." value="${esc(defaultPlayer)}" required autofocus autocomplete="off">
+                    <input type="text" id="ban-target-name" maxlength="16" pattern="[A-Za-z0-9_]{3,16}" placeholder="Введите ник игрока..." value="${esc(defaultPlayer)}" required autofocus autocomplete="off">
                 </div>
 
                 <div class="form-group">
@@ -1108,12 +1112,14 @@ export function exposeOpenQuickBanModal() {
                     </select>
                 </div>
 
+                <div class="form-group"><label>Срок блокировки<select id="ban-duration"><option value="-1">Бессрочно</option><option value="3600">1 час</option><option value="86400">1 день</option><option value="604800">7 дней</option><option value="2592000">30 дней</option></select></label></div>
+
                 <div class="form-group">
                     <label style="display:flex; justify-content:space-between; align-items:center;">
                         <span>Описание нарушения / Доказательства</span>
                         ${!isManagement ? '<span style="color:var(--yellow); font-size:11px; font-weight:700;">* ОБЯЗАТЕЛЬНО ДЛЯ МОДЕРАТОРОВ</span>' : '<span style="color:var(--text-dim); font-size:11px;">(Опционально)</span>'}
                     </label>
-                    <textarea id="ban-comment-text" rows="3" placeholder="${!isManagement ? "Обязательно укажите подробности нарушения, таймкоды или контекст ситуации..." : "Укажите комментарий к блокировке (опционально)..."}">${esc(defaultComment || "")}</textarea>
+                    <textarea id="ban-comment-text" maxlength="4000" rows="3" placeholder="${!isManagement ? "Обязательно укажите подробности нарушения, таймкоды или контекст ситуации..." : "Укажите комментарий к блокировке (опционально)..."}">${esc(defaultComment || "")}</textarea>
                 </div>
 
                 <div class="form-group">
@@ -1133,69 +1139,81 @@ export function exposeOpenQuickBanModal() {
                     </div>
                 </div>
 
-                <div class="form-group"><label>Срок блокировки<select id="ban-duration"><option value="-1">Бессрочно</option><option value="3600">1 час</option><option value="86400">1 день</option><option value="604800">7 дней</option><option value="2592000">30 дней</option></select></label></div>
-                <!-- Modern Glowing Toggle Switch for IP-Ban (Requirement 5) -->
-                <div class="form-group">
-                    <label class="toggle-switch-wrap">
-                        <input type="checkbox" id="ban-ip-toggle" class="toggle-switch-input">
-                        <span class="toggle-switch"></span>
-                        <span class="toggle-label">
-                            <span class="toggle-title">Заблокировать также IP-адрес игрока (IP-Ban)</span>
-                            <span class="toggle-desc">Блокирует текущий сетевой адрес для предотвращения входа с твинков</span>
-                        </span>
-                    </label>
-                </div>
+                <p class="muted">Блокировка ограничит вход аккаунту и его IP-адресу. Перед выдачей вы увидите итоговую проверку.</p>
             </div>
             <div class="modal-footer">
-                <button type="button" class="secondary" data-modal-close="true">ОТМЕНА</button>
-                <button type="button" class="danger" id="ban-submit-btn">ЗАБЛОКИРОВАТЬ НАВСЕГДА</button>
+                <p id="ban-validation-help" role="status" class="muted"></p>
+                <button type="button" class="secondary" data-modal-close="true">Отмена</button>
+                <button type="button" class="danger" id="ban-submit-btn" disabled>Проверить и выдать бан</button>
             </div>
         `,
-      () => {
-        const select = document.getElementById("ban-reason-select");
-        const dropzone = document.getElementById("ban-screenshot-dropzone");
-        const fileInput = document.getElementById("ban-screenshot-file");
-        const urlInput = document.getElementById("ban-screenshot-url");
-        const previewWrap = document.getElementById(
+      (overlay) => {
+        const find = id => overlay.querySelector("#" + id);
+        let disposed = false, submitting = false, reportGeneration = 0, attachedReport = null, reportLoading = false;
+        const reportsCache = new Map(), readers = new Set();
+        const isLive = () => !disposed && overlay.isConnected && state.token === account;
+        const submit = find("ban-submit-btn");
+        const select = find("ban-reason-select");
+        const dropzone = find("ban-screenshot-dropzone");
+        const fileInput = find("ban-screenshot-file");
+        const urlInput = find("ban-screenshot-url");
+        const previewWrap = find(
           "ban-screenshot-preview-wrap",
         );
-        const previewImg = document.getElementById("ban-screenshot-img");
-        const clearBtn = document.getElementById("btn-clear-screenshot");
-        const targetInput = document.getElementById("ban-target-name");
-        const commentInput = document.getElementById("ban-comment-text");
+        const previewImg = find("ban-screenshot-img");
+        const clearBtn = find("btn-clear-screenshot");
+        const targetInput = find("ban-target-name");
+        const commentInput = find("ban-comment-text");
         let contextGeneration = 0;
+        let loadedContext = "";
+        function getPendingReports(name) {
+          if (!hasPerm("VIEW_REPORTS")) return Promise.resolve(null);
+          const key = name.toLowerCase();
+          if (!reportsCache.has(key)) {
+            const pending = api("GET", "/api/reports?status=PENDING&compact=true&limit=4&target=" + encodeURIComponent(name));
+            reportsCache.set(key, pending);
+            pending.catch(() => { if (reportsCache.get(key) === pending) reportsCache.delete(key); });
+            if (reportsCache.size > 8) reportsCache.delete(reportsCache.keys().next().value);
+          }
+          return reportsCache.get(key);
+        }
+        function updateSubmit() {
+          const option = select.selectedOptions[0];
+          const needsComment = !isManagement || option?.dataset.comment === "true" || select.value.toLowerCase().includes("другое");
+          const missing = [];
+          if (!targetInput.value.trim() || !targetInput.checkValidity()) missing.push("ник игрока: 3–16 латинских букв, цифр или _");
+          if (!select.value) missing.push("причину из правил");
+          if (needsComment && !commentInput.value.trim()) missing.push("описание нарушения");
+          if (!urlInput.checkValidity()) missing.push("HTTPS-ссылку на скриншот или удалите её");
+          submit.disabled = submitting || reportLoading || missing.length > 0;
+          find("ban-validation-help").textContent = reportLoading ? "Проверяем выбранную жалобу…" : submitting ? "Не отправляйте действие повторно." : missing.length ? "Укажите " + missing.join(", ") + "." : "Всё заполнено. Можно проверить и подтвердить бан.";
+          submit.textContent = submitting ? "Ожидаем результат…" : "Проверить и выдать бан";
+        }
         async function loadBanContext() {
+          const name = targetInput.value.trim();
+          if (name.toLowerCase() === loadedContext) return;
+          loadedContext = name.toLowerCase();
           const generation = ++contextGeneration,
-            name = targetInput.value.trim(),
-            panel = document.getElementById("ban-player-context");
+            panel = find("ban-player-context");
           if (!name) {
             panel.textContent = "Выберите игрока для просмотра контекста";
             return;
           }
           panel.textContent = "Загрузка контекста…";
           try {
-            const [bans, profile, reports] = await Promise.all([
-              api("GET", "/api/bans/all"),
+            const [summary, profile, reports] = await Promise.all([
+              hasPerm("VIEW_BANS") ? api("GET", "/api/bans/context?target=" + encodeURIComponent(name)) : Promise.resolve(null),
               hasPerm("VIEW_PLAYERS")
                 ? api("GET", "/api/players/" + encodeURIComponent(name))
                 : Promise.resolve(null),
-              hasPerm("VIEW_REPORTS")
-                ? api(
-                    "GET",
-                    "/api/reports?status=PENDING&target=" +
-                      encodeURIComponent(name),
-                  )
-                : Promise.resolve(null),
+              getPendingReports(name),
             ]);
             if (
-              generation !== contextGeneration ||
+              !isLive() || generation !== contextGeneration ||
               targetInput.value.trim() !== name ||
               !panel.isConnected
             )
               return;
-            const relevant = (bans || []).filter(
-              (b) => b.targetName?.toLowerCase() === name.toLowerCase(),
-            );
             panel.textContent =
               name +
               " · " +
@@ -1205,20 +1223,26 @@ export function exposeOpenQuickBanModal() {
                   : "Не в сети"
                 : "Профиль недоступен по правам") +
               " · Активных блокировок: " +
-              relevant.filter((b) => b.status === "ACTIVE").length +
+              (summary?.active ?? "нет доступа") +
               " · Всего: " +
-              relevant.length +
+              (summary?.total ?? "нет доступа") +
               (reports
-                ? " · Открытых жалоб: " + (reports.reports?.length || 0)
+                ? " · Открытых жалоб: " + ((reports.reports?.length || 0) >= 4 ? "4+" : (reports.reports?.length || 0))
                 : "");
           } catch (e) {
-            if (generation === contextGeneration && panel.isConnected)
+            if (isLive() && generation === contextGeneration && panel.isConnected)
               panel.textContent = "Контекст не загружен: " + e.message;
           }
         }
-        targetInput.addEventListener("change", loadBanContext);
+        targetInput.addEventListener("change", () => { loadBanContext(); checkPendingReports(); });
+        targetInput.addEventListener("input", () => {
+          if (attachedReport && attachedReport.targetName.toLowerCase() !== targetInput.value.trim().toLowerCase()) renderAttachedReport(null);
+          updateSubmit();
+        });
+        select.addEventListener("change", updateSubmit);
+        commentInput.addEventListener("input", updateSubmit);
         targetInput.addEventListener("blur", loadBanContext);
-        if (targetInput.value) loadBanContext();
+
 
         // Autocomplete for player names
         if (targetInput) {
@@ -1227,13 +1251,14 @@ export function exposeOpenQuickBanModal() {
           });
         }
         const setScreenshot = (src) => {
+          if (!isLive()) return;
           attachedScreenshot = src;
           if (src) {
             previewImg.src = src;
             previewWrap.style.display = "block";
             dropzone.style.display = "none";
           } else {
-            previewImg.src = "";
+            previewImg.removeAttribute("src");
             previewWrap.style.display = "none";
             dropzone.style.display = "block";
             if (urlInput) urlInput.value = "";
@@ -1252,19 +1277,23 @@ export function exposeOpenQuickBanModal() {
             return;
           }
           const reader = new FileReader();
+          readers.add(reader);
+          reader.onloadend = () => readers.delete(reader);
           reader.onload = (ev) => setScreenshot(ev.target.result);
           reader.readAsDataURL(file);
         });
         urlInput?.addEventListener("input", (e) => {
           const val = e.target.value.trim();
-          if (val.startsWith("http://") || val.startsWith("https://")) {
-            setScreenshot(val);
-          }
+          urlInput.setCustomValidity(val && !val.startsWith("https://") ? "Нужна HTTPS-ссылка на изображение" : "");
+          if (!val || urlInput.checkValidity()) setScreenshot(val);
+          else { attachedScreenshot = ""; previewImg.removeAttribute("src"); previewWrap.style.display = "none"; dropzone.style.display = "block"; }
+          updateSubmit();
         });
-        clearBtn?.addEventListener("click", () => setScreenshot(""));
+        clearBtn?.addEventListener("click", () => { urlInput.setCustomValidity(""); setScreenshot(""); updateSubmit(); });
 
         // Paste image support
         const handlePaste = (e) => {
+          if (!isLive() || overlay.hidden) return;
           const items = (e.clipboardData || e.originalEvent?.clipboardData)
             ?.items;
           if (!items) return;
@@ -1279,6 +1308,8 @@ export function exposeOpenQuickBanModal() {
                 return;
               }
               const reader = new FileReader();
+              readers.add(reader);
+              reader.onloadend = () => readers.delete(reader);
               reader.onload = (ev) => setScreenshot(ev.target.result);
               reader.readAsDataURL(blob);
               break;
@@ -1287,22 +1318,35 @@ export function exposeOpenQuickBanModal() {
         };
         window.addEventListener("paste", handlePaste);
         const cleanup = () => {
+          disposed = true; ++contextGeneration; ++reportGeneration;
+          reportsCache.clear();
+          for (const reader of readers) reader.abort();
+          readers.clear();
           window.removeEventListener("paste", handlePaste);
           if (searchTimer) clearTimeout(searchTimer);
         };
         const renderAttachedReport = async (repId) => {
-          attachedReportId = repId ? parseInt(repId, 10) : null;
-          const box = document.getElementById("ban-attached-report-box");
-          const suggBox = document.getElementById("ban-suggested-reports-box");
+          const request = ++reportGeneration;
+          const id = repId ? Number(repId) : null;
+          attachedReportId = null; attachedReport = null;
+          reportLoading = !!id; updateSubmit();
+          const box = find("ban-attached-report-box");
+          const suggBox = find("ban-suggested-reports-box");
           if (!box) return;
-          if (!attachedReportId) {
+          if (!id) {
             box.style.display = "none";
             box.innerHTML = "";
             return;
           }
           try {
-            const data = await api("GET", `/api/reports/${attachedReportId}`);
+            const data = await api("GET", `/api/reports/${id}`);
+            if (!isLive() || request !== reportGeneration) return;
             const r = data.report;
+            if (r.status !== "PENDING" || (targetInput.value.trim() && targetInput.value.trim().toLowerCase() !== r.targetName.toLowerCase())) {
+              box.style.display = "block"; box.textContent = "Нужна открытая жалоба на выбранного игрока.";
+              return;
+            }
+            attachedReportId = Number(r.id); attachedReport = r;
             if (suggBox) suggBox.style.display = "none";
             box.style.display = "block";
             box.innerHTML = `
@@ -1315,7 +1359,7 @@ export function exposeOpenQuickBanModal() {
                                         ${r.isRecent ? '<span class="badge green" style="font-size:10px;">⏱ &lt; 5 мин</span>' : ""}
                                     </div>
                                     <div style="font-size:12px; color:var(--text-secondary); margin-top:4px;">
-                                        Причины: <b>${(r.reasons || []).join(", ") || "не указаны"}</b>
+                                        Причины: <b>${esc((r.reasons || []).join(", ") || "не указаны")}</b>
                                     </div>
                                     ${
                                       r.description &&
@@ -1330,8 +1374,7 @@ export function exposeOpenQuickBanModal() {
                             </div>
                         </div>
                     `;
-            document
-              .getElementById("btn-detach-report")
+            find("btn-detach-report")
               ?.addEventListener("click", () => {
                 renderAttachedReport(null);
                 checkPendingReports();
@@ -1360,17 +1403,22 @@ export function exposeOpenQuickBanModal() {
                     (optVal.includes("чит") && reasonsText.includes("чит")))
                 ) {
                   select.selectedIndex = i;
+                  select.dispatchEvent(new Event("change", { bubbles: true }));
                   break;
                 }
               }
             }
+            loadBanContext(); updateSubmit();
           } catch (err) {
+            if (isLive() && request === reportGeneration) { box.style.display = "block"; box.textContent = "Не удалось прикрепить жалобу: " + err.message; }
             console.warn("Не удалось загрузить данные жалобы #" + repId, err);
+          } finally {
+            if (isLive() && request === reportGeneration) { reportLoading = false; updateSubmit(); }
           }
         };
         const checkPendingReports = async () => {
           if (attachedReportId) return;
-          const suggBox = document.getElementById("ban-suggested-reports-box");
+          const suggBox = find("ban-suggested-reports-box");
           if (!suggBox || !targetInput) return;
           const name = targetInput.value.trim();
           if (!name || name.length < 2) {
@@ -1379,17 +1427,15 @@ export function exposeOpenQuickBanModal() {
             return;
           }
           try {
-            const res = await api(
-              "GET",
-              `/api/reports?status=PENDING&target=${encodeURIComponent(name)}`,
-            );
-            const list = res.reports || [];
+            const res = await getPendingReports(name);
+            if (!isLive() || targetInput.value.trim() !== name || attachedReportId) return;
+            const list = res?.reports || [];
             if (list.length > 0 && !attachedReportId) {
               suggBox.style.display = "block";
               suggBox.innerHTML = `
                             <div class="report-picker-hint">
                                 <div>
-                                    <span style="display:inline-flex; align-items:center; gap:6px;">${renderSvgIcon("alert", "yellow", 13)} Найдено активных жалоб на игрока: <b>${list.length}</b></span>
+                                    <span style="display:inline-flex; align-items:center; gap:6px;">${renderSvgIcon("alert", "yellow", 13)} Найдено активных жалоб на игрока: <b>${list.length >= 4 ? "4+" : list.length}</b></span>
                                 </div>
                                 <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
                                     ${list
@@ -1397,7 +1443,7 @@ export function exposeOpenQuickBanModal() {
                                       .map(
                                         (pr) => `
                                         <button type="button" class="btn-tag-link" style="color:#fbbf24; border-color:rgba(245,158,11,0.5);" data-attach-id="${pr.id}">
-                                            Прикрепить #${pr.id} (${(pr.reasons || []).slice(0, 2).join(", ") || "жалоба"})
+                                            Прикрепить #${pr.id} (${esc((pr.reasons || []).slice(0, 2).join(", ") || "жалоба")})
                                         </button>
                                     `,
                                       )
@@ -1416,17 +1462,16 @@ export function exposeOpenQuickBanModal() {
               suggBox.innerHTML = "";
             }
           } catch (e) {
-            suggBox.style.display = "none";
+            if (isLive() && targetInput.value.trim() === name) suggBox.style.display = "none";
           }
         };
         targetInput?.addEventListener("input", () => {
           clearTimeout(searchTimer);
-          searchTimer = setTimeout(checkPendingReports, 400);
+          searchTimer = setTimeout(() => { loadBanContext(); checkPendingReports(); }, 300);
         });
 
         // Open visual Report Picker Modal instead of prompt by ID!
-        document
-          .getElementById("btn-browse-reports-picker")
+        find("btn-browse-reports-picker")
           ?.addEventListener("click", () => {
             openReportPickerModal(targetInput?.value || "", (rep) => {
               if (rep && rep.id) renderAttachedReport(rep.id);
@@ -1437,98 +1482,37 @@ export function exposeOpenQuickBanModal() {
         } else if (defaultPlayer && defaultPlayer.trim()) {
           checkPendingReports();
         }
-        document
-          .getElementById("ban-submit-btn")
+        updateSubmit();
+        if (targetInput.value) loadBanContext();
+        find("ban-submit-btn")
           ?.addEventListener("click", async () => {
-            const targetName = targetInput.value.trim();
-            const reason = select.value;
-            const comment = commentInput.value.trim();
-            const isIpBan =
-              document.getElementById("ban-ip-toggle")?.checked || false;
-            const durationSeconds = Number(
-              document.getElementById("ban-duration").value,
-            );
-            const durationLabel =
-              document.getElementById("ban-duration").selectedOptions[0]
-                .textContent;
-            if (!targetName) {
-              await noticeDialog(
-                "\u0423\u0432\u0435\u0434\u043E\u043C\u043B\u0435\u043D\u0438\u0435",
-                "Укажите никнейм игрока",
-              );
-              return;
+            if (submitting || !isLive()) return;
+            updateSubmit();
+            if (submit.disabled) return;
+            const targetName = targetInput.value.trim(), reason = select.value;
+            const duration = find("ban-duration"), durationSeconds = Number(duration.value);
+            const snapshot = {
+              targetName, durationSeconds, ruleReason: reason, description: commentInput.value.trim(),
+              isIpBan: true,
+              proofUrls: attachedScreenshot ? [attachedScreenshot] : [],
+              linkedReportId: attachedReportId,
+            };
+            const text = `Игрок: ${targetName}\nСрок: ${duration.selectedOptions[0].textContent}\nПричина: ${reason}`
+              + (attachedReportId ? `\nЖалоба №${attachedReportId} будет принята и закрыта.` : "\nБез прикреплённой жалобы.");
+            submitting = true; updateSubmit();
+            try {
+              if (!(await confirmDialog("Проверьте блокировку", text, "Выдать бан")) || !isLive()) return;
+              await api("POST", "/api/bans", snapshot);
+              if (!isLive()) return;
+              showToast("Бан выдан", `${targetName} · ${duration.selectedOptions[0].textContent}`, "success");
+              closeModal(overlay);
+              window.refreshPunishmentsView?.();
+            } catch (error) {
+              if (isLive()) await noticeDialog("Бан не подтверждён", error.message + "\nВведённые данные сохранены.");
+            } finally {
+              submitting = false;
+              if (isLive()) updateSubmit();
             }
-            if (!reason) {
-              await noticeDialog(
-                "\u0423\u0432\u0435\u0434\u043E\u043C\u043B\u0435\u043D\u0438\u0435",
-                "Выберите причину бана",
-              );
-              return;
-            }
-            if (!isManagement && !comment) {
-              await noticeDialog(
-                "\u0423\u0432\u0435\u0434\u043E\u043C\u043B\u0435\u043D\u0438\u0435",
-                "Для вашей роли описание доказательств бана является обязательным!",
-              );
-              commentInput?.focus();
-              return;
-            }
-            const opt = select.options[select.selectedIndex];
-            if (
-              opt &&
-              (opt.dataset.comment === "true" ||
-                opt.value.toLowerCase().includes("другое")) &&
-              !comment
-            ) {
-              await noticeDialog(
-                "\u0423\u0432\u0435\u0434\u043E\u043C\u043B\u0435\u043D\u0438\u0435",
-                "При выборе данной причины обязателен поясняющий комментарий!",
-              );
-              commentInput?.focus();
-              return;
-            }
-            const confirmMsg = attachedReportId
-              ? `Выдать бан (${durationLabel}) игроку ${targetName} по причине «${reason}»?\nПрикрепленная жалоба #${attachedReportId} будет закрыта со статусом «Наказание принято».`
-              : `Выдать бан (${durationLabel}) игроку ${targetName} по причине: «${reason}»?`;
-            confirmAction(
-              "ПОДТВЕРЖДЕНИЕ БАНА",
-              confirmMsg,
-              async () => {
-                try {
-                  cleanup();
-                  await api("POST", "/api/bans", {
-                    targetName,
-                    durationSeconds,
-                    ruleReason: reason,
-                    description: comment,
-                    isIpBan,
-                    proofUrls: attachedScreenshot ? [attachedScreenshot] : [],
-                    screenshot: attachedScreenshot,
-                    linkedReportId: attachedReportId,
-                  });
-                  const actionLog =
-                    `Забанил ${targetName} (${reason})` +
-                    (attachedReportId
-                      ? ` [по жалобе #${attachedReportId}]`
-                      : "");
-                  showToast(
-                    "Игрок забанен",
-                    `Бан выдан игроку ${targetName}: ${durationLabel}`,
-                    "danger",
-                  );
-                  closeModal();
-                  if (window.refreshPunishmentsView)
-                    window.refreshPunishmentsView();
-                } catch (e) {
-                  await noticeDialog(
-                    "\u0423\u0432\u0435\u0434\u043E\u043C\u043B\u0435\u043D\u0438\u0435",
-                    "Ошибка выдачи бана: " + e.message,
-                  );
-                }
-              },
-              durationSeconds < 0 ? "ЗАБЛОКИРОВАТЬ НАВСЕГДА" : "ЗАБЛОКИРОВАТЬ",
-              true,
-            );
           });
         return cleanup;
       },
@@ -1552,12 +1536,13 @@ export function exposeViewBanDetails() {
                 <button type="button" class="secondary" data-modal-close="true">ЗАКРЫТЬ</button>
             </div>
         `,
-      async () => {
+      async (overlay) => {
         const body = document.getElementById("ban-details-body");
         const footer = document.getElementById("ban-details-footer");
         if (!body) return;
         try {
           const b = await api("GET", `/api/bans/${banId}`);
+          if (!overlay.isConnected) return;
           const isActive = b.status === "ACTIVE";
           const isMod = isModeratorRole();
           const canUnban = !isMod || state.me.isOwner;
@@ -1587,7 +1572,7 @@ export function exposeViewBanDetails() {
                         <div style="color:var(--accent-light); font-weight:600;">${esc(b.sourceDisplay || b.creatorName)}</div>
 
                         <div style="color:var(--text-dim); font-weight:700;">СРОК ДЕЙСТВИЯ:</div>
-                        <div><span class="badge purple">БЕССРОЧНО (PERMANENT)</span></div>
+                        <div><span class="badge purple">${b.expiresAt > 0 ? "До " + fmtTime(b.expiresAt) : "Бессрочно"}</span></div>
 
                         ${
                           b.linkedReportId
@@ -1602,7 +1587,7 @@ export function exposeViewBanDetails() {
                             : `
                             <div style="color:var(--text-dim); font-weight:700;">СВЯЗАННАЯ ЖАЛОБА:</div>
                             <div>
-                                <button type="button" class="secondary btn-sm" id="btn-attach-report-to-ban" style="font-size:11px; padding:2px 8px;">
+                                <button type="button" class="secondary btn-sm" id="btn-attach-report-to-ban" ${hasPerm("MANAGE_BANS") && hasPerm("MANAGE_REPORTS") && hasPerm("VIEW_REPORTS") ? "" : 'disabled title="Нужны права обработки банов и жалоб"'} style="font-size:11px; padding:2px 8px;">
                                     + ПРИКРЕПИТЬ ЖАЛОБУ
                                 </button>
                             </div>
@@ -1618,7 +1603,7 @@ export function exposeViewBanDetails() {
                         ? `
                         <div style="margin-top:16px;">
                             <div style="font-size:11px; font-weight:700; color:var(--text-dim); text-transform:uppercase; margin-bottom:6px;">Скриншот-доказательство:</div>
-                            <img src="${esc(proofUrl)}" class="screenshot-preview-img" style="max-height:240px; cursor:pointer;" onclick="window.openScreenshotLightbox('${esc(proofUrl)}')" alt="Доказательство">
+                            <img src="${esc(proofUrl)}" class="screenshot-preview-img" style="max-height:240px; cursor:pointer;" data-evidence-src="${esc(proofUrl)}" alt="Доказательство">
                         </div>
                     `
                         : ""
@@ -1626,40 +1611,17 @@ export function exposeViewBanDetails() {
                 `;
           document
             .getElementById("btn-attach-report-to-ban")
-            ?.addEventListener("click", async () => {
-              const input = prompt(
-                "Введите номер жалобы (ID) для прикрепления к бану #" +
-                  banId +
-                  ":",
-              );
-              if (!input || !input.trim()) return;
-              const reportId = parseInt(input.trim());
-              if (isNaN(reportId) || reportId <= 0) {
-                showToast(
-                  "Ошибка",
-                  "Укажите корректный числовой ID жалобы",
-                  "warning",
-                );
-                return;
-              }
-              try {
-                await api("POST", `/api/bans/${banId}/attach-report`, {
-                  reportId,
-                });
-                showToast(
-                  "Жалоба привязана",
-                  `Жалоба #${reportId} успешно привязана к бану #${banId}`,
-                  "success",
-                );
-                closeModal();
-                window.viewBanDetails(banId);
-              } catch (err) {
-                showToast(
-                  "Ошибка",
-                  err.message || "Не удалось привязать жалобу",
-                  "danger",
-                );
-              }
+            ?.addEventListener("click", () => {
+              openReportPickerModal(b.targetName, async report => {
+                try {
+                  await api("POST", `/api/bans/${banId}/attach-report`, { reportId: report.id });
+                  if (!overlay.isConnected) return;
+                  showToast("Жалоба прикреплена", `Жалоба №${report.id} · бан №${banId}`, "success");
+                  if (closeModal(overlay)) window.viewBanDetails(banId);
+                } catch (error) {
+                  if (overlay.isConnected) showToast("Жалоба не прикреплена", error.message, "error");
+                }
+              });
             });
           if (footer) {
             footer.innerHTML = `
@@ -1668,7 +1630,7 @@ export function exposeViewBanDetails() {
                         ${
                           isActive && canUnban
                             ? `
-                            <a class="secondary" href="/ban.html?id=${currentBan.id}">Исправить причину или срок · История</a><button type="button" class="danger" id="btn-modal-unban">РАЗБАНИТЬ ИГРОКА</button>
+                            <a class="secondary" href="/ban.html?id=${b.id}">Исправить причину или срок · История</a><button type="button" class="danger" id="btn-modal-unban">РАЗБАНИТЬ ИГРОКА</button>
                         `
                             : ""
                         }
@@ -1689,24 +1651,28 @@ export function exposeViewBanDetails() {
 
   // Modal: Screenshot Lightbox
 }
+let evidenceClicksInstalled = false;
 export function exposeOpenScreenshotLightbox() {
+  if (!evidenceClicksInstalled) {
+    evidenceClicksInstalled = true;
+    document.addEventListener("click", event => {
+      const trigger = event.target.closest("[data-evidence-src]");
+      if (trigger) window.openScreenshotLightbox(trigger.dataset.evidenceSrc);
+    });
+  }
   window.openScreenshotLightbox = function (imgSrc) {
     if (!imgSrc) return;
-    const overlay = document.createElement("div");
-    overlay.className = "lightbox-overlay";
-    overlay.innerHTML = `
-            <div style="position:relative; max-width:92vw; max-height:92vh; display:flex; flex-direction:column; align-items:center;">
-                <button type="button" class="btn-remove-screenshot" style="top:-14px; right:-14px; width:32px; height:32px;" onclick="this.closest('.lightbox-overlay').remove()">${renderSvgIcon("close", "white", 16)}</button>
-                <img src="${esc(imgSrc)}" class="lightbox-img" alt="Доказательство бана">
-                <div style="margin-top:10px; display:flex; gap:10px;">
-                    <a href="${esc(imgSrc)}" target="_blank" class="secondary btn-sm" style="text-decoration:none; padding:6px 14px; font-size:12px; border-radius:4px; border:1px solid var(--border); background:rgba(0,0,0,0.7); color:#fff;">ОТКРЫТЬ В НОВОЙ ВКЛАДКЕ ↗</a>
-                </div>
-            </div>
-        `;
-    overlay.addEventListener("click", (e) => {
-      if (e.target === overlay) overlay.remove();
-    });
-    document.body.appendChild(overlay);
+    const source = String(imgSrc);
+    let url;
+    try { url = new URL(source, location.href); } catch { return; }
+    if (!["https:", "http:"].includes(url.protocol) && !/^data:image\/(png|jpeg|webp);base64,[a-z0-9+/=\s]+$/i.test(source)) {
+      showToast("Доказательство", "Это изображение нельзя открыть по указанной ссылке.", "warning");
+      return;
+    }
+    openChildModal(`
+      <div class="modal-header"><h3>Доказательство</h3><button type="button" class="close-btn" data-modal-close aria-label="Закрыть изображение">×</button></div>
+      <div class="modal-body"><img src="${esc(source)}" class="lightbox-img" alt="Доказательство бана"></div>
+      <div class="modal-footer"><button type="button" class="secondary" data-modal-close>Назад</button><a href="${esc(source)}" target="_blank" rel="noopener noreferrer" class="secondary">Открыть в новой вкладке</a></div>`, null, "evidence-lightbox");
   };
 
   // Confirm Unban

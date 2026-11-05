@@ -1,3 +1,10 @@
+function bindLifetime(done) {
+  const owner = document.getElementById("modal-overlay");
+  const cancel = () => done(null);
+  owner?.addEventListener("lwa:dispose", cancel, { once: true });
+  return () => owner?.removeEventListener("lwa:dispose", cancel);
+}
+
 export function confirmDialog(title, message, action = "Подтвердить") {
   return new Promise((resolve) => {
     const dialog = document.createElement("dialog");
@@ -21,10 +28,12 @@ export function confirmDialog(title, message, action = "Подтвердить")
     const done = (result) => {
       if (finished) return;
       finished = true;
+      release();
       dialog.close();
       dialog.remove();
       resolve(result);
     };
+    const release = bindLifetime(done);
     cancel.onclick = () => done(false);
     accept.onclick = () => done(true);
     dialog.addEventListener("cancel", (event) => {
@@ -51,10 +60,12 @@ export function noticeDialog(title, message) {
     button.className = "primary";
     button.textContent = "Понятно";
     const done = () => {
+      release();
       dialog.close();
       dialog.remove();
       resolve();
     };
+    const release = bindLifetime(done);
     button.onclick = done;
     dialog.addEventListener("cancel", (event) => {
       event.preventDefault();
@@ -91,10 +102,12 @@ export function explanationDialog(title, message) {
     function done(value) {
       if (closed) return;
       closed = true;
+      release();
       dialog.close();
       dialog.remove();
       resolve(value);
     }
+    const release = bindLifetime(done);
     cancel.onclick = () => done(null);
     accept.onclick = () => {
       if (input.value.trim().length < 5) {

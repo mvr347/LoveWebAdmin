@@ -3986,3 +3986,18 @@ body.theme-light input[type=date],body.theme-light input[type=datetime-local],bo
   .topbar .topbar-icon-btn {width:42px;min-width:42px;height:42px;padding:8px;}
   .topbar-right .topbar-btn {padding:8px;min-width:0;}
 }
+
+/* Suspended forms keep their values without accepting focus or clicks. */
+.modal-overlay[hidden] { display:none; }
+.report-picker-empty {padding:24px;text-align:center;color:var(--text-secondary);}
+.report-picker-empty p {margin:0 0 8px;}
+
+.evidence-lightbox {max-width:960px;}
+.evidence-lightbox .lightbox-img {display:block;max-width:100%;max-height:65dvh;object-fit:contain;margin:auto;}
+.modal-footer:has(#ban-validation-help) {flex-wrap:wrap;}
+#ban-validation-help {flex-basis:100%;margin:0;font-size:12px;line-height:1.45;}
+button.report-picker-card {width:100%;text-align:left;white-space:normal;overflow-wrap:anywhere;}
+button.report-picker-card > span {min-width:0;}
+
+.report-picker-pagination {display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.report-picker-pagination[hidden] {display:none;}

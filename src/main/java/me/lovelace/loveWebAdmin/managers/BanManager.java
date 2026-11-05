@@ -189,6 +189,12 @@ public class BanManager {
       var pendingCase=plugin.getModerationService().pending(banId);
       if(pendingCase.isPresent()&&!pendingCase.get().name().equalsIgnoreCase(targetName.trim()))throw new IllegalArgumentException("Игрок не совпадает с предварительным делом");
     }
+    if (linkedReportId != null && linkedReportId > 0) {
+      var report = plugin.getDatabaseManager().getReportById(linkedReportId)
+          .orElseThrow(() -> new IllegalArgumentException("Жалоба не найдена"));
+      if (!"PENDING".equals(report.status()) || !report.targetName().equalsIgnoreCase(targetName.trim()))
+        throw new IllegalArgumentException("Нужна открытая жалоба на того же игрока");
+    }
     String cleanTarget = targetName.trim();
     String targetUuid = null;
     String targetIp = null;

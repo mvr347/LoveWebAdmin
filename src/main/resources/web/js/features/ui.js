@@ -1,3 +1,5 @@
+import { showReportPicker } from "../core/report-picker.js";
+import { openModalLayer, closeModalLayer, closeAllModalLayers, installModalKeys } from "../core/modal-stack.js";
 import { installCaseDialogs } from "../core/case-dialog.js";
 import { installInterfaceControls } from "../core/interface-controls.js";
 import { requestFetch, clearOperationIntents } from "../core/requests.js";
@@ -64,9 +66,9 @@ export function renderSvgIcon(name, colorType = "gray", size = 16) {
 
 // ---------- Helpers ----------
 export function esc(s) {
-  const div = document.createElement("div");
-  div.textContent = s == null ? "" : String(s);
-  return div.innerHTML;
+  return String(s ?? "").replace(/[&<>"']/g, char => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[char]);
 }
 export function fmtTime(ts) {
   if (!ts || ts <= 0) return "Никогда";
@@ -130,6 +132,7 @@ export function clearPollers() {
   for (const k in state.pollers) delete state.pollers[k];
 }
 export function setToken(newToken) {
+  if (state.token !== newToken) closeAllModals();
   state.token = newToken;
   if (state.token) {
     state.browserStorage.setItem("wa_token", state.token);
@@ -234,45 +237,17 @@ export function exposeShowToast() {
 
   // ---------- Modal System ----------
 }
-const modalOpeners=new WeakMap();
 export function openModal(html, onMount, customClass = "") {
-  closeModal();
-  const overlay = document.createElement("div");
-  overlay.className = "modal-overlay";
-  overlay.id = "modal-overlay";
-  modalOpeners.set(overlay,document.activeElement);
-  overlay.innerHTML = `<div class="modal ${customClass}" role="dialog" aria-modal="true" tabindex="-1">${html}</div>`;
-
-  // Надёжное закрытие: по клику на затемнённый фон, на любой .close-btn или [data-modal-close]
-  overlay.addEventListener("click", (e) => {
-    if (
-      e.target === overlay ||
-      e.target.closest(".close-btn") ||
-      e.target.closest("[data-modal-close]")
-    ) {
-      closeModal();
-    }
-  });
-  document.body.appendChild(overlay);
-  overlay.addEventListener("keydown",event=>{if(event.key!=="Tab")return;const controls=[...overlay.querySelectorAll("button,input,select,textarea,a[href],[tabindex='0']")].filter(el=>!el.disabled&&el.getClientRects().length);const first=controls[0],last=controls.at(-1);if(event.shiftKey&&document.activeElement===first){last?.focus();event.preventDefault();}else if(!event.shiftKey&&document.activeElement===last){first?.focus();event.preventDefault();}});
-  requestAnimationFrame(()=>{if(overlay.isConnected)(overlay.querySelector(".close-btn")||overlay.querySelector(".modal")).focus({preventScroll:true});});
-  if (onMount) {
-    try {
-      const cleanup = onMount();
-      if (typeof cleanup === "function")
-        overlay.addEventListener("lwa:dispose", cleanup, { once: true });
-    } catch (err) {
-      console.error("Ошибка монтирования модального окна:", err);
-    }
-  }
+  return openModalLayer(html, onMount, customClass);
 }
-export function closeModal() {
-  document.querySelectorAll(".modal-overlay").forEach((el) => {
-    el.dispatchEvent(new Event("lwa:dispose"));
-    el.remove();
-    const opener=modalOpeners.get(el);if(opener?.isConnected)opener.focus({preventScroll:true});
-    modalOpeners.delete(el);
-  });
+export function openChildModal(html, onMount, customClass = "") {
+  return openModalLayer(html, onMount, customClass, true);
+}
+export function closeModal(expected) {
+  return closeModalLayer(expected);
+}
+export function closeAllModals() {
+  closeAllModalLayers();
 }
 export function exposeCloseCurrentModal() {
   window.closeCurrentModal = closeModal;
@@ -283,16 +258,7 @@ export function exposeCloseModal() {
   // Глобальное закрытие модальных окон по Escape
 }
 export function installModalKeyboardShortcuts() {
-  window.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") {
-      if(document.querySelector("dialog[open]"))return;
-      const overlay = document.getElementById("modal-overlay");
-      if (overlay) {
-        e.preventDefault();
-        closeModal();
-      }
-    }
-  });
+  installModalKeys();
 
   // Confirmation Modal for Risky Operations
 }
@@ -303,7 +269,7 @@ export function confirmAction(
   confirmBtnText = "ПОДТВЕРДИТЬ",
   danger = true,
 ) {
-  openModal(
+  const confirmation = openChildModal(
     `
             <div class="modal-header">
                 <h3>${esc(title)}</h3>
@@ -321,7 +287,7 @@ export function confirmAction(
       document
         .getElementById("modal-confirm-btn")
         ?.addEventListener("click", () => {
-          closeModal();
+          if (!closeModal(confirmation)) return;
           if (onConfirm) onConfirm();
         });
     },
@@ -340,6 +306,10 @@ export function attachPlayerAutocomplete(inputEl, onSelect) {
     dropdown.className = "autocomplete-dropdown";
     parent.appendChild(dropdown);
   }
+  const lifetime = new AbortController(), signal = lifetime.signal;
+  let generation = 0;
+  const cleanup = () => { ++generation; clearTimeout(timer); lifetime.abort(); closeDropdown(); };
+  inputEl.closest(".modal-overlay")?.addEventListener("lwa:dispose", cleanup, { once: true });
   let timer = null;
   let currentResults = [];
   let selectedIdx = -1;
@@ -374,6 +344,7 @@ export function attachPlayerAutocomplete(inputEl, onSelect) {
         if (currentResults[idx]) {
           inputEl.value = currentResults[idx].name;
           closeDropdown();
+          inputEl.dispatchEvent(new Event("change", { bubbles: true }));
           if (onSelect) onSelect(currentResults[idx].name);
         }
       });
@@ -381,6 +352,7 @@ export function attachPlayerAutocomplete(inputEl, onSelect) {
   };
   inputEl.addEventListener("input", () => {
     clearTimeout(timer);
+    const request = ++generation;
     const val = inputEl.value.trim();
     if (val.length < 2) {
       closeDropdown();
@@ -392,9 +364,9 @@ export function attachPlayerAutocomplete(inputEl, onSelect) {
           "GET",
           `/api/players?q=${encodeURIComponent(val)}&limit=8`,
         );
-        renderItems(players || []);
+        if (!signal.aborted && request === generation && inputEl.isConnected && inputEl.value.trim() === val) renderItems(players || []);
       } catch (e) {
-        closeDropdown();
+        if (request === generation) closeDropdown();
       }
     }, 200);
   });
@@ -416,9 +388,11 @@ export function attachPlayerAutocomplete(inputEl, onSelect) {
     } else if (e.key === "Enter") {
       if (selectedIdx >= 0 && currentResults[selectedIdx]) {
         e.preventDefault();
-        inputEl.value = currentResults[selectedIdx].name;
+        const chosen = currentResults[selectedIdx].name;
+        inputEl.value = chosen;
         closeDropdown();
-        if (onSelect) onSelect(currentResults[selectedIdx].name);
+        inputEl.dispatchEvent(new Event("change", { bubbles: true }));
+        if (onSelect) onSelect(chosen);
       }
     } else if (e.key === "Escape") {
       closeDropdown();
@@ -428,132 +402,16 @@ export function attachPlayerAutocomplete(inputEl, onSelect) {
     if (!inputEl.contains(e.target) && !dropdown.contains(e.target)) {
       closeDropdown();
     }
-  });
+  }, { signal });
+  return cleanup;
 }
 export function exposeAttachPlayerAutocomplete() {
   window.attachPlayerAutocomplete = attachPlayerAutocomplete;
 
   // ---------- Visual Report Picker Modal ----------
 }
-export async function openReportPickerModal(targetPlayer = "", onSelected) {
-  openModal(
-    `
-            <div class="modal-header">
-                <h3>ВЫБОР ЖАЛОБЫ ДЛЯ ПРИКРЕПЛЕНИЯ К БАНУ</h3>
-                <button type="button" class="close-btn" data-modal-close="true">${renderSvgIcon("close", "gray", 16)}</button>
-            </div>
-            <div class="modal-body">
-                <div style="margin-bottom:14px; display:flex; gap:10px; flex-wrap:wrap;">
-                    <input type="text" id="report-picker-search" placeholder="Поиск по нарушителю или заявителю..." value="${esc(targetPlayer)}" style="flex:1; min-width:220px;">
-                    <button type="button" class="secondary" id="btn-manual-report-id">ВВЕСТИ ID ВРУЧНУЮ</button>
-                </div>
-                <div class="report-picker-modal-list" id="report-picker-list">
-                    <div style="text-align:center; padding:28px; color:var(--text-muted);">Загрузка активных жалоб...</div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="secondary" data-modal-close="true">ОТМЕНА</button>
-            </div>
-        `,
-    async () => {
-      const listEl = document.getElementById("report-picker-list");
-      const searchInput = document.getElementById("report-picker-search");
-      let allReports = [];
-      try {
-        const data = await api("GET", "/api/reports?limit=100");
-        allReports = data.reports || [];
-      } catch (e) {
-        if (listEl)
-          listEl.innerHTML = `<div style="color:var(--red); text-align:center; padding:20px;">Ошибка загрузки жалоб: ${esc(e.message)}</div>`;
-        return;
-      }
-      const renderList = () => {
-        if (!listEl) return;
-        const q = (searchInput?.value || "").trim().toLowerCase();
-        let filtered = allReports;
-        if (q) {
-          filtered = filtered.filter(
-            (r) =>
-              (r.targetName && r.targetName.toLowerCase().includes(q)) ||
-              (r.reporterName && r.reporterName.toLowerCase().includes(q)) ||
-              (r.description && r.description.toLowerCase().includes(q)),
-          );
-        }
-        if (!filtered.length) {
-          listEl.innerHTML = `<div style="text-align:center; padding:28px; color:var(--text-dim);">Жалобы не найдены</div>`;
-          return;
-        }
-        listEl.innerHTML = filtered
-          .map(
-            (r) => `
-                    <div class="report-picker-card" data-report-id="${r.id}">
-                        <div style="display:flex; align-items:center; gap:12px;">
-                            <img src="https://mc-heads.net/avatar/${encodeURIComponent(r.targetName)}/36" class="player-avatar-sm" alt="" style="width:36px; height:36px; border-radius:4px;">
-                            <div>
-                                <div style="display:flex; align-items:center; gap:8px;">
-                                    <span class="badge purple">#${r.id}</span>
-                                    <b style="color:var(--text-heading); font-size:14px;">${esc(r.targetName)}</b>
-                                    <span style="font-size:11.5px; color:var(--text-muted);">от ${esc(r.reporterName)}</span>
-                                </div>
-                                <div style="font-size:12px; color:var(--text-secondary); margin-top:3px;">
-                                    Причины: <b>${esc((r.reasons || []).join(", ") || "не указаны")}</b>
-                                </div>
-                                ${
-                                  r.description &&
-                                  r.description !== "не указано"
-                                    ? `
-                                    <div style="font-size:11.5px; color:var(--text-dim); margin-top:2px; max-width:500px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-                                        "${esc(r.description)}"
-                                    </div>
-                                `
-                                    : ""
-                                }
-                            </div>
-                        </div>
-                        <div style="text-align:right;">
-                            <button type="button" class="primary btn-sm" data-pick-id="${r.id}">ВЫБРАТЬ</button>
-                            <div style="font-size:10.5px; color:var(--text-dim); margin-top:4px;">${fmtTime(r.createdAt)}</div>
-                        </div>
-                    </div>
-                `,
-          )
-          .join("");
-        listEl.querySelectorAll("[data-pick-id]").forEach((btn) => {
-          btn.addEventListener("click", (e) => {
-            e.stopPropagation();
-            const id = parseInt(btn.dataset.pickId, 10);
-            const rep = allReports.find((x) => x.id === id);
-            closeModal();
-            if (onSelected && rep) onSelected(rep);
-          });
-        });
-        listEl.querySelectorAll(".report-picker-card").forEach((card) => {
-          card.addEventListener("click", () => {
-            const id = parseInt(card.dataset.reportId, 10);
-            const rep = allReports.find((x) => x.id === id);
-            closeModal();
-            if (onSelected && rep) onSelected(rep);
-          });
-        });
-      };
-      searchInput?.addEventListener("input", renderList);
-      renderList();
-      document
-        .getElementById("btn-manual-report-id")
-        ?.addEventListener("click", () => {
-          const idInput = prompt("Введите точный номер (ID) жалобы:");
-          if (idInput && !isNaN(parseInt(idInput.trim(), 10))) {
-            const id = parseInt(idInput.trim(), 10);
-            closeModal();
-            if (onSelected)
-              onSelected({
-                id,
-              });
-          }
-        });
-    },
-    "modal-lg",
-  );
+export function openReportPickerModal(targetPlayer = "", onSelected) {
+  return showReportPicker({ targetPlayer, onSelected, api, esc, fmtTime, openChildModal, closeModal });
 }
 export function exposeOpenReportPickerModal() {
   window.openReportPickerModal = openReportPickerModal;
@@ -608,6 +466,7 @@ export function initTooltipEngine() {
 // ---------- Global Search (Ctrl + K) ----------
 export function initGlobalShortcuts() {
   document.addEventListener("keydown", (e) => {
+    if (e.defaultPrevented || document.querySelector(".modal-overlay,dialog[open]")) return;
     // Global search: Ctrl + K or Cmd + K
     if (
       (e.ctrlKey || e.metaKey) &&
@@ -647,10 +506,6 @@ export function initGlobalShortcuts() {
       }
     }
 
-    // Esc: close modals
-    if (e.key === "Escape") {
-      closeModal();
-    }
   });
 }
 export function openGlobalSearchModal() {
@@ -1101,4 +956,4 @@ export function startInitialSession() {
 
 installInterfaceControls();
 
-installCaseDialogs(openModal);
+installCaseDialogs(openChildModal);

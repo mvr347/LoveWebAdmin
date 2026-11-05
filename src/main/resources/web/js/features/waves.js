@@ -33,11 +33,11 @@ export async function renderWave(container) {
   });
 }
 function editWave(entry,refresh) {
-  openModal(`<div class="modal-header"><h3>Наказание: ${esc(entry.name)}</h3><button type="button" class="close-btn" data-modal-close="true">×</button></div><form id="wave-edit-form"><div class="modal-body"><label>Причина<textarea name="reason" maxlength="1000" required>${esc(entry.reason)}</textarea></label><label>Срок<input name="duration" value="${entry.duration<0?'permanent':`${entry.duration}s`}" required></label><p id="wave-error" role="alert"></p></div><div class="modal-footer"><button type="button" class="secondary" data-modal-close="true">Отмена</button><button type="submit" class="primary">Сохранить</button></div></form>`);
+  const overlay = openModal(`<div class="modal-header"><h3>Наказание: ${esc(entry.name)}</h3><button type="button" class="close-btn" data-modal-close="true">×</button></div><form id="wave-edit-form"><div class="modal-body"><label>Причина<textarea name="reason" maxlength="1000" required>${esc(entry.reason)}</textarea></label><label>Срок<input name="duration" value="${entry.duration<0?'permanent':`${entry.duration}s`}" required></label><p id="wave-error" role="alert"></p></div><div class="modal-footer"><button type="button" class="secondary" data-modal-close="true">Отмена</button><button type="submit" class="primary">Сохранить</button></div></form>`);
   const form=document.getElementById('wave-edit-form');let busy=false;
   form.onsubmit=async event=>{
     event.preventDefault();if(busy)return;busy=true;const button=form.querySelector('[type=submit]');button.disabled=true;
-    try {const data=Object.fromEntries(new FormData(form));await api('POST','/api/vesuvio/wave',{action:'edit',event:entry.event,reason:data.reason,duration:parseDuration(data.duration)});closeModal();await refresh();}
+    try {const data=Object.fromEntries(new FormData(form));await api('POST','/api/vesuvio/wave',{action:'edit',event:entry.event,reason:data.reason,duration:parseDuration(data.duration)});if(closeModal(overlay))await refresh();}
     catch(error){form.querySelector('#wave-error').textContent=error.message;}
     finally {busy=false;button.disabled=false;}
   };

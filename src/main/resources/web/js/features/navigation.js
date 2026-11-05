@@ -3,6 +3,7 @@ import { state } from "../state.js";
 import {
   api,
   clearPollers,
+  closeAllModals,
   confirmAction,
   esc,
   hasPerm,
@@ -317,6 +318,7 @@ export function startTopbarStatusPoller() {
   }, 5000);
 }
 export async function navigateTo(sectionId, recordHistory = true) {
+  closeAllModals();
   captureView();
   if (recordHistory)
     history.pushState(

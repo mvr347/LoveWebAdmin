@@ -111,7 +111,7 @@ test("navigation and ban form work; removed shifts are not exposed", async ({
   await page.locator("#ban-reason-select").selectOption({ label: "Читы" });
   await page.locator("#ban-submit-btn").click();
   await page
-    .getByRole("button", { name: "ЗАБЛОКИРОВАТЬ НАВСЕГДА", exact: true })
+    .getByRole("button", { name: "Выдать бан", exact: true })
     .last()
     .click();
   await expect

@@ -44,6 +44,15 @@ public class ApiBansHandler extends ApiHandlerSupport {
             return;
         }
 
+        if ("/context".equals(pathInfo)) {
+            String target = req.getParameter("target");
+            if (target == null || !target.matches("[A-Za-z0-9_]{3,16}")) {
+                sendError(resp, 400, "Укажите корректный ник игрока"); return;
+            }
+            sendSuccess(resp, plugin.getDatabaseManager().getBanContext(target));
+            return;
+        }
+
         if ("/reasons".equals(pathInfo)) {
             sendSuccess(resp, loadBanReasons());
             return;
@@ -128,29 +137,22 @@ public class ApiBansHandler extends ApiHandlerSupport {
 
         // Создание или оформление бана
         Map<String, Object> body = readJsonBody(req);
-        int banId = 0;
-        if (body.get("id") != null) {
-            try {
-                banId = (int) Double.parseDouble(String.valueOf(body.get("id")));
-            } catch (NumberFormatException e) {
-                banId = 0;
-            }
-        }
+        int banId = body.get("id") == null ? 0 : exactId(body.get("id"), true);
+        Integer linkedReportId = body.get("linkedReportId") == null ? null : exactId(body.get("linkedReportId"), false);
 
-        Integer linkedReportId = null;
-        if (body.get("linkedReportId") != null && !String.valueOf(body.get("linkedReportId")).isBlank()) {
-            try {
-                linkedReportId = (int) Double.parseDouble(String.valueOf(body.get("linkedReportId")));
-            } catch (NumberFormatException e) {
-                plugin.getLogger().warning("[ApiBansHandler] Некорректный linkedReportId: " + body.get("linkedReportId"));
-                linkedReportId = null;
-            }
-        }
+        if (linkedReportId != null && linkedReportId > 0
+            && requirePermission(req, resp, Permission.MANAGE_REPORTS).isEmpty()) return;
 
         String targetName = stringOrNull(body.get("targetName"));
         String ruleReason = stringOrNull(body.get("ruleReason"));
         String description = stringOrNull(body.get("description"));
         boolean isIpBan = Boolean.TRUE.equals(body.get("isIpBan"));
+        if (targetName == null || !targetName.trim().matches("[A-Za-z0-9_]{3,16}")
+            || ruleReason == null || ruleReason.isBlank() || ruleReason.length() > 256
+            || (description != null && description.length() > 4000)) {
+            sendError(resp, 400, "Укажите ник 3–16 символов, причину до 256 и описание до 4000 символов"); return;
+        }
+
 
     long durationSeconds = body.get("durationSeconds") instanceof Number n ? n.longValue() : -1;
     if (durationSeconds != -1 && (durationSeconds < 60 || durationSeconds > 315360000L)) {
@@ -219,11 +221,22 @@ public class ApiBansHandler extends ApiHandlerSupport {
 
         if (ok) {
             String msg = (linkedReportId != null && linkedReportId > 0)
-                ? "Бессрочный бан успешно применён и привязан к жалобе #" + linkedReportId
-                : "Бессрочный бан успешно оформлен и применён";
+                ? "Бан успешно применён и привязан к жалобе #" + linkedReportId
+                : "Бан успешно оформлен и применён";
             sendSuccess(resp, Map.of("message", msg));
         } else {
             sendError(resp, 500, "Не удалось оформить бан");
+        }
+    }
+
+    private static int exactId(Object value, boolean allowZero) {
+        try {
+            if (!(value instanceof Number) && !(value instanceof String)) throw new NumberFormatException();
+            int id = new java.math.BigDecimal(value.toString()).intValueExact();
+            if (id < (allowZero ? 0 : 1)) throw new NumberFormatException();
+            return id;
+        } catch (NumberFormatException | ArithmeticException error) {
+            throw new IllegalArgumentException("Номер должен быть целым положительным числом", error);
         }
     }
 
@@ -244,26 +257,15 @@ public class ApiBansHandler extends ApiHandlerSupport {
         }
 
         Map<String, Object> body = readJsonBody(req);
-        int reportId = 0;
-        if (body.get("reportId") != null) {
-            try {
-                reportId = (int) Double.parseDouble(String.valueOf(body.get("reportId")));
-            } catch (NumberFormatException e) {
-                reportId = 0;
-            }
-        }
+        int reportId = exactId(body.get("reportId"), false);
 
-        if (reportId <= 0) {
-            sendError(resp, 400, "Укажите корректный ID жалобы (reportId)");
-            return;
-        }
-
+        if (requirePermission(req, resp, Permission.MANAGE_REPORTS).isEmpty()) return;
         boolean ok = plugin.getDatabaseManager().linkBanAndReport(banId, reportId, session.adminUsername());
         if (ok) {
             plugin.getReportManager().acceptReport(reportId, session.adminUsername(), banId);
             sendSuccess(resp, Map.of("message", "Жалоба #" + reportId + " успешно привязана к бану #" + banId));
         } else {
-            sendError(resp, 500, "Не удалось привязать жалобу к бану");
+            sendError(resp, 409, "Нужна открытая жалоба на того же игрока и действующий бан без другой привязки. Обновите карточку.");
         }
     }
 
