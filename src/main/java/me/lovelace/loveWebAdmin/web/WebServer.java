@@ -59,6 +59,7 @@ public class WebServer {
             context.addServlet(authHolder, "/api/me");
             context.addServlet(authHolder, "/api/me/*");
 
+            context.addServlet(new ServletHolder(new me.lovelace.loveWebAdmin.web.handlers.ApiWorkSummaryHandler(plugin)), "/api/work-summary");
             ServletHolder statsHolder = new ServletHolder(new ApiStatsHandler(plugin));
             context.addServlet(statsHolder, "/api/stats");
             context.addServlet(statsHolder, "/api/stats/*");

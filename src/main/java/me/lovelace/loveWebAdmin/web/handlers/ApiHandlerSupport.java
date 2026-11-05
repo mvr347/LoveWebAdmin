@@ -180,6 +180,20 @@ public abstract class ApiHandlerSupport extends HttpServlet {
             .orElse(false);
     }
 
+    /** One current account/role lookup for aggregate endpoints; never cache granted rights. */
+    protected java.util.Set<Permission> currentPermissions(WebSession session) {
+        if (session.adminId() == -999) {
+            var rights=java.util.EnumSet.noneOf(Permission.class);
+            for(var permission:Permission.values())if(hasPermission(session,permission))rights.add(permission);
+            return rights;
+        }
+        return plugin.getDatabaseManager().getAdminById(session.adminId())
+            .filter(admin->"ACTIVE".equals(admin.status()))
+            .flatMap(admin->plugin.getDatabaseManager().getRoleById(admin.roleId()))
+            .map(role->role.isOwner()?java.util.Set.copyOf(java.util.EnumSet.allOf(Permission.class)):java.util.Set.copyOf(role.permissions()))
+            .orElse(java.util.Set.of());
+    }
+
     protected Optional<WebSession> requireSession(HttpServletRequest req, HttpServletResponse resp) throws IOException {
         Optional<WebSession> session = authenticate(req);
         if (session.isEmpty()) {

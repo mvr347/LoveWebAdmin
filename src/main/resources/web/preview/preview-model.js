@@ -1220,6 +1220,35 @@
           uptime: 3600,
         };
       }
+      if (parts[1] === "work-summary") {
+        requirePermission("VIEW_STATS");
+        const mine=url.searchParams.get("scope")!=="all", actor=viewer().username;
+        const bucket=url.searchParams.get("bucket")||"",offset=Math.max(0,Number(url.searchParams.get("offset"))||0),cards=[];
+        function add(id,title,description,items,destination="case",extra={}) {
+          if(!items.length&&id!==bucket)return;
+          const skip=id===bucket?offset:0,size=id===bucket?20:5;
+          cards.push({id,title,description,count:items.length,items:items.slice(skip,skip+size),nextOffset:skip+size<items.length?skip+size:-1,destination,...extra});
+        }
+        const cases=[];
+        for(const [kind,source,permission] of [["report",state.reports,"VIEW_REPORTS"],["appeal",state.appeals,"VIEW_APPEALS"]]) {
+          if(!has(permission))continue;
+          for(const item of source.filter(item=>item.status==="PENDING")) {
+            const work=currentWork(kind,item.id),wait=state.waiting?.[kind+":"+item.id];
+            if(work.state==="CLOSED")continue;
+            cases.push({id:item.id,kind,name:item.targetName||item.playerName,assignee:work.assignee||"",mode:wait?.mode||(work.state==="WAITING"?"PLAYER":"STAFF"),since:wait?.since||item.createdAt});
+          }
+        }
+        const scoped=cases.filter(item=>!mine||item.assignee===actor);
+        add("unassigned","Взять обращения","Дела без ответственного",cases.filter(item=>!item.assignee));
+        add("reply","Ответить игрокам","Ожидается ответ сотрудника",scoped.filter(item=>item.assignee&&item.mode==="STAFF"));
+        add("overdue","Проверить сроки","Превышен срок ожидания",scoped.filter(item=>item.since+(item.mode==="PLAYER"?2880:20)*60<=clock()));
+        add("waiting","Ожидаем игрока","Требуется уточнение от игрока",scoped.filter(item=>item.mode==="PLAYER"));
+        if(has("VIEW_BANS")&&has("MANAGE_BANS")) {
+          const items=state.bans.filter(b=>b.status==="DRAFT"&&b.pendingDeadline>clock()&&(!mine||b.creatorName===actor)).sort((a,b)=>a.pendingDeadline-b.pendingDeadline).map(b=>({id:b.id,name:b.targetName,deadline:b.pendingDeadline}));
+          add("pending","Оформить баны","До снятия ближайшего предварительного бана",items,"restrictions",items.length?{deadline:items[0].deadline}:{});
+        }
+        return {scope:mine?"mine":"all",serverTime:clock(),cards};
+      }
       if (parts[1] === "players") {
         requirePermission("VIEW_PLAYERS");
         if (!n || ["all", "search"].includes(n))
@@ -1956,6 +1985,22 @@
         return { available: true, preview: true };
       }
       if (parts[1] === "analytics") {
+        if(n==="general") {
+          requirePermission("VIEW_ANALYTICS");
+          const sections=[{id:"activity",title:"Аккаунты и активность",source:"LoveWebAdmin",fields:{"Аккаунтов в базе":state.players.length,"Активных за сутки":2}},
+            ...[["clans","Кланы","LoveClans"],["duels","Дуэли","LoveDuels"],["hunt","Охота","LoveHunt"],["adaptation","Адаптации онлайн","LoveAdaptation"],["behavior","Поведение онлайн","LoveBehavior"],["contracts","Контракты","LoveContracts"]].map(([id,title,source])=>({id,title,source,fields:{"Тестовый показатель":2}}))];
+          for(const [id,title,source,permission,fields] of [
+            ["security","Безопасность аккаунтов","LoveAuth","MANAGE_LOVEAUTH",{"Зарегистрированных аккаунтов":3,"Заблокированных аккаунтов":0}],
+            ["economy","Экономика","LoveCore","VIEW_ECONOMY",{"Монет у отслеживаемых игроков онлайн":2500,"Охват: игроков онлайн":2}],
+            ["shops","Торговля","LoveShops","VIEW_ECONOMY",{"Сервисных NPC торговли":4}],
+            ["moderation","Наказания","LoveWebAdmin","VIEW_BANS",{"Наказаний в истории":state.bans.length}],
+            ["reports","Жалобы","LoveWebAdmin","VIEW_REPORTS",{"Всего жалоб":state.reports.length}],
+            ["appeals","Апелляции","LoveWebAdmin","VIEW_APPEALS",{"Всего апелляций":state.appeals.length}],
+            ["anticheat","Античит","Vesuvio","VIEW_VESUVIO",{"В очереди":0}]
+          ])if(has(permission))sections.push({id,title,source,fields});
+          return {scope:"server",observedAt:clock(),sections:sections.map(section=>({...section,available:true,stale:false,observedAt:clock(),reason:""}))};
+        }
+
         requirePermission("VIEW_ANALYTICS");
         if (n === "top-players") return clone(state.players);
         if (n === "commands") return [{ command: "spawn", count: 12 }];

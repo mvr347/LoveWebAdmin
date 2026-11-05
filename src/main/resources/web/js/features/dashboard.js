@@ -1,3 +1,4 @@
+import { mountWorkSummary } from "../core/work-summary.js";
 import { noticeDialog } from "../core/dialogs.js";
 import { state } from "../state.js";
 import {
@@ -200,11 +201,14 @@ export async function renderDashboardView() {
                 </div>
             </div>
 
+            <section class="tile" id="dashboard-work-summary"></section>
             <!-- Dynamic Tiles Grid -->
             <div class="dashboard-tiles-grid" id="dashboard-grid">
                 <!-- Rendered dynamically -->
             </div>
         `;
+
+  mountWorkSummary(area.querySelector("#dashboard-work-summary"));
 
   // Customize button
   document

@@ -17,6 +17,16 @@ import java.util.Optional;
  * GET /api/analytics/commands  — рейтинг самых популярных команд сервера
  */
 public class ApiAnalyticsHandler extends ApiHandlerSupport {
+    private record Snapshot(long at,Map<String,Object> data) {}
+    private final Map<java.util.Set<Permission>,Snapshot> generalCache=new LinkedHashMap<>();
+    private synchronized Map<String,Object> general(java.util.Set<Permission> rights) {
+        var key=java.util.Set.copyOf(rights);long now=System.nanoTime();var cached=generalCache.get(key);
+        if(cached!=null&&now-cached.at()<5_000_000_000L)return cached.data();
+        var data=new me.lovelace.loveWebAdmin.managers.ServerStatisticsManager(plugin).statistics(rights);
+        if(generalCache.size()>=16&&!generalCache.containsKey(key))generalCache.remove(generalCache.keySet().iterator().next());
+        generalCache.put(key,new Snapshot(now,data));return data;
+    }
+
 
     public ApiAnalyticsHandler(LoveWebAdmin plugin) {
         super(plugin);
@@ -41,6 +51,12 @@ public class ApiAnalyticsHandler extends ApiHandlerSupport {
             data.putAll(plugin.main().call(()->Map.of("currentOnline",plugin.getServer().getOnlinePlayers().size(),"maxPlayers",plugin.getServer().getMaxPlayers())).join());
             data.put("uptime", plugin.getUptimeSeconds());
             sendSuccess(resp, data);
+            return;
+        }
+
+        if ("/general".equals(pathInfo)) {
+            var rights=currentPermissions(sessionOpt.get());
+            sendSuccess(resp,general(rights));
             return;
         }
 
