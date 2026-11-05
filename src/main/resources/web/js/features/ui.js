@@ -120,7 +120,6 @@ export function hasPerm(perm) {
 export function isSectionVisible(section) {
   if (!state.me) return false;
   if (state.me.isOwner) return true;
-  if (!section.modAllowed && isModeratorRole()) return false;
   return hasPerm(section.perm);
 }
 export function clearPollers() {
@@ -143,7 +142,12 @@ export function setToken(newToken) {
 
 // ---------- API Client ----------
 export async function api(method, path, body) {
+  const token = state.token;
+  const assertCurrentAccount = () => {
+    if (state.token !== token) throw new DOMException("Учётная запись изменилась", "AbortError");
+  };
   const opts = {
+    isCurrent: () => state.token === token,
     method,
     headers: {},
   };
@@ -161,9 +165,13 @@ export async function api(method, path, body) {
   let res;
   try {
     res = await requestFetch(path, opts);
+  } catch (error) {
+    assertCurrentAccount();
+    throw error;
   } finally {
     state.readRequests.delete(controller);
   }
+  assertCurrentAccount();
   if (method === "GET" && generation !== state.requestGeneration)
     throw new Error("Открыт другой раздел");
   let json;
@@ -172,6 +180,7 @@ export async function api(method, path, body) {
   } catch (e) {
     throw new Error("Некорректный ответ сервера");
   }
+  assertCurrentAccount();
   if (method === "GET" && generation !== state.requestGeneration)
     throw new Error("Открыт другой раздел");
   if (!res.ok || !json.success) {

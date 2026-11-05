@@ -16,7 +16,7 @@ public final class ModerationStore implements AutoCloseable {
   }
 
   private static Connection openWithBackup(Path file) throws SQLException {
-    var connection = DriverManager.getConnection("jdbc:sqlite:" + file);
+    var connection = org.sqlite.JDBC.createConnection("jdbc:sqlite:" + file, new java.util.Properties());
     Path backup = file.resolveSibling(file.getFileName() + ".before-panel-v3.db");
     try {
       if (java.nio.file.Files.size(file) > 0 && !java.nio.file.Files.exists(backup))

@@ -93,3 +93,7 @@ permissions:
 
   lovewebadmin.supervise:
     default: op
+
+# Paper caches this driver in the server libraries directory; do not shade/relocate JNI classes.
+libraries:
+- org.xerial:sqlite-jdbc:3.50.3.0

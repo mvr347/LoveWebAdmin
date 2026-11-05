@@ -740,52 +740,8 @@ export async function renderPunishmentsView(
     const container = document.getElementById("punishments-subtab-container");
     if (!container) return;
     container.innerHTML = `
-                <!-- Discord Appeals Banner & Workflow Info -->
-                <div class="appeals-hub-banner" style="margin-bottom:20px;">
-                    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap;">
-                        <div>
-                            <div style="display:flex; align-items:center; gap:8px;">
-                                <span>${renderSvgIcon("message", "violet", 20)}</span>
-                                <h3 style="margin:0; font-size:16px; color:var(--text-main);">ИНТЕГРАЦИЯ С DISCORD: ТИКЕТЫ АПЕЛЛЯЦИЙ</h3>
-                                <span class="badge green" style="font-size:10.5px; display:inline-flex; align-items:center; gap:4px;">${renderSvgIcon("check", "green", 11)} РАБОЧИЙ ШЛЮЗ</span>
-                            </div>
-                            <p style="font-size:13px; color:var(--text-secondary); margin:6px 0 0 0; line-height:1.5;">
-                                На сервере приём апелляций осуществляется через Discord-бота в канале <b>#тикеты-апелляций</b>.
-                                Ниже представлена очередь апелляций и тикетов с поддержкой двусторонней переписки и принятия решений.
-                            </p>
-                        </div>
-                        <div>
-                            <button type="button" class="secondary btn-sm" id="btn-toggle-discord-docs" style="display:inline-flex; align-items:center; gap:6px;">${renderSvgIcon("fileText", "gray", 12)} СПРАВКА И МЕТОДЫ БОТА</button>
-                        </div>
-                    </div>
-                </div>
+                <p class="view-description">Рассматривайте апелляции, отвечайте игрокам и фиксируйте решение в карточке обращения.</p>
 
-                <!-- Collapsible Discord Bot API & Methods Doc -->
-                <div id="discord-bot-docs-box" style="display:none; background:var(--card-bg); border:1px solid var(--border); border-radius:var(--radius-md); padding:16px; margin-bottom:20px;">
-                    <h4 style="color:var(--accent-light); margin:0 0 10px 0; font-size:14px; display:flex; align-items:center; gap:6px;">${renderSvgIcon("server", "violet", 14)} МЕТОДЫ И ИНСТРУКЦИИ ДЛЯ DISCORD-БОТА</h4>
-                    <div style="font-size:12.5px; color:var(--text-muted); line-height:1.6; margin-bottom:12px;">
-                        Для автоматизации тикетов Discord-бот может обращаться к REST API веб-панели через авторизационный токен с правами <code>MANAGE_BANS</code>:
-                    </div>
-                    <pre class="discord-code-box"><code>// 1. Проверка активного бана по нику или ID:
-GET /api/bans/{id}
-Headers: { "Authorization": "Bearer &lt;TOKEN&gt;" }
-
-// 2. Снятие бана (разбан игрока через бота):
-POST /api/bans/{id}/unban
-Body: { "reason": "Апелляция одобрена в Discord тикете #123" }
-
-// 3. Формат готового Discord Embed сообщения с вердиктом:
-{
-  "embeds": [{
-    "title": "Вердикт по апелляции на блокировку",
-    "color": 3066993, // Зеленый при разбане, 15158332 при отказе
-    "fields": [
-      { "name": "Игрок", "value": "{targetName}", "inline": true },
-      { "name": "Решение", "value": "Блокировка снята", "inline": true }
-    ]
-  }]
-}</code></pre>
-                </div>
 
                 <!-- Live Ban Appeals & Discord Tickets Thread Section -->
                 <div style="background:var(--card-bg); border:1px solid var(--border); border-radius:var(--radius-md); padding:18px; margin-bottom:20px;">
@@ -797,13 +753,13 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                                 <span class="badge yellow" id="live-appeals-count-badge" style="font-size:11px;">0</span>
                             </h3>
                             <div style="font-size:12px; color:var(--text-muted); margin-top:2px;">
-                                Все апелляции автоматически создают приватные тикеты Discord через системный мост и поддерживают двусторонний чат
+                                Откройте карточку, чтобы увидеть переписку, доказательства и решение.
                             </div>
                         </div>
                         <div style="display:flex; gap:8px;">
                             <select id="appeals-status-filter" style="font-size:12px; padding:5px 10px;">
                                 <option value="ALL">Все статусы</option>
-                                <option value="PENDING" selected>Ожидают решения (PENDING)</option>
+                                <option value="PENDING" selected>Ожидают решения</option>
                                 <option value="APPROVED">Одобренные</option>
                                 <option value="REJECTED">Отклонённые</option><option value="REDUCED">Сокращён срок</option>
                             </select>
@@ -816,14 +772,6 @@ Body: { "reason": "Апелляция одобрена в Discord тикете #
                 </div>
             `;
 
-    // Toggle docs box
-    document
-      .getElementById("btn-toggle-discord-docs")
-      ?.addEventListener("click", () => {
-        const box = document.getElementById("discord-bot-docs-box");
-        if (box)
-          box.style.display = box.style.display === "none" ? "block" : "none";
-      });
     async function renderLiveAppealsList() {
       const listWrap = document.getElementById("live-appeals-list-wrap");
       const badge = document.getElementById("live-appeals-count-badge");

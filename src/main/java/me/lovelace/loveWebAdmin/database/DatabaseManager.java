@@ -45,7 +45,7 @@ import java.util.UUID;
  * Менеджер базы данных SQLite.
  * Синхронизируется на объекте Connection для безопасной конкурентной работы.
  */
-public class DatabaseManager {
+public class DatabaseManager implements me.lovelace.loveWebAdmin.web.SessionRepository {
 
     private final LoveWebAdmin plugin;
     private Connection connection;
@@ -102,7 +102,7 @@ public class DatabaseManager {
             } catch (ClassNotFoundException e) {
                 throw new IllegalStateException("Драйвер SQLite не найден",e);
             }
-            connection = DriverManager.getConnection("jdbc:sqlite:" + dbFile.getAbsolutePath());
+            connection = org.sqlite.JDBC.createConnection("jdbc:sqlite:" + dbFile.getAbsolutePath(), new java.util.Properties());
       File backup = new File(folder, "database-before-panel-v3.db");
             if(dbFile.length()>0 && !backup.exists()) try(var snapshot=connection.createStatement()) {
                 snapshot.execute("VACUUM INTO '"+backup.getAbsolutePath().replace("'","''")+"'");
@@ -1253,6 +1253,7 @@ public class DatabaseManager {
             ps.executeUpdate();
         } catch (SQLException e) {
       logger.warning("Ошибка сохранения сессии: " + e.getMessage());
+            throw new IllegalStateException("Session persistence failed", e);
         }
     }
 
@@ -1282,6 +1283,7 @@ public class DatabaseManager {
             }
         } catch (SQLException e) {
       logger.warning("Ошибка получения сессии: " + e.getMessage());
+            throw new IllegalStateException("Session persistence failed", e);
         }
         return Optional.empty();
     }
@@ -1293,16 +1295,18 @@ public class DatabaseManager {
             ps.executeUpdate();
         } catch (SQLException e) {
       logger.warning("Ошибка удаления сессии: " + e.getMessage());
+            throw new IllegalStateException("Session persistence failed", e);
         }
     }
 
     public synchronized void deleteExpiredSessions() {
-        String sql = "DELETE FROM web_sessions WHERE expires_at < ?";
+        String sql = "DELETE FROM web_sessions WHERE expires_at <= ?";
         try (PreparedStatement ps = connection.prepareStatement(sql)) {
             ps.setLong(1, System.currentTimeMillis() / 1000);
             ps.executeUpdate();
         } catch (SQLException e) {
       logger.warning("Ошибка очистки истёкших сессий: " + e.getMessage());
+            throw new IllegalStateException("Session persistence failed", e);
         }
     }
 
@@ -1312,7 +1316,7 @@ public class DatabaseManager {
             SELECT s.token, s.admin_id, s.expires_at, s.ip, s.user_agent, s.created_at, s.last_used_at, a.username, a.role_id
             FROM web_sessions s
             JOIN web_admins a ON s.admin_id = a.id
-            WHERE s.expires_at >= ?
+            WHERE s.expires_at > ?
             """;
         try (PreparedStatement ps = connection.prepareStatement(sql)) {
             ps.setLong(1, System.currentTimeMillis() / 1000);
@@ -1333,6 +1337,7 @@ public class DatabaseManager {
             }
         } catch (SQLException e) {
       logger.warning("Ошибка загрузки активных сессий: " + e.getMessage());
+            throw new IllegalStateException("Session persistence failed", e);
         }
         return sessions;
     }
@@ -1366,6 +1371,7 @@ public class DatabaseManager {
             }
         } catch (SQLException e) {
       logger.warning("Ошибка получения сессий администратора: " + e.getMessage());
+            throw new IllegalStateException("Session persistence failed", e);
         }
         return sessions;
     }
@@ -1377,6 +1383,7 @@ public class DatabaseManager {
             ps.executeUpdate();
         } catch (SQLException e) {
       logger.warning("Ошибка удаления сессий администратора: " + e.getMessage());
+            throw new IllegalStateException("Session persistence failed", e);
         }
     }
 
@@ -1388,6 +1395,7 @@ public class DatabaseManager {
             ps.executeUpdate();
         } catch (SQLException e) {
       logger.warning("Ошибка удаления других сессий: " + e.getMessage());
+            throw new IllegalStateException("Session persistence failed", e);
         }
     }
 
@@ -1398,6 +1406,7 @@ public class DatabaseManager {
             ps.executeUpdate();
         } catch (SQLException e) {
       logger.warning("Ошибка сброса всех сессий: " + e.getMessage());
+            throw new IllegalStateException("Session persistence failed", e);
         }
     }
 
@@ -1409,6 +1418,7 @@ public class DatabaseManager {
             ps.executeUpdate();
         } catch (SQLException e) {
       logger.warning("Ошибка обновления активности сессии: " + e.getMessage());
+            throw new IllegalStateException("Session persistence failed", e);
         }
     }
 

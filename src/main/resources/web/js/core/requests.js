@@ -1,6 +1,25 @@
 import { showOperationStatus } from "./operation-status.js";
 const pending = new Map();
 const actors = new Map();
+const intents = new Map();
+function forgetIntent(slot) {
+  intents.delete(slot);
+  try { sessionStorage.removeItem(slot); } catch {}
+}
+function intentKey(slot) {
+  if (intents.has(slot)) return intents.get(slot);
+  let saved = null, count = 0;
+  try {
+    saved = JSON.parse(sessionStorage.getItem(slot) || "null")?.key;
+    count = Object.keys(sessionStorage).filter(key => key.startsWith("lwa-operation:")).length;
+  } catch { /* A blocked storage must not break actions or change keys between retries. */ }
+  if (!saved && Math.max(count, intents.size) >= 256)
+    throw Error("Слишком много неподтверждённых действий. Сначала сверьте их результаты.");
+  const key = saved || newKey();
+  intents.set(slot, key);
+  try { sessionStorage.setItem(slot, JSON.stringify({ key, created: Date.now() })); } catch {}
+  return key;
+}
 async function accountIdentity(headers) {
   const authorization = headers.get("Authorization");
   if (!authorization)
@@ -63,25 +82,12 @@ export async function requestFetch(path, options = {}) {
     String(path),
     options.body || "",
   ]);
-  if (pending.has(signature)) return (await pending.get(signature)).clone();
+  // Persist intent per account, but never share an in-flight response across login sessions.
+  const pendingKey = JSON.stringify([signature, headers.get("Authorization"), headers.get("X-API-Key")]);
+  if (pending.has(pendingKey)) return (await pending.get(pendingKey)).clone();
+  const isCurrent = () => options.isCurrent?.() !== false;
   const slot = operationSlot(signature);
-  let key;
-  try {
-    key = JSON.parse(sessionStorage.getItem(slot) || "null")?.key;
-  } catch {}
-  if (
-    !key &&
-    Object.keys(sessionStorage).filter((value) =>
-      value.startsWith("lwa-operation:"),
-    ).length >= 256
-  )
-    throw Error(
-      "Слишком много неподтверждённых действий. Сверьте их результаты перед новыми операциями.",
-    );
-  key ||= newKey();
-  try {
-    sessionStorage.setItem(slot, JSON.stringify({ key, created: Date.now() }));
-  } catch {}
+  const key = intentKey(slot);
   headers.set("Idempotency-Key", key);
   const active = document.activeElement;
   const button =
@@ -101,21 +107,24 @@ export async function requestFetch(path, options = {}) {
       ? AbortSignal.any([options.signal, AbortSignal.timeout(30000)])
       : AbortSignal.timeout(30000),
   })
-    .then((response) => {
+    .then(async (response) => {
       if (
         response.status !== 202 &&
         (response.status !== 409 ||
           response.headers.get("Operation-State") === "COMPLETE") &&
         response.status < 500
       )
-        try {
-          sessionStorage.removeItem(slot);
-        } catch {}
-      if (response.status >= 500 && headers.has("Authorization"))
+        forgetIntent(slot);
+      if (isCurrent() && response.status >= 500 && headers.has("Authorization"))
         showOperationStatus(key, path, headers, () =>
-          sessionStorage.removeItem(slot),
+          forgetIntent(slot),
         );
-      if (response.ok)
+      let confirmed = response.ok && response.status !== 202;
+      if (confirmed) {
+        try { confirmed = (await response.clone().json()).success !== false; }
+        catch { confirmed = false; }
+      }
+      if (confirmed && isCurrent())
         document.dispatchEvent(
           new CustomEvent("lwa:mutation-complete", {
             detail: { form: button?.form, path },
@@ -136,7 +145,7 @@ export async function requestFetch(path, options = {}) {
           });
           const value = await status.json();
           if (status.ok && value.data?.state === "COMPLETE") {
-            sessionStorage.removeItem(slot);
+            forgetIntent(slot);
             return new Response(value.data.response, {
               status: value.data.status,
               headers: { "Content-Type": "application/json" },
@@ -144,10 +153,8 @@ export async function requestFetch(path, options = {}) {
           }
         } catch {}
       }
-      showOperationStatus(key, path, headers, () =>
-        sessionStorage.removeItem(slot),
-      );
-      document.dispatchEvent(
+      if (isCurrent()) showOperationStatus(key, path, headers, () => forgetIntent(slot));
+      if (isCurrent()) document.dispatchEvent(
         new CustomEvent("lwa:unknown-operation", { detail: { key, path } }),
       );
       throw new Error(
@@ -156,20 +163,25 @@ export async function requestFetch(path, options = {}) {
       );
     })
     .finally(() => {
-      pending.delete(signature);
+      pending.delete(pendingKey);
       if (button) {
         button.disabled = !!disabled;
         button.removeAttribute("aria-busy");
+        document.dispatchEvent(new CustomEvent("lwa:request-settled", { detail: { form: button.form } }));
       }
     });
-  pending.set(signature, task);
+  pending.set(pendingKey, task);
   return (await task).clone();
 }
 export function clearOperationIntents() {
-  for (let i = sessionStorage.length - 1; i >= 0; i--) {
-    const key = sessionStorage.key(i);
-    if (key?.startsWith("lwa-operation:")) sessionStorage.removeItem(key);
-  }
+  intents.clear();
+  actors.clear();
+  try {
+    for (let i = sessionStorage.length - 1; i >= 0; i--) {
+      const key = sessionStorage.key(i);
+      if (key?.startsWith("lwa-operation:")) sessionStorage.removeItem(key);
+    }
+  } catch {}
 }
 export function debounce(fn, ms = 250) {
   let timer;

@@ -85,11 +85,12 @@ function localError(field, scope) {
   }
   if (["ob-code", "reg-totp", "code-2fa"].includes(id))
     return confirmationCodeError(value, id === "code-2fa");
-  if ((id === "ob-user" || id === "invite-username") && value)
-    return usernameError(value.trim(), {
-      onboarding: id === "ob-user",
-      minecraft: id === "invite-username",
+  if ((id === "ob-user" || id === "invite-username") && value) {
+    const error = usernameError(value.trim(), {
+      onboarding: id === "ob-user", minecraft: id === "invite-username",
     });
+    if (error) return error;
+  }
   if (
     (field.autocomplete === "new-password" && /pass(?:word)?/i.test(id)) ||
     id === "ob-pass2"
@@ -227,7 +228,7 @@ function remoteCheck(field, scope, delay = 300) {
     try {
       const response = await fetch(
         `/api/auth/check-username?username=${encodeURIComponent(value)}&mode=${field.id === "ob-user" ? "onboarding" : "invite"}`,
-        { signal: state.controller.signal },
+        { signal: AbortSignal.any([state.controller.signal, AbortSignal.timeout(10000)]) },
       );
       const json = await response.json();
       if (availability.get(field) !== state || !field.isConnected) return;
@@ -301,6 +302,7 @@ export function installFormValidation() {
     true,
   );
   document.addEventListener("toggle", scan, true);
+  document.addEventListener("lwa:request-settled", scan);
   let scheduled = false;
   new MutationObserver(() => {
     if (scheduled) return;

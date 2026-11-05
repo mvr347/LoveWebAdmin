@@ -33,7 +33,7 @@ public final class RestrictionsStore implements AutoCloseable {
   private final Connection db;
 
   public RestrictionsStore(Path file) throws SQLException {
-    this(DriverManager.getConnection("jdbc:sqlite:" + file));
+    this(org.sqlite.JDBC.createConnection("jdbc:sqlite:" + file, new java.util.Properties()));
   }
 
   public RestrictionsStore(Connection db) throws SQLException {
