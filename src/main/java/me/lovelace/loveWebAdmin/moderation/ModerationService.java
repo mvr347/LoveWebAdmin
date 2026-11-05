@@ -88,6 +88,29 @@ public final class ModerationService implements Listener, AutoCloseable {
     return List.copyOf(restrictions.values());
   }
 
+  public Map<String, Object> history(Set<String> kinds, String query, int offset) {
+    try {
+      return store.history(kinds, query, offset);
+    } catch (java.sql.SQLException error) {
+      throw new IllegalStateException("История ограничений недоступна", error);
+    }
+  }
+
+  public boolean removeExpected(
+      String kind, String actor, String name, String reason, String uuid, String revision) {
+    if (!Bukkit.isPrimaryThread())
+      return plugin
+          .main()
+          .call(() -> removeExpected(kind, actor, name, reason, uuid, revision))
+          .join();
+    var current = restrictions.get(kind + ":" + uuid);
+    if (current == null
+        || !current.revision().equals(revision)
+        || !current.name().equalsIgnoreCase(name))
+      throw new IllegalArgumentException("Ограничение изменилось или уже снято. Обновите список.");
+    return remove(kind, actor, name, reason);
+  }
+
   public boolean isMuted(UUID id) {
     return active("MUTE", id);
   }

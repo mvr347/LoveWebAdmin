@@ -4018,3 +4018,59 @@ button.report-picker-card > span {min-width:0;}
 #db-refresh-general {margin-bottom:12px;}
 .server-statistics-section dd {white-space:nowrap;flex-shrink:0;}
 .server-statistics-section dt {min-width:0;overflow-wrap:anywhere;}
+
+/* Settings and live moderation share the panel's existing colors and controls. */
+.modal.modal-settings { width:min(980px,calc(100vw - 48px)); max-width:980px; }
+.settings-nav-group + .settings-nav-group { margin-top:14px; }
+.settings-nav-group .nav-section-title { padding:8px 10px; font-size:10px; }
+.settings-home-group { margin:24px 0; }
+.settings-home-group > p, .server-access-card > p { color:var(--text-muted); font-size:13px; margin:8px 0 14px; }
+.settings-home-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(270px,100%),1fr)); gap:12px; }
+.settings-home-card { display:flex; flex-direction:column; align-items:flex-start; gap:10px; text-align:left; white-space:normal; padding:18px; background:var(--card-bg); border:1px solid var(--border); border-radius:var(--radius-md); color:var(--text-heading); }
+.settings-home-card:hover { border-color:var(--accent); background:var(--card-inner-bg); }
+.settings-home-card span { font-size:13px; line-height:1.5; font-weight:400; color:var(--text-muted); }
+.settings-home-card small { color:var(--accent); }
+.restriction-actions,.restriction-card-actions,.restriction-pagination { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+.restriction-actions { margin-bottom:12px; }
+.restriction-tabs { display:flex; flex-wrap:wrap; gap:4px; margin:20px 0 14px; }
+.restriction-toolbar { display:flex; gap:14px; margin:16px 0; }
+.restriction-toolbar label { display:flex; flex-direction:column; gap:6px; font-size:12px; flex:1; }
+.restriction-toolbar label:last-child { flex:0 1 230px; }
+.restriction-card { background:var(--card-bg); border:1px solid var(--border); border-radius:var(--radius-md); padding:18px; margin-bottom:12px; }
+.restriction-card-heading { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+.restriction-card > p { margin:12px 0; white-space:pre-wrap; overflow-wrap:anywhere; }
+.restriction-metadata { display:flex; gap:20px; flex-wrap:wrap; margin:14px 0; font-size:12px; }
+.restriction-metadata dt { color:var(--text-muted); margin-bottom:4px; }
+.restriction-metadata dd { margin:0; }
+.restriction-pagination { justify-content:flex-end; margin:14px 0; }
+.restriction-empty { padding:32px 20px; text-align:center; border:1px dashed var(--border); border-radius:var(--radius-md); }
+.restriction-empty p { color:var(--text-muted); margin-top:8px; }
+.restriction-form label { display:flex; flex-direction:column; gap:7px; margin:14px 0; }
+.restriction-form small { color:var(--text-muted); font-size:12px; }
+.form-error { color:var(--red); white-space:pre-wrap; overflow-wrap:anywhere; }
+.form-error:empty { display:none; }
+.server-access-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(330px,100%),1fr)); gap:16px; }
+.server-access-card { padding:18px; border:1px solid var(--border); border-radius:var(--radius-md); background:var(--card-bg); }
+.server-access-add { display:flex; gap:10px; align-items:flex-end; margin:16px 0; flex-wrap:wrap; }
+.server-access-add label { display:flex; flex:1; flex-direction:column; gap:6px; min-width:140px; }
+.server-access-list { list-style:none; padding:0; max-height:340px; overflow:auto; }
+.server-access-list li { display:flex; justify-content:space-between; align-items:center; gap:10px; border-bottom:1px solid var(--border); padding:10px 0; }
+.server-access-card [data-toggle] { margin-top:10px; }
+@media(max-width:650px) {
+ .modal.modal-settings { width:calc(100vw - 24px); }
+ .restriction-toolbar { flex-direction:column; }
+ .restriction-toolbar label:last-child { flex:auto; }
+ .restriction-card-actions button { flex:1; }
+ .settings-modal-layout { min-height:0 !important; }
+}
+.modal.modal-settings { height:min(680px,calc(100dvh - var(--love-preview-height,0px) - 64px)); }
+.modal-settings .modal-header, .modal-settings .modal-footer { flex-shrink:0; }
+.modal-settings .modal-body { flex:1; min-height:0; max-height:none !important; }
+.modal-settings .settings-modal-layout { min-height:0 !important; max-height:none; }
+.modal-settings .settings-content-area { min-height:0 !important; max-height:none; }
+@media(max-width:760px) {
+ .modal-settings .settings-nav-sidebar { flex:0 0 auto; white-space:nowrap; }
+ .modal-settings .settings-nav-group { display:contents; }
+ .modal-settings .settings-nav-group .nav-section-title { display:none; }
+ .modal-settings .settings-tab-btn { flex:0 0 auto; width:auto; }
+}

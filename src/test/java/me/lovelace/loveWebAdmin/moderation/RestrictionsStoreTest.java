@@ -95,4 +95,66 @@ class RestrictionsStoreTest {
     for (String invalid : java.util.List.of("0m", "-1h", "999999999999999d", "forever", "1x"))
       assertThrows(IllegalArgumentException.class, () -> ModerationService.duration(invalid));
   }
+
+  @Test
+  void oldHistoryMigratesWithoutLosingRowsAndKeepsNamesForNewActions() throws Exception {
+    var file = directory.resolve("legacy.db");
+    try (var db = java.sql.DriverManager.getConnection("jdbc:sqlite:" + file);
+        var q = db.createStatement()) {
+      q.execute(
+          "CREATE TABLE restriction_history(id INTEGER PRIMARY KEY,kind TEXT NOT NULL,uuid TEXT NOT"
+              + " NULL,actor TEXT NOT NULL,reason TEXT NOT NULL,action TEXT NOT NULL,at INTEGER NOT"
+              + " NULL)");
+      q.execute(
+          "INSERT INTO restriction_history VALUES(1,'MUTE','old','Staff','Старая"
+              + " запись','APPLIED',10)");
+    }
+    try (var store = new RestrictionsStore(file)) {
+      store.put(
+          new RestrictionsStore.Restriction(
+              "MUTE", "uuid", "Ada123", "Staff", "Нарушение", 20, 100));
+      store.put(
+          new RestrictionsStore.Restriction(
+              "FREEZE", "other", "Other", "Supervisor", "Проверка", 21, 100));
+      assertTrue(store.remove("MUTE", "uuid", "OtherStaff", "Проверено", 30));
+      var result = store.history(java.util.Set.of("MUTE"), "", 0);
+      assertEquals(3L, result.get("total"));
+      assertEquals(2L, store.history(java.util.Set.of("MUTE"), "ada123", 0).get("total"));
+      assertEquals(0L, store.history(java.util.Set.of("MUTE"), "Supervisor", 0).get("total"));
+      var item = (java.util.Map<?, ?>) ((java.util.List<?>) result.get("items")).getFirst();
+      assertEquals("Ada123", item.get("name"));
+      assertEquals("REMOVED", item.get("action"));
+      assertFalse(item.containsKey("uuid"));
+    }
+    try (var store = new RestrictionsStore(file)) {
+      assertEquals(3L, store.history(java.util.Set.of("MUTE"), "", 0).get("total"));
+    }
+  }
+
+  @Test
+  void historyIsPagedAndRevisionDetectsReplacementsWithinSameSecond() throws Exception {
+    try (var store = new RestrictionsStore(directory.resolve("history.db"))) {
+      var first =
+          new RestrictionsStore.Restriction("MUTE", "uuid", "Ada", "Staff", "Первое", 100, 500);
+      var second =
+          new RestrictionsStore.Restriction("MUTE", "uuid", "Ada", "Staff", "Второе", 100, 500);
+      assertNotEquals(first.revision(), second.revision());
+      assertEquals(
+          first.revision(),
+          new RestrictionsStore.Restriction("MUTE", "uuid", "Ada", "Staff", "Первое", 100, 500)
+              .revision());
+      for (int i = 0; i < 28; i++)
+        store.put(
+            new RestrictionsStore.Restriction(
+                "MUTE", "u" + i, "Player" + i, "Staff", "Нарушение", 100 + i, 500));
+      var page = store.history(java.util.Set.of("MUTE"), "", 0);
+      assertEquals(25, ((java.util.List<?>) page.get("items")).size());
+      assertEquals(25, page.get("nextOffset"));
+      assertEquals(
+          3,
+          ((java.util.List<?>) store.history(java.util.Set.of("MUTE"), "", 25).get("items"))
+              .size());
+      assertEquals(0, store.history(java.util.Set.of(), "", 0).get("total"));
+    }
+  }
 }

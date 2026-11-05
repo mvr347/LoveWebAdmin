@@ -349,7 +349,24 @@ public final class PreviewRuntime implements AutoCloseable, AppealService.Contex
         throw new Rejected(409, "Результат уже установлен либо операция выполняется");
       return Map.of();
     }
-    if (scope.equals("moderation"))return restrictions().route(read,body);
+    if (scope.equals("moderation")) {
+      if (read && id.equals("history")) {
+        var query = new java.net.URI(raw).getRawQuery();
+        var params = new HashMap<String, String>();
+        if (query != null) {
+          for (String pair : query.split("&")) {
+            var fields = pair.split("=", 2);
+            params.put(
+                java.net.URLDecoder.decode(fields[0], java.nio.charset.StandardCharsets.UTF_8),
+                fields.length > 1
+                    ? java.net.URLDecoder.decode(fields[1], java.nio.charset.StandardCharsets.UTF_8)
+                    : "");
+          }
+        }
+        return restrictions().history(params);
+      }
+      return restrictions().route(read, body);
+    }
     if (scope.equals("stats")) return PreviewFeatures.stats(this);
     if (scope.equals("bans")) {
       require(read ? "VIEW_BANS" : "MANAGE_BANS");

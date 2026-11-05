@@ -102,7 +102,7 @@ export function exposeOpenQuickPlayerSearchModal() {
                     <input type="text" id="quick-dossier-search-name" placeholder="Введите ник игрока..." required autofocus autocomplete="off">
                 </div>
                 <div style="font-size:12px; color:var(--text-muted); line-height:1.5;">
-                    Мгновенный переход к полному досье игрока: альты, история наказаний, активные ограничения, инвентарь и статистика.
+                    Мгновенный переход к полному досье игрока: альты, история наказаний, активные ограничения и статистика.
                 </div>
             </div>
             <div class="modal-footer">

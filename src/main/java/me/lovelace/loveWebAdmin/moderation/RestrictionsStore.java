@@ -3,6 +3,7 @@ package me.lovelace.loveWebAdmin.moderation;
 import java.nio.file.Path;
 import java.sql.*;
 import java.util.*;
+import me.lovelace.loveWebAdmin.utils.JsonUtils;
 
 /** Durable transitions; callers publish a new immutable hot-path snapshot only after commit. */
 public final class RestrictionsStore implements AutoCloseable {
@@ -25,6 +26,33 @@ public final class RestrictionsStore implements AutoCloseable {
       String reason,
       long created,
       long expires) {
+    public String revision() {
+      return UUID.nameUUIDFromBytes(
+              JsonUtils.toJson(List.of(kind, uuid, name, actor, reason, created, expires))
+                  .getBytes(java.nio.charset.StandardCharsets.UTF_8))
+          .toString();
+    }
+
+    public Map<String, Object> view() {
+      return Map.of(
+          "kind",
+          kind,
+          "uuid",
+          uuid,
+          "name",
+          name,
+          "actor",
+          actor,
+          "reason",
+          reason,
+          "created",
+          created,
+          "expires",
+          expires,
+          "revision",
+          revision());
+    }
+
     public boolean active(long now) {
       return expires < 0 || expires > now;
     }
@@ -58,6 +86,15 @@ public final class RestrictionsStore implements AutoCloseable {
           "CREATE TABLE IF NOT EXISTS restriction_history(id INTEGER PRIMARY KEY,kind TEXT NOT"
               + " NULL,uuid TEXT NOT NULL,actor TEXT NOT NULL,reason TEXT NOT NULL,action TEXT NOT"
               + " NULL,at INTEGER NOT NULL)");
+      boolean found = false;
+      try (var fields = s.executeQuery("PRAGMA table_info(restriction_history)")) {
+        while (fields.next()) if (fields.getString("name").equals("player_name")) found = true;
+      }
+      if (!found)
+        s.execute(
+            "ALTER TABLE restriction_history ADD COLUMN player_name TEXT NOT NULL DEFAULT ''");
+      s.execute(
+          "CREATE INDEX IF NOT EXISTS restriction_history_time ON restriction_history(at,id)");
       s.execute(
           "CREATE TABLE IF NOT EXISTS overdue_alerts(actor TEXT NOT NULL,day TEXT NOT NULL,PRIMARY"
               + " KEY(actor,day))");
@@ -207,7 +244,7 @@ public final class RestrictionsStore implements AutoCloseable {
         q.setLong(7, v.expires);
         q.executeUpdate();
       }
-      history(v.kind, v.uuid, v.actor, v.reason, "APPLIED", v.created);
+      history(v.kind, v.uuid, v.actor, v.reason, "APPLIED", v.created, v.name);
       db.commit();
     } catch (SQLException e) {
       db.rollback();
@@ -221,13 +258,22 @@ public final class RestrictionsStore implements AutoCloseable {
       String kind, String uuid, String actor, String reason, long now) throws SQLException {
     db.setAutoCommit(false);
     try {
+      String name = "";
+      try (var lookup =
+          db.prepareStatement("SELECT name FROM restrictions WHERE kind=? AND uuid=?")) {
+        lookup.setString(1, kind);
+        lookup.setString(2, uuid);
+        try (var row = lookup.executeQuery()) {
+          if (row.next()) name = row.getString(1);
+        }
+      }
       int changed;
       try (var q = db.prepareStatement("DELETE FROM restrictions WHERE kind=? AND uuid=?")) {
         q.setString(1, kind);
         q.setString(2, uuid);
         changed = q.executeUpdate();
       }
-      if (changed > 0) history(kind, uuid, actor, reason, "REMOVED", now);
+      if (changed > 0) history(kind, uuid, actor, reason, "REMOVED", now, name);
       db.commit();
       return changed > 0;
     } catch (SQLException e) {
@@ -239,20 +285,81 @@ public final class RestrictionsStore implements AutoCloseable {
   }
 
   private void history(
-      String kind, String uuid, String actor, String reason, String action, long now)
+      String kind, String uuid, String actor, String reason, String action, long now, String name)
       throws SQLException {
     try (var q =
         db.prepareStatement(
-            "INSERT INTO restriction_history(kind,uuid,actor,reason,action,at)"
-                + " VALUES(?,?,?,?,?,?)")) {
+            "INSERT INTO restriction_history(kind,uuid,actor,reason,action,at,player_name)"
+                + " VALUES(?,?,?,?,?,?,?)")) {
       q.setString(1, kind);
       q.setString(2, uuid);
       q.setString(3, actor);
       q.setString(4, reason);
       q.setString(5, action);
       q.setLong(6, now);
+      q.setString(7, name);
       q.executeUpdate();
     }
+  }
+
+  public synchronized Map<String, Object> history(Set<String> kinds, String search, int offset)
+      throws SQLException {
+    var allowed =
+        kinds.stream().filter(kind -> Set.of("MUTE", "FREEZE").contains(kind)).sorted().toList();
+    if (allowed.isEmpty()) return Map.of("items", List.of(), "total", 0, "nextOffset", -1);
+    String where =
+        " WHERE kind IN ("
+            + String.join(",", Collections.nCopies(allowed.size(), "?"))
+            + ") AND (LOWER(player_name) LIKE LOWER(?) OR LOWER(actor) LIKE LOWER(?) OR"
+            + " LOWER(reason) LIKE LOWER(?))";
+    long total;
+    String query = "%" + search + "%";
+    try (var count = db.prepareStatement("SELECT COUNT(*) FROM restriction_history" + where)) {
+      int i = 1;
+      for (String kind : allowed) count.setString(i++, kind);
+      for (int j = 0; j < 3; j++) count.setString(i++, query);
+      try (var r = count.executeQuery()) {
+        r.next();
+        total = r.getLong(1);
+      }
+    }
+    var items = new ArrayList<Map<String, Object>>();
+    try (var q =
+        db.prepareStatement(
+            "SELECT id,kind,player_name,actor,reason,action,at FROM restriction_history"
+                + where
+                + " ORDER BY at DESC,id DESC LIMIT 25 OFFSET ?")) {
+      int i = 1;
+      for (String kind : allowed) q.setString(i++, kind);
+      for (int j = 0; j < 3; j++) q.setString(i++, query);
+      q.setInt(i, Math.max(0, offset));
+      try (var r = q.executeQuery()) {
+        while (r.next())
+          items.add(
+              Map.of(
+                  "id",
+                  r.getLong(1),
+                  "kind",
+                  r.getString(2),
+                  "name",
+                  r.getString(3),
+                  "actor",
+                  r.getString(4),
+                  "reason",
+                  r.getString(5),
+                  "action",
+                  r.getString(6),
+                  "at",
+                  r.getLong(7)));
+      }
+    }
+    return Map.of(
+        "items",
+        items,
+        "total",
+        total,
+        "nextOffset",
+        offset + items.size() < total ? offset + items.size() : -1);
   }
 
   @Override

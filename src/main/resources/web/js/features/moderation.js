@@ -102,6 +102,7 @@ export async function renderPunishmentsView(
 ) {
   const area = document.getElementById("content-area");
   if (!area) return;
+  if (defaultSubtab === "restrictions") { await renderRestrictions(area); return; }
   state.currentPunishmentsSubtab = defaultSubtab || "reports";
   const isMod = isModeratorRole();
   area.innerHTML = `
@@ -131,7 +132,7 @@ export async function renderPunishmentsView(
                     <span>АПЕЛЛЯЦИИ (DISCORD)</span>
                 </button>
                 <button type="button" class="segmented-nav-tab ${state.currentPunishmentsSubtab === "support" ? "active" : ""}" data-subtab="support">ПОДДЕРЖКА</button>
-                <button type="button" class="segmented-nav-tab" data-subtab="restrictions">ОГРАНИЧЕНИЯ</button>
+
             </div>
 
             <!-- Subtab Content Area -->

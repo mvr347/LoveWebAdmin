@@ -1408,14 +1408,28 @@
       }
       if(parts[1]==='moderation') {
         state.restrictions ||= [];
+        state.restrictionHistory ||= [];
         for(const b of state.bans)if(b.status==='DRAFT'&&b.pendingDeadline<=clock())b.status='EXPIRED';
+        for(const r of state.restrictions)if(r.expires>=0&&r.expires<=clock())state.restrictionHistory.push({...r,id:id(),action:'REMOVED',reason:'Истёк срок',actor:'Система',at:clock()});
         state.restrictions=state.restrictions.filter(r=>r.expires<0||r.expires>clock());
+        const canView = r => has(r.kind==='MUTE'?'MANAGE_MUTES':'FREEZE_PLAYERS');
         if(method==='GET') {
-          requirePermission('VIEW_BANS');
-          return {pending:state.bans.filter(b=>b.status==='DRAFT'&&b.pendingDeadline).map(b=>({id:b.id,name:b.targetName,actor:b.creatorName,createdAt:b.createdAt,deadline:b.pendingDeadline})),restrictions:clone(state.restrictions),serverTime:clock()};
+          if(!['VIEW_BANS','MANAGE_BANS','MANAGE_MUTES','FREEZE_PLAYERS','KICK_PLAYERS'].some(has))fail(403,'Нет права просмотра ограничений');
+          if(n==='history') {
+            const search=(url.searchParams.get('search')||'').toLowerCase(), offset=Math.max(0,Number(url.searchParams.get('offset'))||0);
+            const list=state.restrictionHistory.filter(r=>canView(r)&&[r.name,r.actor,r.reason].some(v=>String(v||'').toLowerCase().includes(search))).sort((a,b)=>b.at-a.at||b.id-a.id);
+            return {items:clone(list.slice(offset,offset+25)),total:list.length,nextOffset:offset+25<list.length?offset+25:-1};
+          }
+          return {pending:has('VIEW_BANS')||has('MANAGE_BANS')?state.bans.filter(b=>b.status==='DRAFT'&&b.pendingDeadline).map(b=>({id:b.id,name:b.targetName,actor:b.creatorName,createdAt:b.createdAt,deadline:b.pendingDeadline})):[],restrictions:clone(state.restrictions.filter(canView)),serverTime:clock()};
         }
-        const permissions={ban:'MANAGE_BANS',unban:'MANAGE_BANS',mute:'MANAGE_MUTES',unmute:'MANAGE_MUTES',freeze:'FREEZE_PLAYERS',unfreeze:'FREEZE_PLAYERS',kick:'KICK_PLAYERS'};
+        const permissions={ban:'MANAGE_BANS',unban:'MANAGE_BANS','cancel-ban':'MANAGE_BANS',mute:'MANAGE_MUTES',unmute:'MANAGE_MUTES',freeze:'FREEZE_PLAYERS',unfreeze:'FREEZE_PLAYERS',kick:'KICK_PLAYERS'};
         if(!permissions[body.action])fail(400,'Неизвестное действие');requirePermission(permissions[body.action]);
+        if(body.action==='cancel-ban') {
+          if((body.reason||'').trim().length<5)fail(400,'Объясните отмену');
+          const pending=state.bans.find(b=>b.id===Number(body.id)&&b.status==='DRAFT');
+          if(!pending)fail(409,'Оформление уже завершено или отменено');
+          pending.status='CANCELLED';return {message:'Оформление отменено'};
+        }
         const target=player(body.player);
         if(body.action==='ban') {
           let pending=state.bans.find(b=>b.status==='DRAFT'&&b.targetName.toLowerCase()===target.name.toLowerCase());
@@ -1430,9 +1444,17 @@
             else {const match=/^([1-9][0-9]{0,8})([smhdw])$/.exec(body.duration||'');if(!match)fail(400,'Укажите срок');seconds=Number(match[1])*({s:1,m:60,h:3600,d:86400,w:604800}[match[2]]);if(seconds>315360000)fail(400,'Недопустимый срок');}
           }
           state.restrictions=state.restrictions.filter(r=>r.uuid!==target.uuid||r.kind!==kind);
-          state.restrictions.push({kind,uuid:target.uuid,name:target.name,reason:body.reason,actor:viewer().username,created:clock(),expires:seconds<0?-1:clock()+seconds});
-        }else if(body.action==='unmute'||body.action==='unfreeze')state.restrictions=state.restrictions.filter(r=>r.uuid!==target.uuid||r.kind!==(body.action==='unmute'?'MUTE':'FREEZE'));
-        else if(body.action==='unban')for(const ban of state.bans)if(ban.targetName===target.name&&['DRAFT','ACTIVE'].includes(ban.status))ban.status='UNBANNED';
+          const restriction={kind,uuid:target.uuid,name:target.name,reason:body.reason,actor:viewer().username,created:clock(),expires:seconds<0?-1:clock()+seconds,revision:String(id())};
+          state.restrictions.push(restriction);
+          state.restrictionHistory.push({...restriction,id:id(),at:clock(),action:'APPLIED'});
+        }else if(body.action==='unmute'||body.action==='unfreeze') {
+          const kind=body.action==='unmute'?'MUTE':'FREEZE';
+          const current=state.restrictions.find(r=>r.uuid===target.uuid&&r.kind===kind);
+          if(!current)fail(409,'Ограничение уже снято');
+          if(body.expectedRevision&&current.revision!==body.expectedRevision)fail(409,'Ограничение изменилось. Обновите список.');
+          state.restrictions=state.restrictions.filter(r=>r!==current);
+          state.restrictionHistory.push({...current,id:id(),action:'REMOVED',at:clock(),actor:viewer().username,reason:body.reason});
+        }else if(body.action==='unban')for(const ban of state.bans)if(ban.targetName===target.name&&['DRAFT','ACTIVE'].includes(ban.status))ban.status='UNBANNED';
         else target.online=false;
         return {message:'Тестовое действие выполнено'};
       }
@@ -1864,20 +1886,20 @@
             if (body.action === "enable" || body.action === "disable")
               state.whitelist.enabled = body.action === "enable";
             else if (body.action === "add")
-              state.whitelist.players.push(body.player);
+              { if(!/^[A-Za-z0-9_]{1,16}$/.test(body.player||""))fail(400,"Укажите ник игрока"); if(!state.whitelist.players.includes(body.player))state.whitelist.players.push(body.player); }
             else if (body.action === "remove")
               state.whitelist.players = state.whitelist.players.filter(
                 (x) => x !== body.player,
               );
           }
-          return clone(state.whitelist);
+          return {enabled:state.whitelist.enabled,count:state.whitelist.players.length,players:state.whitelist.players.map(name=>({name}))};
         }
         if (n === "ops") {
           if (method === "POST") {
-            if (body.action === "add") state.ops.push(body.player);
+            if (body.action === "add") { if(!/^[A-Za-z0-9_]{1,16}$/.test(body.player||""))fail(400,"Укажите ник игрока"); if(!state.ops.includes(body.player))state.ops.push(body.player); }
             else state.ops = state.ops.filter((x) => x !== body.player);
           }
-          return { players: clone(state.ops), ops: clone(state.ops) };
+          return { players: clone(state.ops), ops: clone(state.ops), operators:state.ops.map(name=>({name})),count:state.ops.length };
         }
       }
       if (p === "/api/command") {

@@ -21,6 +21,8 @@ import { applyUserTheme } from "./notifications.js";
 // ==========================================================================
 
 export async function openAdminSettingsModal(initialTab = "general") {
+  const requestGeneration = state.requestGeneration;
+  const token = state.token;
   const isMod = isModeratorRole();
   const roleName = state.me.isOwner
     ? "Управляющий"
@@ -57,6 +59,7 @@ export async function openAdminSettingsModal(initialTab = "general") {
       "MANAGE_INTEGRATIONS",
       "MANAGE_SECURITY_SETTINGS",
       "MANAGE_PREVIEW",
+      "MANAGE_MAINTENANCE",
     ].some(hasPerm)
       ? await api("GET", "/api/server/config")
       : {};
@@ -69,6 +72,8 @@ export async function openAdminSettingsModal(initialTab = "general") {
   } catch (error) {
     configError = error.message;
   }
+  if (requestGeneration !== state.requestGeneration || token !== state.token)
+    return;
   let currentTab = initialTab || "general";
   const tabs = [
     {
@@ -78,17 +83,22 @@ export async function openAdminSettingsModal(initialTab = "general") {
     },
     {
       id: "server",
-      label: "Параметры панели",
+      label: "Сайт и сессии",
       icon: renderSvgIcon("server", "violet", 16),
     },
     {
       id: "security",
-      label: "Безопасность",
+      label: "Пароль и вход",
+      icon: renderSvgIcon("shield", "green", 16),
+    },
+    {
+      id: "panel-security",
+      label: "Правила входа",
       icon: renderSvgIcon("shield", "green", 16),
     },
     {
       id: "blacklist",
-      label: "Черный список",
+      label: "Команды веб-консоли",
       icon: renderSvgIcon("ban", "red", 16),
     },
     {
@@ -113,12 +123,12 @@ export async function openAdminSettingsModal(initialTab = "general") {
     },
     {
       id: "maintenance",
-      label: "Тех. работы",
+      label: "Обслуживание панели",
       icon: renderSvgIcon("wrench", "gray", 16),
     },
     {
       id: "danger",
-      label: "Опасные зоны",
+      label: "Служебные действия",
       icon: renderSvgIcon("alert", "red", 16),
     },
   ].filter(
@@ -128,31 +138,39 @@ export async function openAdminSettingsModal(initialTab = "general") {
         discord: hasPerm("MANAGE_INTEGRATIONS"),
         webhooks: hasPerm("MANAGE_INTEGRATIONS"),
         preview: hasPerm("MANAGE_PREVIEW"),
+        "panel-security": hasPerm("MANAGE_SECURITY_SETTINGS"),
         blacklist: hasPerm("MANAGE_SECURITY_SETTINGS"),
         maintenance: hasPerm("MANAGE_MAINTENANCE"),
         danger: state.me.isOwner,
       })[tab.id] ?? true,
   );
   if (!tabs.some((tab) => tab.id === currentTab)) currentTab = "general";
+  const groups = [
+    ["Личный аккаунт", ["general", "security", "notifications"]],
+    [
+      "Веб-панель",
+      ["server", "panel-security", "blacklist", "maintenance", "danger"],
+    ],
+    ["Discord и тестирование", ["discord", "webhooks", "preview"]],
+  ];
   openModal(
     `
             <div class="modal-header">
-                <h3>НАСТРОЙКИ ПАНЕЛИ И СЕРВЕРА</h3>
+                <h3>Настройки</h3>
                 <button type="button" class="close-btn" data-modal-close="true">${renderSvgIcon("close", "gray", 16)}</button>
             </div>
             <div class="modal-body" style="padding:0; max-height:82vh; overflow:hidden; display:flex; flex-direction:column;">
                 <div class="settings-modal-layout" style="flex:1; min-height:480px; display:flex; width:100%;">
                     <!-- Left Navigation Sidebar -->
                     <aside class="settings-nav-sidebar">
-                        ${tabs
-                          .map(
-                            (t) => `
-                            <button type="button" class="settings-tab-btn ${t.id === currentTab ? "active" : ""}" data-tab="${t.id}">
-                                <span>${t.icon}</span>
-                                <span>${esc(t.label)}</span>
-                            </button>
-                        `,
-                          )
+                        ${groups
+                          .map(([label, ids]) => {
+                            const visible = ids
+                              .map((id) => tabs.find((t) => t.id === id))
+                              .filter(Boolean);
+                            if (!visible.length) return "";
+                            return `<div class="settings-nav-group"><div class="nav-section-title">${esc(label)}</div>${visible.map((t) => `<button type="button" class="settings-tab-btn ${t.id === currentTab ? "active" : ""}" data-tab="${t.id}"><span>${t.icon}</span><span>${esc(t.label)}</span></button>`).join("")}</div>`;
+                          })
                           .join("")}
                     </aside>
 
@@ -168,13 +186,19 @@ export async function openAdminSettingsModal(initialTab = "general") {
         `,
     () => {
       const contentPane = document.getElementById("settings-tab-content");
+      const owner = contentPane.closest(".modal-overlay");
       const switchSettingsTab = async (tabId) => {
+        if (!contentPane.isConnected) return;
         currentTab = tabId;
         document.querySelectorAll(".settings-tab-btn").forEach((b) => {
           b.classList.toggle("active", b.dataset.tab === tabId);
         });
         if (!contentPane) return;
         contentPane.classList.add("active");
+        contentPane
+          .closest(".modal")
+          .querySelector(`.settings-tab-btn[data-tab="${tabId}"]`)
+          ?.scrollIntoView({ block: "nearest", inline: "nearest" });
         contentPane.style.cssText =
           "display:block!important;visibility:visible!important;opacity:1!important;flex:1;min-width:0;min-height:360px;padding:20px 24px;overflow-y:auto;color:var(--text-heading);background:var(--card-bg);";
         try {
@@ -278,7 +302,15 @@ export async function openAdminSettingsModal(initialTab = "general") {
                 }
               });
           } else if (
-            ["server", "discord", "preview", "webhooks"].includes(tabId)
+            [
+              "server",
+              "discord",
+              "preview",
+              "webhooks",
+              "panel-security",
+              "maintenance",
+              "blacklist",
+            ].includes(tabId)
           ) {
             renderSettingsSection(contentPane, tabId, {
               api,
@@ -305,38 +337,7 @@ export async function openAdminSettingsModal(initialTab = "general") {
             contentPane.innerHTML = `
                         <h4 style="color:var(--text-heading); margin-bottom:14px;">БЕЗОПАСНОСТЬ И АВТОРИЗАЦИЯ</h4>
 
-                        <!-- System Security Rules -->
-                        <div style="background:var(--card-inner-bg); padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-bottom:16px;">
-                            <b style="color:var(--text-heading); font-size:13.5px;">Параметры безопасности панели</b>
-                            <div style="font-size:12px; color:var(--text-muted); margin-bottom:12px;">Защита от подбора паролей и фиксация IP-адресов:</div>
-
-                            <div class="form-group">
-                                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:var(--text-heading);">
-                                    <input type="checkbox" id="cfg-strict-ip" ${serverConfig.strictIp ? "checked" : ""}>
-                                    <span>Строгая привязка сессий к IP (аннулировать сессию при смене адреса)</span>
-                                </label>
-                            </div>
-
-                            <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px;">
-                                <div class="form-group" style="margin-bottom:0;">
-                                    <label>Мин. длина пароля</label>
-                                    <input type="number" id="cfg-min-pass" value="${serverConfig.minPasswordLength || 12}" min="12" max="32">
-                                </div>
-                                <div class="form-group" style="margin-bottom:0;">
-                                    <label>Макс. попыток входа</label>
-                                    <input type="number" id="cfg-max-attempts" value="${serverConfig.loginMaxAttempts || 5}" min="1" max="20">
-                                </div>
-                                <div class="form-group" style="margin-bottom:0;">
-                                    <label>Блокировка (мин)</label>
-                                    <input type="number" id="cfg-lockout-min" value="${serverConfig.loginLockoutMinutes || 15}" min="1" max="1440">
-                                </div>
-                            </div>
-
-                            <button type="button" class="secondary btn-sm" id="btn-save-sec-rules" style="margin-top:14px; width:100%; display:flex; align-items:center; justify-content:center; gap:6px;">
-                                ${renderSvgIcon("save", "white", 14)} СОХРАНИТЬ ПРАВИЛА БЕЗОПАСНОСТИ
-                            </button>
-                        </div>
-
+                        <p class="settings-intro">Настройки только вашей учётной записи. Общие требования к паролям находятся в разделе «Правила входа».</p>
                         <!-- Sessions & 2FA Info Card -->
                         <div style="background:var(--card-inner-bg); padding:14px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-bottom:16px;">
                             <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -395,64 +396,6 @@ export async function openAdminSettingsModal(initialTab = "general") {
                             </button>
                         </div>
                     `;
-            if (!hasPerm("MANAGE_SECURITY_SETTINGS"))
-              document
-                .getElementById("btn-save-sec-rules")
-                ?.closest("div[style]")
-                ?.setAttribute("hidden", "");
-            if (!hasPerm("MANAGE_SECURITY_SETTINGS"))
-              for (const id of [
-                "cfg-strict-ip",
-                "cfg-min-pass",
-                "cfg-max-attempts",
-                "cfg-lockout-min",
-                "btn-save-sec-rules",
-              ]) {
-                const input = document.getElementById(id);
-                if (input) {
-                  input.disabled = true;
-                  input.title = "Нужно право управления безопасностью сервера";
-                }
-              }
-            document
-              .getElementById("btn-save-sec-rules")
-              ?.addEventListener("click", async () => {
-                if (!hasPerm("MANAGE_SECURITY_SETTINGS")) return;
-                const strictIp =
-                  document.getElementById("cfg-strict-ip").checked;
-                const minLength =
-                  parseInt(document.getElementById("cfg-min-pass").value, 10) ||
-                  12;
-                const maxAttempts =
-                  parseInt(
-                    document.getElementById("cfg-max-attempts").value,
-                    10,
-                  ) || 5;
-                const lockoutMin =
-                  parseInt(
-                    document.getElementById("cfg-lockout-min").value,
-                    10,
-                  ) || 15;
-                try {
-                  const res = await api("POST", "/api/server/config", {
-                    strictIp,
-                    minPasswordLength: minLength,
-                    loginMaxAttempts: maxAttempts,
-                    loginLockoutMinutes: lockoutMin,
-                  });
-                  serverConfig = {
-                    ...serverConfig,
-                    ...res,
-                  };
-                  showToast(
-                    "Сохранено",
-                    "Правила безопасности обновлены в config.yml",
-                    "success",
-                  );
-                } catch (e) {
-                  showToast("Ошибка", e.message, "error");
-                }
-              });
             document
               .getElementById("btn-sec-terminate-other")
               ?.addEventListener("click", () => {
@@ -539,158 +482,10 @@ export async function openAdminSettingsModal(initialTab = "general") {
                     "Ваш пароль успешно изменен",
                     "success",
                   );
-                  closeModal();
+                  closeModal(owner);
                 } catch (e) {
                   err.textContent = e.message;
                   err.style.display = "block";
-                }
-              });
-          } else if (tabId === "blacklist") {
-            // TAB 4: ЧЕРНЫЙ СПИСОК КОМАНД
-            let currentBlacklist = Array.isArray(serverConfig.commandBlacklist)
-              ? [...serverConfig.commandBlacklist]
-              : [];
-            const renderBlacklistUI = () => {
-              contentPane.innerHTML = `
-                            <h4 style="color:var(--text-heading); margin-bottom:14px;">ЧЕРНЫЙ СПИСОК КОМАНД ВЕБ-КОНСОЛИ</h4>
-                            <div style="background:var(--card-inner-bg); padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-bottom:16px;">
-                                <div style="font-size:12.5px; color:var(--text-muted); margin-bottom:14px;">
-                                    Команды, перечисленные ниже, полностью блокируются при попытке выполнить их через веб-терминал LoveWebAdmin для защиты целостности сервера.
-                                </div>
-
-                                <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px; min-height:42px; padding:10px; background:var(--bg-main); border-radius:var(--radius-sm); border:1px solid var(--border);">
-                                    ${currentBlacklist.length === 0 ? `<div style="font-size:12px; color:var(--text-dim); font-style:italic;">Черный список пуст</div>` : ""}
-                                    ${currentBlacklist
-                                      .map(
-                                        (cmd, idx) => `
-                                        <span class="badge red" style="display:inline-flex; align-items:center; gap:6px; font-size:12.5px; padding:4px 10px; border-radius:4px;">
-                                            <code>/${esc(cmd)}</code>
-                                            <button type="button" class="btn-remove-cmd" data-idx="${idx}" style="background:none; border:none; color:inherit; cursor:pointer; padding:0; line-height:1; display:inline-flex; align-items:center;">${renderSvgIcon("close", "gray", 12)}</button>
-                                        </span>
-                                    `,
-                                      )
-                                      .join("")}
-                                </div>
-
-                                <div style="display:flex; gap:10px; align-items:center;">
-                                    <input type="text" id="input-new-blacklist-cmd" placeholder="Например: restart, stop, op..." style="flex:1;">
-                                    <button type="button" class="secondary" id="btn-add-blacklist-cmd" style="display:inline-flex; align-items:center; gap:6px;">
-                                        ${renderSvgIcon("plus", "violet", 14)} ДОБАВИТЬ
-                                    </button>
-                                </div>
-                            </div>
-
-                            <button type="button" class="primary btn-sm" id="btn-save-blacklist" style="width:100%; display:flex; align-items:center; justify-content:center; gap:6px;">
-                                ${renderSvgIcon("save", "white", 14)} СОХРАНИТЬ ЧЕРНЫЙ СПИСОК
-                            </button>
-                        `;
-              document.querySelectorAll(".btn-remove-cmd").forEach((btn) => {
-                btn.addEventListener("click", () => {
-                  const idx = parseInt(btn.dataset.idx, 10);
-                  currentBlacklist.splice(idx, 1);
-                  renderBlacklistUI();
-                });
-              });
-              const addCmd = () => {
-                const input = document.getElementById(
-                  "input-new-blacklist-cmd",
-                );
-                let val = input.value.trim().toLowerCase();
-                if (val.startsWith("/")) val = val.substring(1).trim();
-                if (val && !currentBlacklist.includes(val)) {
-                  currentBlacklist.push(val);
-                  renderBlacklistUI();
-                }
-              };
-              document
-                .getElementById("btn-add-blacklist-cmd")
-                ?.addEventListener("click", addCmd);
-              document
-                .getElementById("input-new-blacklist-cmd")
-                ?.addEventListener("keydown", (e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    addCmd();
-                  }
-                });
-              document
-                .getElementById("btn-save-blacklist")
-                ?.addEventListener("click", async () => {
-                  try {
-                    const res = await api("POST", "/api/server/config", {
-                      commandBlacklist: currentBlacklist,
-                    });
-                    serverConfig.commandBlacklist = [...currentBlacklist];
-                    showToast(
-                      "Сохранено",
-                      "Черный список команд успешно записан в config.yml",
-                      "success",
-                    );
-                  } catch (e) {
-                    showToast("Ошибка", e.message, "error");
-                  }
-                });
-            };
-            renderBlacklistUI();
-          } else if (tabId === "maintenance") {
-            // TAB 6: ТЕХНИЧЕСКИЕ РАБОТЫ
-            let maintStatus = {
-              enabled: false,
-              message: "Ведутся технические работы",
-            };
-            try {
-              maintStatus = await api("GET", "/api/server/maintenance");
-            } catch (_) {}
-            contentPane.innerHTML = `
-                        <h4 style="color:var(--text-heading); margin-bottom:14px;">РЕЖИМ ТЕХНИЧЕСКИХ РАБОТ ПАНЕЛИ</h4>
-                        <div style="background:var(--card-inner-bg); padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-bottom:16px;">
-                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-                                <div>
-                                    <b style="color:var(--text-heading); font-size:14px;">Глобальный режим обслуживания веб-панели</b>
-                                    <div style="font-size:12px; color:var(--text-muted); margin-top:2px;">
-                                        Когда включён — вход разрешён только Управляющему и сотрудникам с правом «Обход тех. работ».
-                                    </div>
-                                </div>
-                                <label class="switch" style="position:relative; display:inline-block; width:44px; height:24px;">
-                                    <input type="checkbox" id="settings-maint-toggle" ${maintStatus.enabled ? "checked" : ""}>
-                                    <span style="position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; background:${maintStatus.enabled ? "var(--accent)" : "var(--border)"}; border-radius:24px; transition:.3s;"></span>
-                                </label>
-                            </div>
-
-                            <div class="form-group" style="margin-top:14px;">
-                                <label>Сообщение для заблокированных пользователей</label>
-                                <input type="text" id="settings-maint-msg" value="${esc(maintStatus.message || "Ведутся технические работы")}" placeholder="Сообщение...">
-                            </div>
-
-                            <button type="button" class="primary btn-sm" id="btn-save-maintenance-settings" style="width:100%; margin-top:6px; display:flex; align-items:center; justify-content:center; gap:6px;">
-                                ${renderSvgIcon("wrench", "white", 14)} ПРИМЕНИТЬ РЕЖИМ ТЕХНИЧЕСКИХ РАБОТ
-                            </button>
-                        </div>
-                    `;
-            document
-              .getElementById("btn-save-maintenance-settings")
-              ?.addEventListener("click", async () => {
-                const enabled = document.getElementById(
-                  "settings-maint-toggle",
-                ).checked;
-                const message = document
-                  .getElementById("settings-maint-msg")
-                  .value.trim();
-                try {
-                  await api("POST", "/api/server/maintenance", {
-                    enabled,
-                    message,
-                  });
-                  showToast(
-                    "Технические работы",
-                    enabled
-                      ? "Режим тех. работ ВКЛЮЧЁН"
-                      : "Режим тех. работ ОТКЛЮЧЁН",
-                    enabled ? "warning" : "success",
-                  );
-                  switchSettingsTab("maintenance");
-                } catch (e) {
-                  showToast("Ошибка", e.message, "error");
                 }
               });
           } else if (tabId === "danger") {
@@ -772,7 +567,7 @@ export async function openAdminSettingsModal(initialTab = "general") {
       });
       switchSettingsTab(currentTab);
     },
-    "modal-xl",
+    "modal-settings",
   );
 }
 

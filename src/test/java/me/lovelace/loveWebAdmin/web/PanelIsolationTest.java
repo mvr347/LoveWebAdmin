@@ -620,6 +620,21 @@ class PanelIsolationTest {
     assertEquals(1,db.getPendingReportsForPlayer("ada123",null,-1,0).size());
   }
 
+
+  @Test
+  void muteOnlyRoleCanReadRestrictionsAndHistoryWithoutBanRights() throws Exception {
+    var actor=account("MuteOnly",Set.of(Permission.MANAGE_MUTES));
+    var headers=Map.of("Authorization","Bearer "+actor.token());
+    var handler=new ApiModerationHandler(plugin);
+    var response=call(handler,"/api/moderation",null,headers);
+    assertEquals(200,response.status);assertTrue(response.body.toString().contains("restrictions"));
+    assertEquals(200,call(handler,"/api/moderation","/history",headers).status);
+    var stranger=account("NoRestrictions",Set.of(Permission.VIEW_STATS));
+    assertEquals(403,call(handler,"/api/moderation",null,Map.of("Authorization","Bearer "+stranger.token())).status);
+    requestMethod="POST";requestBody="{\"action\":\"freeze\",\"player\":\"Ada123\",\"reason\":\"Нет полномочий\"}";
+    assertEquals(403,call(handler,"/api/moderation",null,headers).status);
+  }
+
   private Response call(
       HttpServlet servlet, String servletPath, String path, Map<String, String> headers)
       throws Exception {
