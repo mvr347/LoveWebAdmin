@@ -27,6 +27,8 @@ import { renderAnticheatView } from "./vesuvio.js";
 import { renderServerView } from "./server.js";
 import { renderAuthView } from "./loveauth.js";
 import { renderStaffView } from "./staff.js";
+import { renderRestrictions } from "./restrictions.js";
+import { renderSettingsHome } from "./settings-home.js";
 import { renderDatabaseView } from "./database.js";
 // ---------- Main Application Layout (Sidebar + Viewport) ----------
 
@@ -68,12 +70,16 @@ export function renderAppLayout() {
 
                     <!-- 8 Main Navigation Items -->
                     <nav class="sidebar-nav" id="sidebar-nav">
-                        <div class="nav-section-title">Разделы панели</div>
-                        ${state.SECTIONS.map((s) => {
+
+                        ${state.SECTIONS.map((s, i, sections) => {
                           if (!isSectionVisible(s)) return "";
                           const isActive = s.id === state.activeNavSection;
                           const keyShortcut = s.num === 10 ? "0" : s.num;
-                          return `
+                          const previous = sections
+                            .slice(0, i)
+                            .filter(isSectionVisible)
+                            .at(-1);
+                          return `${previous?.group !== s.group ? `<div class="nav-section-title">${esc(s.group)}</div>` : ""}
                                 <div class="nav-item ${isActive ? "active" : ""}" data-nav="${s.id}" data-tooltip="${esc(s.label)} (Клавиша: ${keyShortcut})">
                                     <span class="nav-icon">${s.icon}</span>
                                     <span class="nav-label">${esc(s.label)}</span>
@@ -144,7 +150,12 @@ export function renderAppLayout() {
                         </div>
                     </header>
                     <nav class="compact-section-nav" aria-label="Разделы панели">
-                      ${state.SECTIONS.filter(isSectionVisible).map(section => `<button type="button" data-compact-nav="${section.id}" class="compact-section-link">${esc(section.label)}</button>`).join("")}
+                      ${state.SECTIONS.filter(isSectionVisible)
+                        .map(
+                          (section) =>
+                            `<button type="button" data-compact-nav="${section.id}" class="compact-section-link">${esc(section.label)}</button>`,
+                        )
+                        .join("")}
                     </nav>
 
                     <!-- Content Body -->
@@ -197,12 +208,18 @@ export function renderAppLayout() {
   // Admin settings modal button
   document
     .getElementById("topbar-settings-btn")
-    ?.addEventListener("click", () => openAdminSettingsModal("general"));
+    ?.addEventListener("click", () =>
+      isSectionVisible(state.SECTIONS.find((s) => s.id === "settings"))
+        ? navigateTo("settings")
+        : openAdminSettingsModal("general"),
+    );
 
-  document.querySelector(".compact-section-nav")?.addEventListener("click", event => {
-    const item = event.target.closest("[data-compact-nav]");
-    if (item) navigateTo(item.dataset.compactNav);
-  });
+  document
+    .querySelector(".compact-section-nav")
+    ?.addEventListener("click", (event) => {
+      const item = event.target.closest("[data-compact-nav]");
+      if (item) navigateTo(item.dataset.compactNav);
+    });
   // Sidebar navigation clicks
   document.getElementById("sidebar-nav")?.addEventListener("click", (e) => {
     const item = e.target.closest(".nav-item");
@@ -318,6 +335,8 @@ export function startTopbarStatusPoller() {
   }, 5000);
 }
 export async function navigateTo(sectionId, recordHistory = true) {
+  const target = state.SECTIONS.find((s) => s.id === sectionId);
+  if (target && !isSectionVisible(target)) return;
   closeAllModals();
   captureView();
   if (recordHistory)
@@ -332,16 +351,20 @@ export async function navigateTo(sectionId, recordHistory = true) {
   state.activeNavSection = sectionId;
 
   // Update active class in sidebar
-  document.querySelectorAll("#sidebar-nav .nav-item,.compact-section-nav [data-compact-nav]").forEach((el) => {
-    const isMatch =
-      (el.dataset.nav || el.dataset.compactNav) === sectionId ||
-      (el.dataset.nav === "punishments" &&
-        (sectionId === "bans" || sectionId === "reports")) ||
-      (el.dataset.nav === "staff" && sectionId === "admins");
-    el.classList.toggle("active", isMatch);
-    if (isMatch) el.setAttribute("aria-current", "page");
-    else el.removeAttribute("aria-current");
-  });
+  document
+    .querySelectorAll(
+      "#sidebar-nav .nav-item,.compact-section-nav [data-compact-nav]",
+    )
+    .forEach((el) => {
+      const isMatch =
+        (el.dataset.nav || el.dataset.compactNav) === sectionId ||
+        (el.dataset.nav === "punishments" &&
+          (sectionId === "bans" || sectionId === "reports")) ||
+        (el.dataset.nav === "staff" && sectionId === "admins");
+      el.classList.toggle("active", isMatch);
+      if (isMatch) el.setAttribute("aria-current", "page");
+      else el.removeAttribute("aria-current");
+    });
 
   // Update topbar page title on the left
   const topbarTitle = document.getElementById("topbar-page-title");
@@ -390,6 +413,12 @@ export async function navigateTo(sectionId, recordHistory = true) {
     case "staff":
     case "admins":
       await renderStaffView();
+      break;
+    case "restrictions":
+      await renderRestrictions(area);
+      break;
+    case "settings":
+      renderSettingsHome();
       break;
     case "database":
       await renderDatabaseView();

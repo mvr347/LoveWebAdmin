@@ -362,3 +362,30 @@ test('provisional moderation counts from the kick and rejects late finalization'
   assert.equal(m.request('POST','/api/bans',{id:other.id,targetName:'Ada123',ruleReason:'Поздно',durationSeconds:3600}).status,409);
   assert.equal(call(m,'GET','/api/moderation').pending.length,0);
 });
+
+test('restriction views respect mute-only rights, history filtering and stale removals',()=>{
+  const state=create().snapshot();
+  state.roles.find(r=>r.id===2).permissions=['MANAGE_MUTES'];state.viewer=2;
+  const m=create({load:()=>state});
+  call(m,'POST','/api/moderation',{action:'mute',player:'Ada123',duration:'1h',reason:'Первое нарушение'});
+  const first=call(m,'GET','/api/moderation');
+  assert.equal(first.pending.length,0);assert.equal(first.restrictions.length,1);
+  const old=first.restrictions[0];
+  call(m,'POST','/api/moderation',{action:'mute',player:'Ada123',duration:'2h',reason:'Новое нарушение'});
+  assert.equal(m.request('POST','/api/moderation',{action:'unmute',player:'Ada123',reason:'Проверка снятия',expectedRevision:old.revision}).status,409);
+  assert.equal(call(m,'GET','/api/moderation').restrictions[0].reason,'Новое нарушение');
+  assert.equal(call(m,'GET','/api/moderation/history?search=Новое').total,1);
+  assert.equal(m.request('POST','/api/moderation',{action:'freeze',player:'Ada123',reason:'Нет полномочий'}).status,403);
+});
+
+test('cancelling a pending ban leaves an existing final ban intact',()=>{
+  const m=create();
+  const active=call(m,'POST','/api/moderation',{action:'ban',player:'Ada123'});
+  call(m,'POST','/api/bans',{id:active.id,targetName:'Ada123',ruleReason:'Нарушение',durationSeconds:3600});
+  const pending=call(m,'POST','/api/moderation',{action:'ban',player:'Ada123'});
+  call(m,'POST','/api/moderation',{action:'cancel-ban',id:pending.id,reason:'Создан по ошибке'});
+  const bans=m.snapshot().bans;
+  assert.equal(bans.find(b=>b.id===active.id).status,'ACTIVE');
+  assert.equal(bans.find(b=>b.id===pending.id).status,'CANCELLED');
+  assert.equal(m.request('POST','/api/moderation',{action:'cancel-ban',id:pending.id,reason:'Повторная отмена'}).status,409);
+});

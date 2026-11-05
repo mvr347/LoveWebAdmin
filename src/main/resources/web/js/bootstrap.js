@@ -134,6 +134,56 @@ export function startApplication() {
       modAllowed: true,
     },
   ];
+  for (const section of state.SECTIONS) {
+    section.group = ["dashboard", "journal"].includes(section.id)
+      ? "Работа"
+      : ["punishments", "anticheat"].includes(section.id)
+        ? "Модерация"
+        : section.id === "staff"
+          ? "Управление"
+          : "Сервер и игроки";
+  }
+  state.SECTIONS.find((s) => s.id === "server").anyPerms = [
+    "VIEW_PLAYERS",
+    "EXECUTE_COMMANDS",
+    "MANAGE_WHITELIST",
+    "MANAGE_OPERATORS",
+  ];
+  state.SECTIONS.push({
+    id: "restrictions",
+    label: "Ограничения",
+    icon: state.SECTIONS.find((s) => s.id === "punishments").icon,
+    num: 9,
+    group: "Модерация",
+    anyPerms: [
+      "VIEW_BANS",
+      "MANAGE_BANS",
+      "MANAGE_MUTES",
+      "FREEZE_PLAYERS",
+      "KICK_PLAYERS",
+    ],
+  });
+  state.SECTIONS.push({
+    id: "settings",
+    label: "Настройки",
+    icon: state.SECTIONS.find((s) => s.id === "server").icon,
+    num: 10,
+    group: "Управление",
+    anyPerms: [
+      "MANAGE_PANEL_SETTINGS",
+      "MANAGE_SECURITY_SETTINGS",
+      "MANAGE_INTEGRATIONS",
+      "MANAGE_PREVIEW",
+      "MANAGE_MAINTENANCE",
+      "MANAGE_WHITELIST",
+      "MANAGE_OPERATORS",
+    ],
+  });
+  const groupOrder = ["Работа", "Модерация", "Сервер и игроки", "Управление"];
+  state.SECTIONS.sort(
+    (a, b) => groupOrder.indexOf(a.group) - groupOrder.indexOf(b.group),
+  );
+
   state.ALL_PERMISSIONS = [
     "VIEW_STATS",
     "VIEW_ANALYTICS",

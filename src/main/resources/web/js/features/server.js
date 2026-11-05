@@ -1,3 +1,4 @@
+import { renderGameAccess } from "./server-access.js";
 import { noticeDialog } from "../core/dialogs.js";
 import { state } from "../state.js";
 import {
@@ -6,7 +7,7 @@ import {
   esc,
   fmtDuration,
   fmtTime,
-  isModeratorRole,
+  hasPerm,
   openModal,
   renderSvgIcon,
   showToast,
@@ -15,10 +16,20 @@ import {
 // 5. СЕРВЕР (ИГРОКИ, КОНСОЛЬ, WHITELIST & OPs)
 // ==========================================================================
 
-export async function renderServerView() {
+export async function renderServerView(initialTab = "players") {
   const area = document.getElementById("content-area");
-  const isMod = isModeratorRole();
-  let subTab = "players"; // players, console, whitelist
+  const tabs = [
+    ["players", "Список игроков", hasPerm("VIEW_PLAYERS")],
+    ["console", "Консоль сервера", hasPerm("EXECUTE_COMMANDS")],
+    [
+      "whitelist",
+      "Вход и операторы",
+      hasPerm("MANAGE_WHITELIST") || hasPerm("MANAGE_OPERATORS"),
+    ],
+  ].filter((t) => t[2]);
+  let subTab = tabs.some((t) => t[0] === initialTab)
+    ? initialTab
+    : tabs[0]?.[0];
 
   area.innerHTML = `
             <div class="view-header">
@@ -31,9 +42,7 @@ export async function renderServerView() {
             <!-- Sub Tabs -->
             <div style="background:var(--card-bg); border:1px solid var(--border); border-radius:var(--radius-md); padding:10px 16px; margin-bottom:18px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
                 <div class="filter-tags" id="server-sub-tabs">
-                    <button type="button" class="filter-tag-btn active" data-sub="players">Список игроков</button>
-                    ${!isMod ? '<button type="button" class="filter-tag-btn" data-sub="console">Консоль сервера</button>' : ""}
-                    ${!isMod ? '<button type="button" class="filter-tag-btn" data-sub="whitelist">Whitelist & Операторы</button>' : ""}
+                    ${tabs.map(([id, label]) => `<button type="button" class="filter-tag-btn ${id === subTab ? "active" : ""}" data-sub="${id}">${label}</button>`).join("")}
                 </div>
             </div>
 
@@ -62,6 +71,8 @@ export async function renderServerView() {
   const mountSubTab = () => {
     const container = document.getElementById("server-tab-container");
     if (!container) return;
+    clearInterval(state.pollers.console_logs_poller);
+    delete state.pollers.console_logs_poller;
     if (subTab === "players") renderServerPlayersTab(container);
     else if (subTab === "console") renderServerConsoleTab(container);
     else if (subTab === "whitelist") renderServerWhitelistTab(container);
@@ -252,7 +263,7 @@ export function exposeViewPlayerProfile() {
                                 <div style="font-size:16px; font-weight:700; color:var(--accent-light);">${fmtDuration(p.playtimeSeconds || 0)}</div>
                             </div>
                             <div class="stat-card" style="padding:12px;">
-                                <a href="/inventory.html?player=${encodeURIComponent(p.name)}">Инвентарь и изъятые предметы</a><div class="stat-label">Баланс монет (Экономика)</div>
+                                <div class="stat-label">Баланс монет (Экономика)</div>
                                 <div style="font-size:16px; font-weight:700; color:var(--text-main);">${p.economy?.balance != null ? p.economy.balance.toLocaleString() + " монет" : "Нет актуальных данных"}</div>
                             </div>
                         </div>
@@ -268,28 +279,12 @@ export function exposeViewPlayerProfile() {
               dossierContainer.innerHTML = `<div style="text-align:center; padding:24px; color:var(--text-dim);">Игрок не в сети. Интерактивные действия доступны только когда игрок онлайн на сервере.</div>`;
               return;
             }
-            const isHigherRole =
-              state.me &&
-              (state.me.isOwner ||
-                (state.me.role &&
-                  (state.me.role.toLowerCase().includes("управляющий") ||
-                    state.me.role.toLowerCase().includes("owner"))));
             dossierContainer.innerHTML = `
                         <div style="display:flex; gap:12px; margin-bottom:16px; flex-wrap:wrap;">
                             <button type="button" class="quick-action-btn" id="act-kick" style="min-width:160px; flex:1; padding:18px;">
                                 <span class="qa-icon" style="margin-bottom:6px;">${renderSvgIcon("userMinus", "red", 24)}</span>
                                 <span style="font-weight:700;">КИКНУТЬ ИГРОКА</span>
                             </button>
-                            ${
-                              isHigherRole
-                                ? `
-                            <button type="button" class="quick-action-btn" id="act-clear-inv" style="min-width:160px; flex:1; padding:18px;">
-                                <span class="qa-icon" style="margin-bottom:6px;">${renderSvgIcon("trash", "yellow", 24)}</span>
-                                <span style="font-weight:700;">ОЧИСТИТЬ ИНВЕНТАРЬ</span>
-                            </button>
-                            `
-                                : ""
-                            }
                         </div>
                     `;
             const execPlayerAction = async (action, bodyObj = {}) => {
@@ -335,19 +330,6 @@ export function exposeViewPlayerProfile() {
                     reason: reason.trim(),
                   });
               });
-            if (isHigherRole) {
-              document
-                .getElementById("act-clear-inv")
-                ?.addEventListener("click", () => {
-                  confirmAction(
-                    "ОЧИСТКА ИНВЕНТАРЯ",
-                    `Вы действительно хотите безвозвратно очистить инвентарь игрока ${p.name}?`,
-                    () => execPlayerAction("clear_inventory"),
-                    "ОЧИСТИТЬ",
-                    true,
-                  );
-                });
-            }
           };
           const renderNotes = () => {
             dossierContainer.innerHTML = `
@@ -482,10 +464,10 @@ export function renderServerConsoleTab(container) {
             <div class="terminal-window">
                 <div class="terminal-header">
                     <span style="font-family:'Outfit'; font-weight:700; color:var(--text-heading); font-size:13px;">КОНСОЛЬ СЕРВЕРА MINECRAFT</span>
-                    <span class="badge green">ПЕРМИШИН EXECUTE_COMMANDS</span>
+                    <span class="badge green">Доступ к командам сервера</span>
                 </div>
                 <div class="terminal-logs-body" id="console-logs-body">
-                    Загрузка последних серверных логов...
+                    ${hasPerm("VIEW_SERVER_LOGS") ? "Загрузка последних серверных логов…" : "Просмотр журнала недоступен: требуется право просмотра серверных логов. Выполнение команд остаётся доступным."}
                 </div>
                 <div class="terminal-input-row">
                     <span class="terminal-prompt">&gt;</span>
@@ -499,9 +481,10 @@ export function renderServerConsoleTab(container) {
   const cmdHistory = [];
   let historyIdx = -1;
   const refreshConsoleLogs = async () => {
+    if (!hasPerm("VIEW_SERVER_LOGS") || !logBody?.isConnected) return;
     try {
       const logs = await api("GET", "/api/logs/server?mode=recent");
-      if (!logBody) return;
+      if (!logBody?.isConnected) return;
       const wasBottom =
         logBody.scrollHeight - logBody.scrollTop <= logBody.clientHeight + 40;
       logBody.innerHTML = logs
@@ -517,7 +500,7 @@ export function renderServerConsoleTab(container) {
     } catch (e) {}
   };
   refreshConsoleLogs();
-  state.pollers["console_logs_poller"] = setInterval(refreshConsoleLogs, 3000);
+  if (hasPerm("VIEW_SERVER_LOGS")) state.pollers["console_logs_poller"] = setInterval(refreshConsoleLogs, 3000);
   const sendCmd = async () => {
     const cmd = cmdInput.value.trim();
     if (!cmd) return;
@@ -561,195 +544,7 @@ export function renderServerConsoleTab(container) {
 
 // Server Whitelist & Operators Tab
 export async function renderServerWhitelistTab(container) {
-  container.innerHTML = `
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
-                <!-- Whitelist Management -->
-                <div style="background:var(--card-bg); border:1px solid var(--border); border-radius:var(--radius-md); padding:18px;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; border-bottom:1px solid var(--border); padding-bottom:10px;">
-                        <h3 style="font-size:15px; color:var(--text-heading);">БЕЛЫЙ СПИСОК (WHITELIST)</h3>
-                        <button type="button" class="secondary btn-sm" id="btn-toggle-whitelist">ПЕРЕКЛЮЧИТЬ</button>
-                    </div>
-
-                    <div id="whitelist-status-banner" style="margin-bottom:14px;">Загрузка...</div>
-
-                    <div style="display:flex; gap:8px; margin-bottom:14px;">
-                        <input type="text" id="whitelist-add-name" placeholder="Никнейм для добавления...">
-                        <button type="button" class="primary btn-sm" id="whitelist-add-btn">ДОБАВИТЬ</button>
-                    </div>
-
-                    <div class="table-wrap" style="max-height:300px; overflow-y:auto;">
-                        <table>
-                            <thead><tr><th>ИГРОК</th><th style="text-align:right;">ДЕЙСТВИЕ</th></tr></thead>
-                            <tbody id="whitelist-tbody">
-                                <tr><td colspan="2" style="text-align:center; padding:16px; color:var(--text-dim);">Загрузка...</td></tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <!-- Operators Management -->
-                <div style="background:var(--card-bg); border:1px solid var(--border); border-radius:var(--radius-md); padding:18px;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; border-bottom:1px solid var(--border); padding-bottom:10px;">
-                        <h3 style="font-size:15px; color:var(--text-heading);">ОПЕРАТОРЫ СЕРВЕРА (OPs)</h3>
-                        <span class="badge red">КРИТИЧЕСКИЙ ДОСТУП</span>
-                    </div>
-
-                    <div style="display:flex; gap:8px; margin-bottom:14px;">
-                        <input type="text" id="ops-add-name" placeholder="Никнейм для выдачи OP...">
-                        <button type="button" class="danger btn-sm" id="ops-add-btn">ВЫДАТЬ OP</button>
-                    </div>
-
-                    <div class="table-wrap" style="max-height:340px; overflow-y:auto;">
-                        <table>
-                            <thead><tr><th>ОПЕРАТОР</th><th style="text-align:right;">ДЕЙСТВИЕ</th></tr></thead>
-                            <tbody id="ops-tbody">
-                                <tr><td colspan="2" style="text-align:center; padding:16px; color:var(--text-dim);">Загрузка...</td></tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        `;
-  const refreshWhitelist = async () => {
-    try {
-      const data = await api("GET", "/api/server/whitelist");
-      const banner = document.getElementById("whitelist-status-banner");
-      const tbody = document.getElementById("whitelist-tbody");
-      if (banner) {
-        banner.innerHTML = `
-                        <div style="display:flex; align-items:center; justify-content:space-between; padding:10px; background:${data.enabled ? "var(--green-bg)" : "rgba(255,255,255,0.03)"}; border:1px solid ${data.enabled ? "var(--green-border)" : "var(--border)"}; border-radius:6px;">
-                            <span>Режим Whitelist: <b>${data.enabled ? "ВКЛЮЧЕН" : "ОТКЛЮЧЕН"}</b></span>
-                            <span class="badge ${data.enabled ? "green" : "gray"}">${data.count || 0} игроков</span>
-                        </div>`;
-      }
-      if (tbody) {
-        const players = data.players || [];
-        if (!players.length) {
-          tbody.innerHTML = `<tr><td colspan="2" style="text-align:center; color:var(--text-dim); padding:16px;">Whitelist пуст</td></tr>`;
-        } else {
-          tbody.innerHTML = players
-            .map(
-              (p) => `
-                            <tr>
-                                <td style="font-weight:700; color:var(--text-heading);">${esc(p.name)}</td>
-                                <td style="text-align:right;">
-                                    <button type="button" class="secondary btn-sm" onclick="window.removeWhitelistPlayer('${esc(p.name)}')">УДАЛИТЬ</button>
-                                </td>
-                            </tr>
-                        `,
-            )
-            .join("");
-        }
-      }
-    } catch (e) {}
-  };
-  const refreshOps = async () => {
-    try {
-      const data = await api("GET", "/api/server/ops");
-      const tbody = document.getElementById("ops-tbody");
-      if (!tbody) return;
-      const ops = data.operators || [];
-      if (!ops.length) {
-        tbody.innerHTML = `<tr><td colspan="2" style="text-align:center; color:var(--text-dim); padding:16px;">Операторов нет</td></tr>`;
-      } else {
-        tbody.innerHTML = ops
-          .map(
-            (o) => `
-                        <tr>
-                            <td>
-                                <div style="display:flex; align-items:center; gap:8px;">
-                                    <img src="https://mc-heads.net/avatar/${encodeURIComponent(o.name)}/20" class="player-avatar-sm" alt="">
-                                    <b style="color:var(--text-heading);">${esc(o.name)}</b>
-                                </div>
-                            </td>
-                            <td style="text-align:right;">
-                                <button type="button" class="danger btn-sm" onclick="window.removeOpPlayer('${esc(o.name)}')">СНЯТЬ OP</button>
-                            </td>
-                        </tr>
-                    `,
-          )
-          .join("");
-      }
-    } catch (e) {}
-  };
-  document
-    .getElementById("btn-toggle-whitelist")
-    ?.addEventListener("click", async () => {
-      const data = await api("GET", "/api/server/whitelist");
-      const next = !data.enabled;
-      await api("POST", "/api/server/whitelist", {
-        action: next ? "enable" : "disable",
-      });
-      showToast(
-        "Whitelist",
-        next ? "Whitelist активирован" : "Whitelist отключен",
-        "info",
-      );
-      refreshWhitelist();
-    });
-  document
-    .getElementById("whitelist-add-btn")
-    ?.addEventListener("click", async () => {
-      const name = document.getElementById("whitelist-add-name").value.trim();
-      if (!name) return;
-      await api("POST", "/api/server/whitelist", {
-        action: "add",
-        player: name,
-      });
-      document.getElementById("whitelist-add-name").value = "";
-      showToast(
-        "Whitelist",
-        `Игрок LoveWebAdmin добавлен в whitelist`,
-        "success",
-      );
-      refreshWhitelist();
-    });
-  document.getElementById("ops-add-btn")?.addEventListener("click", () => {
-    const name = document.getElementById("ops-add-name").value.trim();
-    if (!name) return;
-    confirmAction(
-      "ВЫДАЧА ПРАВ OP",
-      `Выдать полные права оператора игроку LoveWebAdmin? Операторы имеют доступ ко всем командам ядра!`,
-      async () => {
-        await api("POST", "/api/server/ops", {
-          action: "add",
-          player: name,
-        });
-        document.getElementById("ops-add-name").value = "";
-        showToast(
-          "Операторы",
-          `Права OP выданы игроку LoveWebAdmin`,
-          "warning",
-        );
-        refreshOps();
-      },
-      "ВЫДАТЬ OP",
-    );
-  });
-  window.removeWhitelistPlayer = async (name) => {
-    await api("POST", "/api/server/whitelist", {
-      action: "remove",
-      player: name,
-    });
-    showToast("Whitelist", `Игрок LoveWebAdmin удален из whitelist`, "info");
-    refreshWhitelist();
-  };
-  window.removeOpPlayer = (name) => {
-    confirmAction(
-      "СНЯТИЕ OP",
-      `Снять права оператора с игрока LoveWebAdmin?`,
-      async () => {
-        await api("POST", "/api/server/ops", {
-          action: "remove",
-          player: name,
-        });
-        showToast("Операторы", `Права OP сняты с LoveWebAdmin`, "info");
-        refreshOps();
-      },
-      "СНЯТЬ",
-    );
-  };
-  await Promise.all([refreshWhitelist(), refreshOps()]);
+  return renderGameAccess(container);
 }
 
 // ==========================================================================

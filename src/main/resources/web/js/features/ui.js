@@ -122,7 +122,7 @@ export function hasPerm(perm) {
 export function isSectionVisible(section) {
   if (!state.me) return false;
   if (state.me.isOwner) return true;
-  return hasPerm(section.perm);
+  return section.anyPerms ? section.anyPerms.some(hasPerm) : hasPerm(section.perm);
 }
 export function clearPollers() {
   state.requestGeneration++;
@@ -495,9 +495,9 @@ export function initGlobalShortcuts() {
         ? document.activeElement.tagName.toLowerCase()
         : "";
       if (tag !== "input" && tag !== "textarea" && tag !== "select") {
-        const idx = e.key === "0" ? 9 : parseInt(e.key, 10) - 1;
-        if (state.SECTIONS[idx]) {
-          const targetSection = state.SECTIONS[idx];
+        const shortcut = e.key === "0" ? 10 : parseInt(e.key, 10);
+        const targetSection = state.SECTIONS.find(section => section.num === shortcut);
+        if (targetSection) {
           if (isSectionVisible(targetSection)) {
             e.preventDefault();
             navigateTo(targetSection.id);

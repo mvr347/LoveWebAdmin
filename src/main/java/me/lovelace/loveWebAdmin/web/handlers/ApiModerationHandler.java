@@ -14,11 +14,46 @@ public final class ApiModerationHandler extends ApiHandlerSupport {
 
   @Override
   protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws IOException {
-    var session = requirePermission(req, resp, Permission.VIEW_BANS);
+    var session = requireSession(req, resp);
     if (session.isEmpty()) return;
+    var rights = currentPermissions(session.get());
+    if (java.util.Collections.disjoint(
+        rights,
+        Set.of(
+            Permission.VIEW_BANS,
+            Permission.MANAGE_BANS,
+            Permission.MANAGE_MUTES,
+            Permission.FREEZE_PLAYERS,
+            Permission.KICK_PLAYERS))) {
+      sendError(resp, 403, "Нет права просмотра ограничений");
+      return;
+    }
+    if ("/history".equals(req.getPathInfo())) {
+      var kinds = new HashSet<String>();
+      if (rights.contains(Permission.MANAGE_MUTES)) kinds.add("MUTE");
+      if (rights.contains(Permission.FREEZE_PLAYERS)) kinds.add("FREEZE");
+      String query = Objects.toString(req.getParameter("search"), "").trim();
+      if (query.length() > 100) {
+        sendError(resp, 400, "Слишком длинный поиск");
+        return;
+      }
+      sendSuccess(
+          resp,
+          plugin
+              .getModerationService()
+              .history(
+                  kinds,
+                  query,
+                  Math.clamp(parseIntOrDefault(req.getParameter("offset"), 0), 0, 1000000)));
+      return;
+    }
     var m = plugin.getModerationService();
     var pending =
         m.pending().stream()
+            .filter(
+                p ->
+                    rights.contains(Permission.VIEW_BANS)
+                        || rights.contains(Permission.MANAGE_BANS))
             .map(
                 p ->
                     Map.of(
@@ -43,11 +78,11 @@ public final class ApiModerationHandler extends ApiHandlerSupport {
                 .filter(r -> r.active(System.currentTimeMillis() / 1000))
                 .filter(
                     r ->
-                        hasPermission(
-                            session.get(),
+                        rights.contains(
                             r.kind().equals("MUTE")
                                 ? Permission.MANAGE_MUTES
                                 : Permission.FREEZE_PLAYERS))
+                .map(me.lovelace.loveWebAdmin.moderation.RestrictionsStore.Restriction::view)
                 .toList(),
             "serverTime",
             System.currentTimeMillis() / 1000));
@@ -59,7 +94,7 @@ public final class ApiModerationHandler extends ApiHandlerSupport {
     String action = Objects.toString(body.get("action"), "");
     Permission permission =
         switch (action) {
-          case "ban", "unban" -> Permission.MANAGE_BANS;
+          case "ban", "unban", "cancel-ban" -> Permission.MANAGE_BANS;
           case "mute", "unmute" -> Permission.MANAGE_MUTES;
           case "freeze", "unfreeze" -> Permission.FREEZE_PLAYERS;
           case "kick" -> Permission.KICK_PLAYERS;
@@ -78,6 +113,22 @@ public final class ApiModerationHandler extends ApiHandlerSupport {
       var m = plugin.getModerationService();
       String detail = "Действие выполнено";
       switch (action) {
+        case "cancel-ban" -> {
+          if (reason.trim().length() < 5 || reason.length() > 1000)
+            throw new IllegalArgumentException("Объясните отмену: от 5 до 1000 символов");
+          if (!(body.get("id") instanceof Number id)
+              || id.doubleValue() != id.intValue()
+              || id.intValue() < 1)
+            throw new IllegalArgumentException("Укажите номер предварительного бана");
+          if (!m.cancelPending(id.intValue(), actor)) {
+            sendError(resp, 409, "Оформление уже завершено или отменено");
+            return;
+          }
+          plugin
+              .getLogManager()
+              .logWebAction(
+                  actor, "Причина отмены предварительного бана №" + id.intValue() + ": " + reason);
+        }
         case "ban" -> {
           var ban = m.ban(actor, name);
           sendSuccess(
@@ -91,9 +142,9 @@ public final class ApiModerationHandler extends ApiHandlerSupport {
                 name,
                 ModerationService.duration(Objects.toString(body.get("duration"), "")),
                 reason);
-        case "unmute" -> m.remove("MUTE", actor, name, reason);
+        case "unmute" -> remove(m, "MUTE", actor, name, reason, body);
         case "freeze" -> m.freeze(actor, name, reason);
-        case "unfreeze" -> m.remove("FREEZE", actor, name, reason);
+        case "unfreeze" -> remove(m, "FREEZE", actor, name, reason, body);
         case "kick" -> m.kick(actor, name, reason);
         case "unban" -> {
           if (!plugin.getBanManager().unban(name, actor))
@@ -106,5 +157,22 @@ public final class ApiModerationHandler extends ApiHandlerSupport {
     } catch (RuntimeException e) {
       sendError(resp, 409, "Действие не завершено; обновите состояние перед повтором");
     }
+  }
+
+  private static void remove(
+      ModerationService service,
+      String kind,
+      String actor,
+      String name,
+      String reason,
+      Map<String, Object> body) {
+    if (reason.trim().length() < 5 || reason.length() > 1000)
+      throw new IllegalArgumentException("Объясните снятие: от 5 до 1000 символов");
+    boolean changed;
+    if (body.get("expectedRevision") instanceof String revision
+        && body.get("expectedUuid") instanceof String uuid)
+      changed = service.removeExpected(kind, actor, name, reason, uuid, revision);
+    else changed = service.remove(kind, actor, name, reason);
+    if (!changed) throw new IllegalArgumentException("Ограничение уже снято. Обновите список.");
   }
 }

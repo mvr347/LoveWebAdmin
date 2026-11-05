@@ -47,10 +47,13 @@ final class PreviewModeration implements AutoCloseable {
   Object route(boolean read, Map<String, Object> body) throws Exception {
     expire();
     if (read) {
-      r.require("VIEW_BANS");
+      if (java.util.stream.Stream.of(
+              "VIEW_BANS", "MANAGE_BANS", "MANAGE_MUTES", "FREEZE_PLAYERS", "KICK_PLAYERS")
+          .noneMatch(r::has)) throw new Rejected(403, "Нет права просмотра ограничений");
       return Map.of(
           "pending",
           store.pending().stream()
+              .filter(p -> r.has("VIEW_BANS") || r.has("MANAGE_BANS"))
               .map(
                   p ->
                       Map.of(
@@ -66,20 +69,51 @@ final class PreviewModeration implements AutoCloseable {
                           p.deadline()))
               .toList(),
           "restrictions",
-          store.restrictions(),
+          store.restrictions().stream()
+              .filter(v -> r.has(v.kind().equals("MUTE") ? "MANAGE_MUTES" : "FREEZE_PLAYERS"))
+              .map(RestrictionsStore.Restriction::view)
+              .toList(),
           "serverTime",
           r.now());
     }
     String action = text(body, "action", "");
     String permission =
         switch (action) {
-          case "ban", "unban" -> "MANAGE_BANS";
+          case "ban", "unban", "cancel-ban" -> "MANAGE_BANS";
           case "mute", "unmute" -> "MANAGE_MUTES";
           case "freeze", "unfreeze" -> "FREEZE_PLAYERS";
           case "kick" -> "KICK_PLAYERS";
           default -> throw new Rejected(400, "Неизвестное действие");
         };
     r.require(permission);
+    if (action.equals("cancel-ban")) {
+      String reason = text(body, "reason", "");
+      if (reason.trim().length() < 5 || reason.length() > 1000)
+        throw new Rejected(400, "Объясните отмену: от 5 до 1000 символов");
+      int id = integer(body.get("id"));
+      if (!store.transition(id, "CANCELLED", r.now()))
+        throw new Rejected(409, "Оформление уже завершено или отменено");
+      var b = r.database().getBanById(id).orElseThrow();
+      r.database()
+          .saveBan(
+              new WebBan(
+                  b.id(),
+                  b.targetName(),
+                  b.targetUuid(),
+                  b.targetIp(),
+                  b.creatorName(),
+                  b.ruleReason(),
+                  b.description(),
+                  b.proofUrls(),
+                  b.isIpBan(),
+                  "CANCELLED",
+                  b.durationSeconds(),
+                  b.createdAt(),
+                  b.expiresAt(),
+                  b.linkedReportId()));
+      r.audit(r.actor(), "Отменён предварительный бан №" + id + ": " + reason);
+      return Map.of("message", "Оформление отменено");
+    }
     String name = text(body, "player", "");
     if (!name.matches("[A-Za-z0-9_]{1,16}")) throw new Rejected(400, "Укажите ник игрока");
     String uuid =
@@ -141,9 +175,18 @@ final class PreviewModeration implements AutoCloseable {
               reason,
               r.now(),
               seconds < 0 ? -1 : r.now() + seconds));
-    } else if (action.equals("unmute") || action.equals("unfreeze"))
-      store.remove(action.equals("unmute") ? "MUTE" : "FREEZE", uuid, r.actor(), reason, r.now());
-    else if (action.equals("unban")) {
+    } else if (action.equals("unmute") || action.equals("unfreeze")) {
+      String kind = action.equals("unmute") ? "MUTE" : "FREEZE";
+      var current =
+          store.restrictions().stream()
+              .filter(v -> v.kind().equals(kind) && v.uuid().equals(uuid))
+              .findFirst()
+              .orElseThrow(() -> new Rejected(409, "Ограничение уже снято"));
+      if (body.get("expectedRevision") instanceof String revision
+          && !current.revision().equals(revision))
+        throw new Rejected(409, "Ограничение изменилось. Обновите список.");
+      store.remove(kind, uuid, r.actor(), reason, r.now());
+    } else if (action.equals("unban")) {
       for (var p : store.pending())
         if (p.name().equalsIgnoreCase(name)) store.transition(p.id(), "CANCELLED", r.now());
       for (var b : r.database().getAllBans(null))
@@ -168,6 +211,21 @@ final class PreviewModeration implements AutoCloseable {
     }
     r.audit(r.actor(), action + ": " + name + " — " + reason);
     return Map.of("message", "Действие выполнено в Preview");
+  }
+
+  Object history(Map<String, String> params) throws Exception {
+    var kinds = new HashSet<String>();
+    if (r.has("MANAGE_MUTES")) kinds.add("MUTE");
+    if (r.has("FREEZE_PLAYERS")) kinds.add("FREEZE");
+    if (kinds.isEmpty() && !r.has("VIEW_BANS") && !r.has("MANAGE_BANS"))
+      throw new Rejected(403, "Нет права просмотра ограничений");
+    int offset;
+    try {
+      offset = Integer.parseInt(params.getOrDefault("offset", "0"));
+    } catch (NumberFormatException invalid) {
+      offset = 0;
+    }
+    return store.history(kinds, params.getOrDefault("search", ""), Math.clamp(offset, 0, 1000000));
   }
 
   WebBan finalizeBan(Map<String, Object> body) throws Exception {
