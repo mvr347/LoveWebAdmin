@@ -1440,6 +1440,10 @@
               text: "Причина: {reason}",
             },
           ];
+        if (n === "context") {
+          const list = state.bans.filter(b => b.targetName.toLowerCase() === (url.searchParams.get("target") || "").toLowerCase());
+          return {total:list.length, active:list.filter(b => b.status === "ACTIVE" && (b.expiresAt < 0 || b.expiresAt > clock())).length};
+        }
         if (n === "archive") return { files: [] };
         if (!n || n === "all")
           return method === "GET" ? clone(state.bans) : createBan(body);
@@ -1511,16 +1515,15 @@
       if (parts[1] === "reports") {
         requirePermission(method === "GET" ? "VIEW_REPORTS" : "MANAGE_REPORTS");
         if (!n) {
-          const filter = url.searchParams.get("status"),
-            target = url.searchParams.get("target");
+          const filter = url.searchParams.get("status"), target = url.searchParams.get("target");
+          const search = (url.searchParams.get("search") || "").toLowerCase();
+          const offset = Math.max(0, Number(url.searchParams.get("offset")) || 0);
+          const limit = Math.max(1, Math.min(200, Number(url.searchParams.get("limit")) || 50));
           return {
-            reports: clone(
-              state.reports.filter(
-                (r) =>
-                  (!filter || r.status === filter) &&
-                  (!target || r.targetName === target),
-              ),
-            ),
+            reports: clone(state.reports.filter(r => (!filter || r.status === filter)
+              && (!target || r.targetName.toLowerCase() === target.toLowerCase())
+              && (!search || [r.targetName,r.reporterName,r.description,...(r.reasons || [])].join(" ").toLowerCase().includes(search)))
+              .slice(offset, offset + limit)),
             stats: {
               pending: state.reports.filter((r) => r.status === "PENDING")
                 .length,

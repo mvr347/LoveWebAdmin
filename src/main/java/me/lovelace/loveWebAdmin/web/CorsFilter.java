@@ -42,9 +42,13 @@ public class CorsFilter implements Filter {
             httpResponse.setHeader("Access-Control-Allow-Origin", origin != null ? origin : "*");
             httpResponse.setHeader("Vary", "Origin");
             httpResponse.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-            httpResponse.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key, Accept, Origin, X-Requested-With, X-Appeal-Token");
+            httpResponse.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key, Accept, Origin, X-Requested-With, X-Appeal-Token, Idempotency-Key");
         }
 
+        if (httpRequest.getRequestURI().startsWith("/api/")) {
+            httpResponse.setHeader("Cache-Control", "no-store");
+            httpResponse.setHeader("Pragma", "no-cache");
+        }
         // Security headers
         httpResponse.setHeader("X-Frame-Options", "DENY");
         httpResponse.setHeader("X-Content-Type-Options", "nosniff");
@@ -52,10 +56,10 @@ public class CorsFilter implements Filter {
         httpResponse.setHeader("Permissions-Policy", "geolocation=(), camera=(), microphone=(), payment=()");
         httpResponse.setHeader("Content-Security-Policy",
             "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
-            "font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self'; frame-ancestors 'none'");
+            "font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'");
 
         if ("OPTIONS".equalsIgnoreCase(httpRequest.getMethod())) {
-            httpResponse.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key, Accept, Origin, X-Requested-With, X-Appeal-Token");
+            httpResponse.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key, Accept, Origin, X-Requested-With, X-Appeal-Token, Idempotency-Key");
             httpResponse.setStatus(HttpServletResponse.SC_OK);
             return;
         }

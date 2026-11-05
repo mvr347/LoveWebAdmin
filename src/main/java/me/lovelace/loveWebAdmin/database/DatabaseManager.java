@@ -196,6 +196,7 @@ public class DatabaseManager implements me.lovelace.loveWebAdmin.web.SessionRepo
                         timestamp INTEGER DEFAULT (strftime('%s', 'now'))
                     )
                     """);
+                statement.execute("CREATE INDEX IF NOT EXISTS idx_web_bans_target_lower ON web_bans(LOWER(target_name))");
                 statement.execute("CREATE INDEX IF NOT EXISTS idx_server_chat_logs_player ON server_chat_logs(player_name)");
                 statement.execute("CREATE INDEX IF NOT EXISTS idx_server_chat_logs_time ON server_chat_logs(timestamp)");
 
@@ -1544,6 +1545,23 @@ public class DatabaseManager implements me.lovelace.loveWebAdmin.web.SessionRepo
       logger.warning("Ошибка получения списка банов: " + e.getMessage());
         }
         return list;
+    }
+
+    /** Context for one player, without loading ban proofs, linked reports or the whole history. */
+    public synchronized Map<String, Object> getBanContext(String targetName) {
+        String sql = "SELECT COUNT(*) AS total, COALESCE(SUM(CASE WHEN status = 'ACTIVE' "
+            + "AND (expires_at < 0 OR expires_at > ?) THEN 1 ELSE 0 END), 0) AS active "
+            + "FROM web_bans WHERE LOWER(target_name) = LOWER(?)";
+        try (var query = connection.prepareStatement(sql)) {
+            query.setLong(1, System.currentTimeMillis() / 1000L);
+            query.setString(2, targetName.trim());
+            try (var result = query.executeQuery()) {
+                result.next();
+                return Map.of("total", result.getLong("total"), "active", result.getLong("active"));
+            }
+        } catch (SQLException error) {
+            throw new IllegalStateException("Не удалось загрузить контекст блокировок", error);
+        }
     }
 
     public synchronized List<WebBan> getBansByCreator(String creatorName) {
@@ -3039,17 +3057,29 @@ public class DatabaseManager implements me.lovelace.loveWebAdmin.web.SessionRepo
     }
 
     public synchronized boolean linkBanAndReport(int banId, int reportId, String adminUsername) {
-        String updateBanSql = "UPDATE web_bans SET linked_report_id = ? WHERE id = ?";
-        try (PreparedStatement ps = connection.prepareStatement(updateBanSql)) {
-            ps.setInt(1, reportId);
-            ps.setInt(2, banId);
-            ps.executeUpdate();
-        } catch (SQLException e) {
-      logger.warning(
-          "Ошибка привязки репорта #" + reportId + " к бану #" + banId + ": " + e.getMessage());
-            return false;
+        try {
+            connection.setAutoCommit(false);
+            String sql = "UPDATE web_bans SET linked_report_id = ? WHERE id = ? AND status = 'ACTIVE' "
+                + "AND (linked_report_id IS NULL OR linked_report_id = ?) AND EXISTS "
+                + "(SELECT 1 FROM player_reports r WHERE r.id = ? AND r.status = 'PENDING' "
+                + "AND LOWER(r.target_name) = LOWER(web_bans.target_name))";
+            try (var update = connection.prepareStatement(sql)) {
+                update.setInt(1, reportId); update.setInt(2, banId);
+                update.setInt(3, reportId); update.setInt(4, reportId);
+                if (update.executeUpdate() != 1) { connection.rollback(); return false; }
+            }
+            if (!resolveReport(reportId, "ACCEPTED", adminUsername, banId)) {
+                connection.rollback(); return false;
+            }
+            connection.commit();
+            return true;
+        } catch (SQLException error) {
+            try { connection.rollback(); } catch (SQLException rollback) { error.addSuppressed(rollback); }
+            throw new IllegalStateException("Не удалось сохранить привязку жалобы", error);
+        } finally {
+            try { connection.setAutoCommit(true); }
+            catch (SQLException error) { throw new IllegalStateException("Не удалось завершить транзакцию", error); }
         }
-        return resolveReport(reportId, "ACCEPTED", adminUsername, banId);
     }
 
     public synchronized List<PlayerReport> getPendingReportsForPlayer(String targetName) {
@@ -3079,6 +3109,20 @@ public class DatabaseManager implements me.lovelace.loveWebAdmin.web.SessionRepo
       logger.warning("Ошибка удаления репорта #" + id + ": " + e.getMessage());
             return false;
         }
+    }
+
+    public synchronized List<PlayerReport> getPendingReportsForPlayer(String targetName, String search, int limit, int offset) {
+        List<PlayerReport> list = new ArrayList<>();
+        String sql = "SELECT * FROM player_reports WHERE status = 'PENDING' AND LOWER(target_name) = LOWER(?) "
+            + "AND (? = '' OR LOWER(reporter_name || ' ' || COALESCE(description, '') || ' ' || COALESCE(reasons_json, '')) LIKE LOWER(?)) "
+            + "ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?";
+        try (var query = connection.prepareStatement(sql)) {
+            query.setString(1, targetName.trim()); query.setString(2, search == null ? "" : search.trim());
+            query.setString(3, "%" + (search == null ? "" : search.trim()) + "%");
+            query.setInt(4, Math.clamp(limit, 1, 200)); query.setInt(5, Math.max(0, offset));
+            try (var result = query.executeQuery()) { while (result.next()) list.add(mapPlayerReport(result)); }
+        } catch (SQLException error) { throw new IllegalStateException("Не удалось загрузить жалобы", error); }
+        return list;
     }
 
     public synchronized List<PlayerReport> getExpiredActiveReports(long cutoffTimestamp) {

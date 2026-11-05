@@ -36,11 +36,11 @@ export async function renderRestrictions(container) {
   await load();state.pollers.restrictions=setInterval(load,10000);state.pollers.restrictions_clock=setInterval(drawCountdowns,1000);
 }
 function form(action,title,refresh,name='') {
-  openModal(`<div class="modal-header"><h3>${esc(title)}</h3><button type="button" class="close-btn" data-modal-close="true">×</button></div><form id="restriction-form"><div class="modal-body"><label>Игрок<input name="player" value="${esc(name)}" pattern="[A-Za-z0-9_]{1,16}" maxlength="16" required></label>${action==='mute'?'<label>Срок<input name="duration" placeholder="30m, 2h, 7d, permanent" required></label>':''}${action!=='ban'?'<label>Причина<textarea name="reason" maxlength="1000" required></textarea></label>':'<p>Игрок будет отключён. Завершите оформление на сайте в течение пяти минут.</p>'}<p id="restriction-error" role="alert"></p></div><div class="modal-footer"><button type="button" class="secondary" data-modal-close="true">Отмена</button><button type="submit" class="primary">Применить</button></div></form>`);
+  const overlay = openModal(`<div class="modal-header"><h3>${esc(title)}</h3><button type="button" class="close-btn" data-modal-close="true">×</button></div><form id="restriction-form"><div class="modal-body"><label>Игрок<input name="player" value="${esc(name)}" pattern="[A-Za-z0-9_]{1,16}" maxlength="16" required></label>${action==='mute'?'<label>Срок<input name="duration" placeholder="30m, 2h, 7d, permanent" required></label>':''}${action!=='ban'?'<label>Причина<textarea name="reason" maxlength="1000" required></textarea></label>':'<p>Игрок будет отключён. Завершите оформление на сайте в течение пяти минут.</p>'}<p id="restriction-error" role="alert"></p></div><div class="modal-footer"><button type="button" class="secondary" data-modal-close="true">Отмена</button><button type="submit" class="primary">Применить</button></div></form>`);
   const form=document.getElementById('restriction-form');let busy=false;
   form.addEventListener('submit',async event=>{
     event.preventDefault();if(busy)return;busy=true;const button=form.querySelector('[type=submit]');button.disabled=true;
-    try {await api('POST','/api/moderation',{action,...Object.fromEntries(new FormData(form))});closeModal();await refresh();}
+    try {await api('POST','/api/moderation',{action,...Object.fromEntries(new FormData(form))});if(closeModal(overlay))await refresh();}
     catch(error){form.querySelector('#restriction-error').textContent=error.message;}
     finally {busy=false;button.disabled=false;}
   });
@@ -48,11 +48,11 @@ function form(action,title,refresh,name='') {
 
 async function finalize(id,refresh) {
   const ban=await api('GET',`/api/bans/${id}`);
-  openModal(`<div class="modal-header"><h3>Оформить бан №${id}: ${esc(ban.targetName)}</h3><button type="button" class="close-btn" data-modal-close="true">×</button></div><form id="pending-ban-form"><div class="modal-body"><label>Причина<input name="ruleReason" maxlength="1000" required></label><label>Описание<textarea name="description" maxlength="4000" required></textarea></label><label>Срок<input name="duration" placeholder="7d или permanent" required></label><label>Доказательства (ссылки по одной на строке)<textarea name="proofs" maxlength="8000"></textarea></label><p>Срок наказания считается с первого отключения.</p><p role="alert" id="pending-error"></p></div><div class="modal-footer"><button type="button" class="secondary" data-modal-close="true">Отмена</button><button type="submit" class="primary">Подтвердить бан</button></div></form>`);
+  const overlay = openModal(`<div class="modal-header"><h3>Оформить бан №${id}: ${esc(ban.targetName)}</h3><button type="button" class="close-btn" data-modal-close="true">×</button></div><form id="pending-ban-form"><div class="modal-body"><label>Причина<input name="ruleReason" maxlength="256" required></label><label>Описание<textarea name="description" maxlength="4000" required></textarea></label><label>Срок<input name="duration" placeholder="7d или permanent" required></label><label>Доказательства (ссылки по одной на строке)<textarea name="proofs" maxlength="8000"></textarea></label><p>Срок наказания считается с первого отключения.</p><p role="alert" id="pending-error"></p></div><div class="modal-footer"><button type="button" class="secondary" data-modal-close="true">Отмена</button><button type="submit" class="primary">Подтвердить бан</button></div></form>`);
   const form=document.getElementById('pending-ban-form');let busy=false;
   form.addEventListener('submit',async event=>{
     event.preventDefault();if(busy)return;busy=true;const button=form.querySelector('[type=submit]');button.disabled=true;
-    try {const data=Object.fromEntries(new FormData(form));await api('POST','/api/bans',{id,targetName:ban.targetName,ruleReason:data.ruleReason,description:data.description,durationSeconds:parseDuration(data.duration),proofUrls:data.proofs.split('\n').map(v=>v.trim()).filter(Boolean),isIpBan:true});closeModal();await refresh();}
+    try {const data=Object.fromEntries(new FormData(form));await api('POST','/api/bans',{id,targetName:ban.targetName,ruleReason:data.ruleReason,description:data.description,durationSeconds:parseDuration(data.duration),proofUrls:data.proofs.split('\n').map(v=>v.trim()).filter(Boolean),isIpBan:true});if(closeModal(overlay))await refresh();}
     catch(error){form.querySelector('#pending-error').textContent=error.message;}
     finally {busy=false;button.disabled=false;}
   });
