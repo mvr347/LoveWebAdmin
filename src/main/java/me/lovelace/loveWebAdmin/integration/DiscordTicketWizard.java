@@ -50,8 +50,7 @@ final class DiscordTicketWizard {
                                 List.of());
                           }
                         })
-                    .thenCompose(
-                        body -> service.editInteractionResponse(i, JsonUtils.toJson(body)));
+                    .thenCompose(body -> DiscordTicketDesk.finishDeferred(plugin, service, i, body));
               });
       return true;
     }
@@ -390,7 +389,9 @@ final class DiscordTicketWizard {
       buttons.add(button("Обжаловать №" + ban.id(), "lwa:appeal:new:" + ban.id(), 1));
     }
     if (bans.isEmpty())
-      text.append("Действующих блокировок нет. Для проблемы со входом откройте диагностику.");
+      text.append(
+          "Действующих блокировок нет: обжаловать нечего. Если вы не можете войти, откройте"
+              + " диагностику.");
     var result =
         new LinkedHashMap<String, Object>(card("Выбор наказания", text.toString(), buttons));
     var rows = new ArrayList<Object>((List<?>) result.get("components"));
@@ -486,7 +487,8 @@ final class DiscordTicketWizard {
             "content",
             "**" + title + "**\n" + description,
             "components",
-            List.of(Map.of("type", 1, "components", buttons))),
+            // Discord refuses an action row without buttons.
+            buttons.isEmpty() ? List.of() : List.of(Map.of("type", 1, "components", buttons))),
         DiscordCards.BLUE);
   }
 }
