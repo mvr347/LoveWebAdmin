@@ -100,7 +100,18 @@ class DiscordTicketDeskTest {
                 name,
                 name.contains(":draft:") || name.contains(":submit:") ? 5 : 3,
                 fields)));
-    return result.get(8, TimeUnit.SECONDS);
+    var answer = result.get(8, TimeUnit.SECONDS);
+    assertNoEmptyActionRows(answer);
+    return answer;
+  }
+
+  /** Discord answers HTTP 400 to an action row without components, which leaves "thinking…". */
+  @SuppressWarnings("unchecked")
+  static void assertNoEmptyActionRows(Map<String, Object> answer) {
+    if (answer == null || !(answer.get("components") instanceof List<?> rows)) return;
+    for (Object row : rows)
+      if (row instanceof Map<?, ?> map && Integer.valueOf(1).equals(map.get("type")))
+        assertFalse(((List<?>) map.get("components")).isEmpty(), "empty action row in " + answer);
   }
 
   @org.junit.jupiter.params.ParameterizedTest
@@ -478,6 +489,33 @@ class DiscordTicketDeskTest {
       buttons += inRow;
     }
     assertEquals(6, buttons, "report, appeal, support and three drafts must all stay reachable");
+  }
+
+  @Test
+  void aLinkedPlayerWithoutActiveBansGetsAnAnswerNotAHangingDeferral() throws Exception {
+    var answer = click("10000", "70000", "lwa:desk:new:appeal", Map.of());
+    assertTrue(JsonUtils.toJson(answer).contains("блокировок нет"));
+    assertTrue(JsonUtils.toJson(answer).contains("lc:menu:loginhelp"), "the diagnostics button stays");
+    assertTrue(((List<?>) answer.get("components")).size() == 1);
+  }
+
+  @Test
+  void aRefusedAnswerIsLoggedAndReplacedByAShortTextInsteadOfAFrozenDeferral() throws Exception {
+    discord.rejectRichEdit = true;
+    var answer = click("10000", "70000", "lwa:desk:new:appeal", Map.of());
+    assertTrue(answer.get("content").toString().contains("Не удалось показать ответ"));
+    assertTrue(discord.edits.size() >= 2, "the rich answer was tried first");
+  }
+
+  @Test
+  void emptyActionRowsAreDroppedBeforeSending() {
+    var body = new LinkedHashMap<String, Object>();
+    body.put("content", "x");
+    body.put("components", List.of(Map.of("type", 1, "components", List.of()), Map.of("type", 1, "components", List.of(Map.of("type", 2)))));
+    var cleaned = DiscordTicketDesk.withoutEmptyRows(body);
+    assertEquals(1, ((List<?>) cleaned.get("components")).size());
+    var plain = Map.<String, Object>of("content", "no rows");
+    assertSame(plain, DiscordTicketDesk.withoutEmptyRows(plain));
   }
 
   @Test
@@ -947,6 +985,9 @@ class DiscordTicketDeskTest {
 
   static class FakeDiscord {
     volatile Throwable readOnlyFailure;
+    /** Rejects the first edit of an interaction answer that carries components, like Discord does. */
+    volatile boolean rejectRichEdit;
+    final List<Map<String, Object>> edits = new CopyOnWriteArrayList<>();
     volatile boolean creationPending;
     final Map<String,java.util.function.Function<String,Map<String,Object>>> renderers=new ConcurrentHashMap<>();
     final Map<String,java.util.function.Predicate<String>> visible=new ConcurrentHashMap<>();
@@ -1012,9 +1053,12 @@ class DiscordTicketDeskTest {
                       yield CompletableFuture.completedFuture(acknowledgementAccepted);
                     }
                     case "editInteractionResponse" -> {
-                      responses
-                          .get(((DiscordInteraction) args[0]).id())
-                          .complete(JsonUtils.parseObject(args[1].toString()));
+                      var edit = JsonUtils.parseObject(args[1].toString());
+                      edits.add(edit);
+                      if (rejectRichEdit && edit.containsKey("components") && !((List<?>) edit.get("components")).isEmpty()) {
+                        yield CompletableFuture.failedFuture(new DiscordRequestRejectedException(400));
+                      }
+                      responses.get(((DiscordInteraction) args[0]).id()).complete(edit);
                       yield CompletableFuture.completedFuture(true);
                     }
                     case "recoverManagedTicket" -> recoveryFailure==null?CompletableFuture.completedFuture(recoveredChannel):CompletableFuture.failedFuture(recoveryFailure);

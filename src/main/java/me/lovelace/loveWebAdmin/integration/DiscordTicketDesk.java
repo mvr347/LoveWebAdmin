@@ -314,6 +314,78 @@ public final class DiscordTicketDesk {
                 required)));
   }
 
+  /**
+   * Discord rejects an action row without components (HTTP 400). A rejected final answer to a
+   * deferred interaction leaves the player at "thinking…" forever, so empty rows never leave here.
+   */
+  static Map<String, Object> withoutEmptyRows(Map<String, Object> body) {
+    if (!(body.get("components") instanceof List<?> rows)) return body;
+    var kept = new ArrayList<Object>();
+    for (Object row : rows) {
+      if (row instanceof Map<?, ?> map
+          && Integer.valueOf(1).equals(map.get("type"))
+          && map.get("components") instanceof List<?> items
+          && items.isEmpty()) continue;
+      kept.add(row);
+    }
+    if (kept.size() == rows.size()) return body;
+    var copy = new LinkedHashMap<String, Object>(body);
+    copy.put("components", kept);
+    return copy;
+  }
+
+  /** Exception class names only: enough to tell the cause, never any text a player wrote. */
+  private static String causeNames(Throwable error) {
+    var names = new ArrayList<String>();
+    for (Throwable cause = error; cause != null && names.size() < 5; cause = cause.getCause())
+      names.add(cause.getClass().getSimpleName());
+    return String.join(" ← ", names);
+  }
+
+  /**
+   * Sends the final answer to a deferred interaction. When Discord refuses it the failure is
+   * logged and a short plain text replaces it, so the player never stays at "thinking…".
+   */
+  static CompletableFuture<Boolean> finishDeferred(
+      LoveWebAdmin plugin,
+      DiscordService service,
+      DiscordInteraction interaction,
+      Map<String, Object> body) {
+    var edit = CoreDiscordExtensions.<Boolean>managed(
+            service,
+            "editInteractionResponse",
+            new Class<?>[] {DiscordInteraction.class, String.class},
+            interaction,
+            JsonUtils.toJson(withoutEmptyRows(body)));
+    return edit.handle(
+            (ok, error) -> {
+              if (error == null && !Boolean.FALSE.equals(ok)) return CompletableFuture.completedFuture(true);
+              plugin
+                  .getLogger()
+                  .warning(
+                      "Ответ Discord не доставлен: "
+                          + (error == null
+                              ? "бот не подтвердил отправку"
+                              : DiscordMessagePublisher.explanation(error))
+                          + (error == null ? "" : " [" + causeNames(error) + "]"));
+              return CoreDiscordExtensions.<Boolean>managed(
+                      service,
+                      "editInteractionResponse",
+                      new Class<?>[] {DiscordInteraction.class, String.class},
+                      interaction,
+                      JsonUtils.toJson(
+                          Map.of(
+                              "content",
+                              "Не удалось показать ответ. Нажмите кнопку ещё раз.",
+                              "components",
+                              List.of(),
+                              "allowed_mentions",
+                              Map.of("parse", List.of()))))
+                  .exceptionally(second -> false);
+            })
+        .thenCompose(result -> result);
+  }
+
   static Map<String, Object> body(String content, List<Map<String, Object>> components) {
     if (content.length() > 1900) {
       content = content.substring(0, 1900);
@@ -1050,12 +1122,7 @@ public final class DiscordTicketDesk {
                               .getLogger()
                               .fine("Действие обращения: " + error.getClass().getSimpleName());
                         }
-                        CoreDiscordExtensions.managed(
-                            service,
-                            "editInteractionResponse",
-                            new Class<?>[] {DiscordInteraction.class, String.class},
-                            interaction,
-                            JsonUtils.toJson(result));
+                        finishDeferred(plugin, service, interaction, result);
                       });
             });
     return true;

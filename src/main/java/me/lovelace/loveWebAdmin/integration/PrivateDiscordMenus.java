@@ -589,10 +589,11 @@ final class PrivateDiscordMenus implements AutoCloseable {
                   .run(
                       () -> {
                         if (!plugin.operations().allow("discord:" + i.userId())) {
-                          service.editInteractionResponse(
+                          DiscordTicketDesk.finishDeferred(
+                              plugin,
+                              service,
                               i,
-                              JsonUtils.toJson(
-                                  body("Слишком много нажатий. Подождите минуту.", List.of())));
+                              body("Слишком много нажатий. Подождите минуту.", List.of()));
                           return;
                         }
                         open(i.userId())
@@ -606,16 +607,17 @@ final class PrivateDiscordMenus implements AutoCloseable {
                                             + " обращения» ещё раз.")
                             .thenCompose(
                                 message ->
-                                    service.editInteractionResponse(
+                                    DiscordTicketDesk.finishDeferred(
+                                        plugin,
+                                        service,
                                         i,
-                                        JsonUtils.toJson(
-                                            Map.of(
-                                                "content",
-                                                message,
-                                                "components",
-                                                List.of(),
-                                                "allowed_mentions",
-                                                Map.of("parse", List.of())))));
+                                        Map.of(
+                                            "content",
+                                            message,
+                                            "components",
+                                            List.of(),
+                                            "allowed_mentions",
+                                            Map.of("parse", List.of()))));
                       });
             });
   }

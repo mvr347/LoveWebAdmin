@@ -170,12 +170,7 @@ final class DiscordCaseWorkflowActions {
                                       : "Действие не подтверждено; проверьте дело в панели",
                                   List.of());
                         }
-                        CoreDiscordExtensions.managed(
-                            service,
-                            "editInteractionResponse",
-                            new Class<?>[] {DiscordInteraction.class, String.class},
-                            i,
-                            JsonUtils.toJson(answer));
+                        DiscordTicketDesk.finishDeferred(plugin, service, i, answer);
                       });
             });
     return true;
