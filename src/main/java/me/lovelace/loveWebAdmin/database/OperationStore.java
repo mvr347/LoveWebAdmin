@@ -22,7 +22,7 @@ public final class OperationStore implements AutoCloseable {
   private final Map<String, long[]> limits = new HashMap<>();
 
   public OperationStore(Path file) throws SQLException {
-    db = DriverManager.getConnection("jdbc:sqlite:" + file);
+    db = org.sqlite.JDBC.createConnection("jdbc:sqlite:" + file, new java.util.Properties());
     try (var q = db.createStatement()) {
       q.execute("PRAGMA busy_timeout=5000");
       q.execute("PRAGMA journal_mode=WAL");

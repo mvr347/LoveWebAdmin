@@ -3942,3 +3942,47 @@ input[aria-invalid=true],textarea[aria-invalid=true],select[aria-invalid=true] {
 .ui-button.primary.success:hover:not(:disabled) {background:#2c8963;}
 
 .ui-button:not(:has(>.ui-button__icon)):not(.ui-icon-button) {padding:9px 14px;gap:8px;}
+
+/* Shared select controls: keep native form values, present one keyboard-accessible popup. */
+.ui-select {position:relative;display:inline-flex;min-width:140px;max-width:100%;vertical-align:middle;}
+.form-group .ui-select,label>.ui-select {display:flex;width:100%;}
+.ui-select select.ui-select-native {position:absolute!important;left:0;top:0;width:1px!important;height:1px!important;opacity:0;pointer-events:none;padding:0!important;}
+.ui-select-trigger {display:flex;align-items:center;justify-content:space-between;gap:16px;width:100%;min-height:40px;padding:9px 12px;background:var(--input-bg);color:var(--text);border:1px solid var(--border-light);font:inherit;text-align:left;}
+.ui-select-trigger:hover:not(:disabled),.ui-select-trigger[aria-expanded=true] {border-color:var(--accent);background:var(--card-bg-hover);}
+.ui-select-trigger:focus-visible {outline:2px solid var(--accent);outline-offset:2px;}
+.ui-select-trigger[aria-invalid=true] {border-color:var(--red);}
+.ui-select-trigger:disabled {opacity:.5;cursor:not-allowed;}
+.ui-select-value {overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.ui-select-chevron {flex:none;width:7px;height:7px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg);margin:0 2px 4px;}
+.ui-select-popup {position:fixed;z-index:20000;box-sizing:border-box;padding:5px;background:var(--bg-surface);border:1px solid var(--border-light);box-shadow:0 12px 36px #0005;color:var(--text);}
+.ui-select-search {width:100%;box-sizing:border-box;margin-bottom:5px;}
+.ui-select-options {overflow-y:auto;overscroll-behavior:contain;}
+.ui-select-option {padding:10px 12px;line-height:1.35;cursor:pointer;overflow-wrap:anywhere;}
+.ui-select-option:hover,.ui-select-option.highlighted {background:var(--accent-muted);color:var(--text-main);}
+.ui-select-option[aria-selected=true] {border-left:2px solid var(--accent);background:var(--accent-glow);}
+.ui-select-option[aria-disabled=true] {opacity:.45;cursor:not-allowed;}
+.ui-select-group,.ui-select-empty {padding:8px 12px;color:var(--text-muted);font-size:12px;}
+
+.compact-section-nav {display:none;}
+@media(max-width:768px) {
+  .app-sidebar,.sidebar-mobile-backdrop,.mobile-menu-btn {display:none!important;}
+  .main-viewport {margin-left:0!important;width:100%;min-width:0;}
+  .compact-section-nav {display:flex;flex:none;gap:5px;overflow-x:auto;padding:8px 12px;background:var(--bg-surface);border-bottom:1px solid var(--border);}
+  .compact-section-link {white-space:nowrap;flex:none;padding:9px 12px;color:var(--text-secondary);background:transparent;border:1px solid transparent;font:inherit;}
+  .compact-section-link.active {color:var(--text-heading);background:var(--accent-muted);border-color:var(--border-focus);}
+}
+
+/* Preview's banner reduces the usable viewport; dialog controls must remain below it. */
+.modal-overlay .modal {max-height:calc(100dvh - var(--love-preview-height,0px) - 40px);}
+.ui-select-popup {z-index:100001;}
+input[type=date],input[type=datetime-local],input[type=time] {background:var(--input-bg);color:var(--text);border:1px solid var(--border-light);padding:9px 12px;min-height:40px;max-width:100%;box-sizing:border-box;font:inherit;color-scheme:dark;}
+body.theme-light input[type=date],body.theme-light input[type=datetime-local],body.theme-light input[type=time] {color-scheme:light;}
+@media(max-width:768px) {
+  .topbar {flex:none;min-height:60px;height:auto;padding:10px 12px;gap:8px;}
+  .topbar-left {flex:1;min-width:0;}
+  .topbar-page-title {overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;font-size:14px;}
+  .topbar-right {flex:none;gap:4px!important;}
+  .topbar .status-pill {display:none;}
+  .topbar .topbar-icon-btn {width:42px;min-width:42px;height:42px;padding:8px;}
+  .topbar-right .topbar-btn {padding:8px;min-width:0;}
+}

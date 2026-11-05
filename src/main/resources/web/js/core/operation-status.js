@@ -85,8 +85,10 @@ export async function reconcileOperation(key, path, headers) {
 }
 export function showOperationStatus(key, path, headers, onResolved) {
   if (!headers.has("Authorization")) return;
+  if ([...document.querySelectorAll(".operation-status")].some(panel => panel.dataset.operationKey === key)) return;
   const panel = document.createElement("aside");
   panel.className = "operation-status";
+  panel.dataset.operationKey = key;
   panel.setAttribute("role", "status");
   const text = document.createElement("p");
   text.textContent = "Результат действия неизвестен. Сначала сверьте данные.";

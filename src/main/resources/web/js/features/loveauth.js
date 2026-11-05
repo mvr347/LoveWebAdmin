@@ -23,7 +23,7 @@ export async function renderAuthView() {
             <div class="view-header">
                 <div class="view-title-block">
                     <h2>АУТЕНТИФИКАЦИЯ И БЕЗОПАСНОСТЬ</h2>
-                    <p>Управление сессиями персонала и игровыми аккаунтами авторизации</p>
+                    <p>Сессии сотрудников и безопасность игровых аккаунтов</p>
                 </div>
                 <div class="view-actions" id="auth-header-actions">
                     <!-- Dynamic actions per subtab -->
@@ -202,46 +202,11 @@ export async function renderAuthView() {
     } catch (e) {}
     container.innerHTML = `
                 <!-- Auth Status Banner -->
-                ${
-                  isAvailable
-                    ? `
-                    <div class="loveauth-banner">
-                        <div style="display:flex; align-items:center; gap:14px;">
-                            <span style="display:inline-flex; align-items:center;">${renderSvgIcon("shield", "violet", 26)}</span>
-                            <div>
-                                <div style="font-weight:700; color:var(--text-main); font-size:15px; display:flex; align-items:center; gap:8px;">
-                                    <span>СИСТЕМА АВТОРИЗАЦИИ</span>
-                                    <span class="badge green">● АКТИВНА</span>
-                                </div>
-                                <div style="font-size:12px; color:var(--text-muted); margin-top:2px;">
-                                    Управление игровыми сессиями, шифрованием паролей и двухфакторной защитой
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                `
-                    : `
-                    <div class="loveauth-banner" style="background:rgba(239, 68, 68, 0.08); border-color:rgba(239, 68, 68, 0.25);">
-                        <div style="display:flex; align-items:center; gap:14px;">
-                            <span style="display:inline-flex; align-items:center;">${renderSvgIcon("shieldAlert", "red", 26)}</span>
-                            <div>
-                                <div style="font-weight:700; color:var(--text-main); font-size:15px; display:flex; align-items:center; gap:8px;">
-                                    <span>СИСТЕМА АВТОРИЗАЦИИ</span>
-                                    <span class="badge red">● НЕДОСТУПНА</span>
-                                </div>
-                                <div style="font-size:12px; color:var(--text-muted); margin-top:2px;">
-                                    Модуль игровой авторизации не подключен или отключен на сервере.
-                                </div>
-                            </div>
-                        </div>
-                        <span class="badge red">НЕДОСТУПЕН</span>
-                    </div>
-                `
-                }
+                ${!isAvailable ? '<p class="error" role="status">Данные игровых аккаунтов сейчас недоступны. Попробуйте позже или проверьте подключение в настройках интеграций.</p>' : ""}
 
                 <!-- Account Search & Online Quick-Chips -->
                 <div class="loveauth-card" style="margin-bottom:20px;">
-                    <h3 style="font-size:14px; margin-bottom:10px; color:var(--text-main);">ИНСПЕКЦИЯ ИГРОВОГО АККАУНТА</h3>
+                    <h3 style="font-size:14px; margin-bottom:10px; color:var(--text-main);">АККАУНТ ИГРОКА</h3>
                     <div style="display:flex; gap:10px; margin-bottom:14px;">
                         <input type="text" id="loveauth-search-input" placeholder="Введите точный ник игрока..." style="flex:1;">
                         <button type="button" class="primary" id="btn-loveauth-search">НАЙТИ АККАУНТ</button>
@@ -298,7 +263,7 @@ export async function renderAuthView() {
     if (!resBox) return;
     resBox.innerHTML = `
                 <div style="background:var(--card-bg); border:1px solid var(--border); border-radius:var(--radius-md); padding:30px; text-align:center; color:var(--text-muted);">
-                    Связываемся с базой авторизации...
+                    Загружаем аккаунт...
                 </div>
             `;
     try {
@@ -310,7 +275,7 @@ export async function renderAuthView() {
         resBox.innerHTML = `
                         <div class="loveauth-card" style="text-align:center; padding:32px;">
                             <div style="margin-bottom:8px; display:inline-flex; align-items:center;">${renderSvgIcon("alert", "yellow", 24)}</div>
-                            <h3 style="color:var(--text-main); margin-bottom:6px;">Игрок «${esc(name)}» не найден в базе авторизации</h3>
+                            <h3 style="color:var(--text-main); margin-bottom:6px;">Игрок «${esc(name)}» не найден</h3>
                             <p style="color:var(--text-dim); font-size:12.5px;">Возможно, игрок еще ни разу не заходил на сервер или никнейм введен с опечаткой.</p>
                         </div>
                     `;
@@ -437,7 +402,7 @@ export async function renderAuthView() {
     } catch (e) {
       resBox.innerHTML = `
                     <div style="color:var(--red); padding:20px; text-align:center; background:var(--card-bg); border-radius:var(--radius-md); border:1px solid var(--border);">
-                        Ошибка запроса к авторизации: ${esc(e.message)}
+                        Не удалось загрузить аккаунт: ${esc(e.message)}
                     </div>
                 `;
     }
@@ -483,7 +448,7 @@ export async function renderAuthView() {
                         <input type="text" id="loveauth-new-pass" placeholder="Минимум 4 символа..." required autofocus>
                     </div>
                     <div style="font-size:12px; color:var(--text-muted);">
-                        Пароль будет захеширован и сохранен в базе данных авторизации.
+                        Задайте новый пароль аккаунта.
                     </div>
                 </div>
                 <div class="modal-footer">

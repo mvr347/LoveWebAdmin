@@ -22,7 +22,7 @@ public final class CaseWorkflowStore implements AutoCloseable {
 
   public CaseWorkflowStore(Path file) throws Exception {
     Files.createDirectories(file.toAbsolutePath().getParent());
-    db = DriverManager.getConnection("jdbc:sqlite:" + file.toAbsolutePath());
+    db = org.sqlite.JDBC.createConnection("jdbc:sqlite:" + file.toAbsolutePath(), new java.util.Properties());
     try (var q = db.createStatement()) {
       q.execute("PRAGMA journal_mode=WAL");
       q.execute("PRAGMA busy_timeout=5000");

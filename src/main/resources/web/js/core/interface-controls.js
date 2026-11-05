@@ -1,3 +1,4 @@
+import { enhanceSelects, installSelectControls } from "./select-controls.js";
 import { installFormValidation } from "./form-validation.js";
 const icons = {
   next: "M9 5l7 7-7 7",
@@ -6,7 +7,6 @@ const icons = {
   back: "M15 5l-7 7 7 7",
   edit: "M4 20l4-1L20 7l-3-3L5 16z",
   plus: "M12 4v16M4 12h16",
-  menu: "M4 6h16M4 12h16M4 18h16",
 };
 let installed = false;
 export function enhanceButtons(root = document) {
@@ -56,7 +56,8 @@ export function enhanceButtons(root = document) {
                 ? "check"
                 : /измен|редакт/i.test(text)
                   ? "edit"
-                  : "menu";
+                  : null;
+    if (!key) continue;
     const icon = document.createElement("span");
     icon.className = "ui-button__icon";
     icon.setAttribute("aria-hidden", "true");
@@ -71,14 +72,17 @@ export function installInterfaceControls() {
   if (installed || typeof document === "undefined") return;
   installed = true;
   installFormValidation();
+  installSelectControls();
   enhanceButtons();
   let scheduled = false;
-  new MutationObserver(() => {
+  new MutationObserver(records => {
+    if (!records.some(record => record.type === "childList" || record.target.matches?.("select,option"))) return;
     if (scheduled) return;
     scheduled = true;
     requestAnimationFrame(() => {
       scheduled = false;
       enhanceButtons();
+      enhanceSelects();
     });
-  }).observe(document.body, { childList: true, subtree: true });
+  }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["disabled", "selected", "aria-invalid", "aria-describedby"] });
 }

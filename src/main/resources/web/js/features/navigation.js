@@ -46,7 +46,6 @@ export function renderAppLayout() {
   }
   state.app.innerHTML = `
             <div class="app-layout">
-                <div class="sidebar-mobile-backdrop" id="sidebar-mobile-backdrop"></div>
                 <!-- Left Sidebar -->
                 <aside class="app-sidebar ${state.sidebarCollapsed ? "collapsed" : ""}" id="app-sidebar">
                     <div class="sidebar-brand">
@@ -104,7 +103,6 @@ export function renderAppLayout() {
                     <!-- Topbar -->
                     <header class="topbar">
                         <div class="topbar-left" style="display:flex; align-items:center; gap:10px;">
-                            <button type="button" class="mobile-menu-btn" id="mobile-menu-toggle" title="Открыть меню">${renderSvgIcon("menu", "gray", 16)}</button>
                             <h1 class="topbar-page-title" id="topbar-page-title">Дашборд</h1>
                         </div>
 
@@ -118,18 +116,18 @@ export function renderAppLayout() {
 
                         <div class="topbar-right" style="display:flex; align-items:center; gap:8px;">
                             <!-- Notifications Bell -->
-                            <button type="button" class="topbar-icon-btn" id="topbar-notif-btn" data-tooltip="Уведомления персонала">
+                            <button type="button" class="topbar-icon-btn" id="topbar-notif-btn" aria-label="Оповещения" data-tooltip="Уведомления персонала">
                                 <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
                                 <span class="notif-badge" id="topbar-notif-badge" style="display:none;">0</span>
                             </button>
 
                             <!-- Theme Toggle Button -->
-                            <button type="button" class="topbar-icon-btn" id="topbar-theme-btn" data-tooltip="Сменить тему (Тёмная / Светлая)">
+                            <button type="button" class="topbar-icon-btn" id="topbar-theme-btn" aria-label="Сменить тему" data-tooltip="Сменить тему (Тёмная / Светлая)">
                                 <span id="theme-btn-icon">${renderSvgIcon("moon", "violet", 15)}</span>
                             </button>
 
                             <!-- Admin Settings Button -->
-                            <button type="button" class="topbar-icon-btn" id="topbar-settings-btn" data-tooltip="Настройки администратора панели">
+                            <button type="button" class="topbar-icon-btn" id="topbar-settings-btn" aria-label="Настройки панели" data-tooltip="Настройки администратора панели">
                                 <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
                             </button>
 
@@ -144,6 +142,9 @@ export function renderAppLayout() {
                             </button>
                         </div>
                     </header>
+                    <nav class="compact-section-nav" aria-label="Разделы панели">
+                      ${state.SECTIONS.filter(isSectionVisible).map(section => `<button type="button" data-compact-nav="${section.id}" class="compact-section-link">${esc(section.label)}</button>`).join("")}
+                    </nav>
 
                     <!-- Content Body -->
                     <div class="content-area" id="content-area">
@@ -157,20 +158,6 @@ export function renderAppLayout() {
   const savedTheme =
     userPrefs.theme || state.browserStorage.getItem("wa_theme") || "dark";
   applyUserTheme(savedTheme);
-
-  // Mobile drawer handlers
-  const sidebar = document.getElementById("app-sidebar");
-  const mobileBackdrop = document.getElementById("sidebar-mobile-backdrop");
-  document
-    .getElementById("mobile-menu-toggle")
-    ?.addEventListener("click", () => {
-      sidebar?.classList.toggle("mobile-open");
-      mobileBackdrop?.classList.toggle("open");
-    });
-  mobileBackdrop?.addEventListener("click", () => {
-    sidebar?.classList.remove("mobile-open");
-    mobileBackdrop?.classList.remove("open");
-  });
 
   // Theme button click
   document
@@ -211,6 +198,10 @@ export function renderAppLayout() {
     .getElementById("topbar-settings-btn")
     ?.addEventListener("click", () => openAdminSettingsModal("general"));
 
+  document.querySelector(".compact-section-nav")?.addEventListener("click", event => {
+    const item = event.target.closest("[data-compact-nav]");
+    if (item) navigateTo(item.dataset.compactNav);
+  });
   // Sidebar navigation clicks
   document.getElementById("sidebar-nav")?.addEventListener("click", (e) => {
     const item = e.target.closest(".nav-item");
@@ -280,7 +271,10 @@ export function renderAppLayout() {
   if (player && /^[A-Za-z0-9_]{1,16}$/.test(player) && hasPerm("VIEW_PLAYERS"))
     window.viewPlayerProfile(player);
 }
+let historyInstalled = false;
 export function installHistoryNavigation() {
+  if (historyInstalled) return;
+  historyInstalled = true;
   window.addEventListener("popstate", () => {
     if (!state.me) return;
     const route = new URLSearchParams(location.hash.slice(1));
@@ -336,13 +330,15 @@ export async function navigateTo(sectionId, recordHistory = true) {
   state.activeNavSection = sectionId;
 
   // Update active class in sidebar
-  document.querySelectorAll("#sidebar-nav .nav-item").forEach((el) => {
+  document.querySelectorAll("#sidebar-nav .nav-item,.compact-section-nav [data-compact-nav]").forEach((el) => {
     const isMatch =
-      el.dataset.nav === sectionId ||
+      (el.dataset.nav || el.dataset.compactNav) === sectionId ||
       (el.dataset.nav === "punishments" &&
         (sectionId === "bans" || sectionId === "reports")) ||
       (el.dataset.nav === "staff" && sectionId === "admins");
     el.classList.toggle("active", isMatch);
+    if (isMatch) el.setAttribute("aria-current", "page");
+    else el.removeAttribute("aria-current");
   });
 
   // Update topbar page title on the left
