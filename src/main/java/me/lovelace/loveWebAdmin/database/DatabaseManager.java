@@ -211,7 +211,7 @@ public class DatabaseManager implements me.lovelace.loveWebAdmin.web.SessionRepo
                     )
                     """);
                 statement.execute("CREATE INDEX IF NOT EXISTS idx_server_player_stats_name ON server_player_stats(name)");
-
+                statement.execute("CREATE TABLE IF NOT EXISTS server_metric_snapshots(section TEXT PRIMARY KEY,source TEXT NOT NULL,data_json TEXT NOT NULL,observed_at INTEGER NOT NULL)");
                 statement.execute("""
                     CREATE TABLE IF NOT EXISTS server_player_ip_history (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1805,6 +1805,37 @@ public class DatabaseManager implements me.lovelace.loveWebAdmin.web.SessionRepo
         } catch (SQLException e) {
       logger.warning("Ошибка обновления времени игры: " + e.getMessage());
         }
+    }
+
+    public synchronized void saveServerMetrics(String section,String source,Map<String,Object> fields,long at) {
+        String json=JsonUtils.toJson(fields);if(json.length()>16384)throw new IllegalArgumentException("Слишком большой снимок статистики");
+        try(var q=connection.prepareStatement("INSERT INTO server_metric_snapshots VALUES(?,?,?,?) ON CONFLICT(section) DO UPDATE SET source=excluded.source,data_json=excluded.data_json,observed_at=excluded.observed_at WHERE excluded.observed_at>=server_metric_snapshots.observed_at")) {
+            q.setString(1,section);q.setString(2,source);q.setString(3,json);q.setLong(4,at);q.executeUpdate();
+        } catch(SQLException error){throw new IllegalStateException("Не сохранена статистика сервера",error);}
+    }
+    public synchronized Map<String,Map<String,Object>> serverMetrics() {
+        var result=new LinkedHashMap<String,Map<String,Object>>();
+        try(var q=connection.prepareStatement("SELECT section,source,data_json,observed_at FROM server_metric_snapshots");var r=q.executeQuery()) {
+            while(r.next())result.put(r.getString(1),Map.of("source",r.getString(2),"fields",JsonUtils.parseObject(r.getString(3)),"observedAt",r.getLong(4)));
+        } catch(SQLException error){throw new IllegalStateException("Не загружена статистика сервера",error);}return result;
+    }
+    public synchronized Map<String,Object> generalServerCounts() {
+        var values=new LinkedHashMap<String,Object>();
+        try(var q=connection.createStatement();var r=q.executeQuery("SELECT COUNT(*),COALESCE(SUM(total_playtime_seconds),0),COALESCE(SUM(last_seen_at>=strftime('%s','now')-86400),0),COALESCE(SUM(last_seen_at>=strftime('%s','now')-604800),0) FROM server_player_stats")) {
+            r.next();values.put("Аккаунтов в базе",r.getLong(1));values.put("Общее время игры, часов",Math.round(r.getLong(2)/3600.0));values.put("Активных за сутки",r.getLong(3));values.put("Активных за неделю",r.getLong(4));
+        }catch(SQLException error){throw new IllegalStateException(error);}return values;
+    }
+    public synchronized Map<String,Object> generalModerationCounts() {
+        var values=new LinkedHashMap<String,Object>();
+        try(var q=connection.createStatement();var r=q.executeQuery("SELECT COUNT(*),COALESCE(SUM(status='ACTIVE' AND (expires_at<0 OR expires_at>strftime('%s','now'))),0),COALESCE(SUM(status='UNBANNED'),0) FROM web_bans")) {
+            r.next();values.put("Наказаний в истории",r.getLong(1));values.put("Действующих банов",r.getLong(2));values.put("Снятых банов",r.getLong(3));
+        }catch(SQLException error){throw new IllegalStateException(error);}return values;
+    }
+    public synchronized Map<String,Object> generalAppealCounts() {
+        var values=new LinkedHashMap<String,Object>();
+        try(var q=connection.createStatement();var r=q.executeQuery("SELECT COUNT(*),COALESCE(SUM(status='PENDING'),0),COALESCE(SUM(status IN ('APPROVED','REDUCED')),0) FROM ban_appeals")) {
+            r.next();values.put("Всего апелляций",r.getLong(1));values.put("Открытых апелляций",r.getLong(2));values.put("Пересмотренных наказаний",r.getLong(3));
+        }catch(SQLException error){throw new IllegalStateException(error);}return values;
     }
 
     public synchronized Optional<Map<String, Object>> getPlayerStats(String nameOrUuid) {

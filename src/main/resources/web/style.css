@@ -4001,3 +4001,20 @@ button.report-picker-card > span {min-width:0;}
 
 .report-picker-pagination {display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
 .report-picker-pagination[hidden] {display:none;}
+#dashboard-work-summary {margin-bottom:20px;padding:18px;}
+.work-summary-header {display:flex;align-items:start;justify-content:space-between;gap:16px;flex-wrap:wrap;}
+.work-summary-header label {min-width:180px;}
+#work-summary-cards,.server-statistics-grid {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:12px;}
+.work-summary-card,.server-statistics-section {padding:14px;background:var(--card-inner-bg);border:1px solid var(--border);min-width:0;}
+.work-summary-card p,.stat-source {font-size:12px;color:var(--text-muted);margin:8px 0;}
+.server-statistics-section dl {margin:10px 0 0;}
+.server-statistics-section dl>div {display:flex;gap:12px;justify-content:space-between;border-bottom:1px solid var(--border);padding:6px 0;overflow-wrap:anywhere;}
+.server-statistics-section dt {color:var(--text-muted);font-size:12px;}
+.server-statistics-section dd {margin:0;text-align:right;font-size:12px;}
+.work-queue-items {display:grid;gap:8px;margin:12px 0;}
+
+#db-unique-view[hidden],#db-general-view[hidden] {display:none;}
+#db-statistics-mode {margin-bottom:18px;flex-wrap:wrap;}
+#db-refresh-general {margin-bottom:12px;}
+.server-statistics-section dd {white-space:nowrap;flex-shrink:0;}
+.server-statistics-section dt {min-width:0;overflow-wrap:anywhere;}

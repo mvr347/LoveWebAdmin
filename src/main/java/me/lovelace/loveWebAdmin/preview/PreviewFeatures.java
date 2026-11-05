@@ -146,6 +146,7 @@ final class PreviewFeatures {
         String[] kv = pair.split("=", 2);
         query.put(kv[0], kv.length > 1 ? URLDecoder.decode(kv[1], StandardCharsets.UTF_8) : "");
       }
+    if (scope.equals("work-summary")) return PreviewStatistics.work(r,query);
     if (scope.equals("players")) return players(r, method, id, action, p, body, query);
     if (Set.of("admins", "roles").contains(scope)) return staff(r, method, scope, id, action, body);
     if (scope.equals("auth")) {
@@ -228,6 +229,7 @@ final class PreviewFeatures {
     if (scope.equals("vesuvio")) return vesuvio(r, read, id, action, p, body);
     if (scope.equals("analytics")) {
       r.require("VIEW_ANALYTICS");
+      if (id.equals("general")) return PreviewStatistics.general(r);
       if (id.equals("top-players")) return r.list("players");
       if (id.equals("commands")) return List.of(Map.of("command", "spawn", "count", 12));
       return Map.ofEntries(

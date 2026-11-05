@@ -22,6 +22,19 @@ class PreviewRuntimeTest {
   }
 
   @Test
+  void generalStatisticsAndWorkSummaryUseOnlyTheSandboxStores() throws Exception {
+    try(var runtime=new PreviewRuntime(dir,"statistics")) {
+      var report=map(runtime.control("report",Map.of()));
+      var general=map(runtime.execute("GET","/api/analytics/general",Map.of(),headers()));
+      assertEquals("server",general.get("scope"));assertTrue(general.toString().contains("Аккаунты и активность"));
+      var work=map(runtime.execute("GET","/api/work-summary?scope=all&bucket=unassigned",Map.of(),headers()));
+      assertTrue(work.toString().contains("unassigned"));
+      assertEquals(1,runtime.database().getAllReports(null,null,100,0).size());
+      assertTrue(runtime.database().serverMetrics().isEmpty());
+    }
+  }
+
+  @Test
   void reportDecisionPreservesExactAuthorVisibleExplanationOnce() throws Exception {
     try (var runtime = new PreviewRuntime(dir, "report-verdict")) {
       var report = map(runtime.control("report", Map.of()));

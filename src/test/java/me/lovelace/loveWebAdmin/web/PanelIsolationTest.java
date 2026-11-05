@@ -496,6 +496,43 @@ class PanelIsolationTest {
     assertEquals("https://panel.example",headers.get("Access-Control-Allow-Origin"));
   }
 
+  @Test
+  void serverStatisticsKeepPermissionBoundariesEvenWithSavedSensitiveSnapshots() throws Exception {
+    var actor=account("AnalyticsOnly",Set.of(Permission.VIEW_ANALYTICS));
+    plugin.getDatabaseManager().recordPlayerLogin(UUID.randomUUID().toString(),"KnownPlayer",null);
+    plugin.getDatabaseManager().saveServerMetrics("security","LoveAuth",Map.of("SECRET_COUNT",12345),100);
+    plugin.getDatabaseManager().saveServerMetrics("economy","LoveCore",Map.of("PRIVATE_BALANCE",99999),100);
+    var response=call(new ApiAnalyticsHandler(plugin),"/api/analytics","/general",Map.of("Authorization","Bearer "+actor.token()));
+    assertEquals(200,response.status);String body=response.body.toString();
+    assertTrue(body.contains("Аккаунты и активность"));assertFalse(body.contains("SECRET_COUNT"));assertFalse(body.contains("PRIVATE_BALANCE"));
+    assertFalse(body.contains("secret-token"));assertFalse(body.contains("password"));
+    var denied=account("NoAnalytics",Set.of(Permission.VIEW_STATS));
+    assertEquals(403,call(new ApiAnalyticsHandler(plugin),"/api/analytics","/general",Map.of("Authorization","Bearer "+denied.token())).status);
+  }
+
+  @Test
+  void dashboardWorkSummaryDoesNotExposeCasesWithoutTheirPermissions() throws Exception {
+    report("PrivatePlayer");var actor=account("StatsOnly",Set.of(Permission.VIEW_STATS));
+    var response=call(new ApiWorkSummaryHandler(plugin),"/api/work-summary",null,Map.of("Authorization","Bearer "+actor.token()));
+    assertEquals(200,response.status);assertFalse(response.body.toString().contains("PrivatePlayer"));
+    var reviewer=account("SummaryReviewer",Set.of(Permission.VIEW_STATS,Permission.VIEW_REPORTS));
+    var visible=call(new ApiWorkSummaryHandler(plugin),"/api/work-summary",null,Map.of("Authorization","Bearer "+reviewer.token()));
+    assertEquals(200,visible.status);assertTrue(visible.body.toString().contains("PrivatePlayer"));
+  }
+
+  @Test
+  void serverMetricSnapshotsAreMarkedStaleWhenThePluginIsUnavailable() throws Exception {
+    var actor=account("StatsSnapshots",Set.of(Permission.VIEW_ANALYTICS));
+    plugin.getDatabaseManager().saveServerMetrics("clans","LoveClans",Map.of("Кланов",7),100);
+    var response=call(new ApiAnalyticsHandler(plugin),"/api/analytics","/general",Map.of("Authorization","Bearer "+actor.token()));
+    assertEquals(200,response.status);
+    var data=(Map<?,?>)JsonUtils.parseObject(response.body.toString()).get("data");
+    var sections=(List<Map<String,Object>>)data.get("sections");
+    var clans=sections.stream().filter(row->row.get("id").equals("clans")).findFirst().orElseThrow();
+    assertEquals(true,clans.get("stale"));assertEquals(100,((Number)clans.get("observedAt")).intValue());
+    assertEquals(7,((Number)((Map<?,?>)clans.get("fields")).get("Кланов")).intValue());
+  }
+
   private int report(String name) {
     return plugin.getDatabaseManager().createPlayerReport(UUID.randomUUID().toString(), "Reporter", null,
         UUID.randomUUID().toString(), name, List.of("Причина"), "Описание", false, 0);

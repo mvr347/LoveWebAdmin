@@ -1,3 +1,4 @@
+import { renderServerStatistics } from "../core/server-statistics.js";
 import { noticeDialog } from "../core/dialogs.js";
 import { state } from "../state.js";
 import { api, esc, fmtDuration, fmtTime } from "./ui.js";
@@ -6,6 +7,7 @@ import { api, esc, fmtDuration, fmtTime } from "./ui.js";
 
 export async function renderDatabaseView() {
   const area = document.getElementById("content-area");
+  const lifetime={};area.databaseOwner=lifetime;
   let selectedPeriod = "today";
   let customFrom = null;
   let customTo = null;
@@ -17,6 +19,12 @@ export async function renderDatabaseView() {
                 </div>
             </div>
 
+            <div class="filter-tags" id="db-statistics-mode" role="tablist" aria-label="Режим статистики">
+                <button type="button" class="filter-tag-btn active" role="tab" aria-selected="true" data-db-view="unique">Уникальные игроки</button>
+                <button type="button" class="filter-tag-btn" role="tab" aria-selected="false" data-db-view="general">Общая статистика сервера</button>
+            </div>
+            <section id="db-general-view" hidden><button type="button" class="secondary" id="db-refresh-general">Обновить общую статистику</button><div id="db-general-content"></div></section>
+            <section id="db-unique-view">
             <!-- Period Filter Toolbar with Percentage Trend Badges -->
             <div class="period-filter-toolbar">
                 <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
@@ -100,7 +108,18 @@ export async function renderDatabaseView() {
                     </div>
                 </div>
             </div>
+            </section>
         `;
+  let generalLoaded=false;
+  const general=area.querySelector("#db-general-content");
+  area.querySelectorAll("[data-db-view]").forEach(button=>button.onclick=()=>{
+    const mode=button.dataset.dbView;
+    area.querySelectorAll("[data-db-view]").forEach(item=>{item.classList.toggle("active",item===button);item.setAttribute("aria-selected",String(item===button));});
+    area.querySelector("#db-unique-view").hidden=mode!=="unique";
+    area.querySelector("#db-general-view").hidden=mode!=="general";
+    if(mode==="general"&&!generalLoaded){generalLoaded=true;renderServerStatistics(general);}
+  });
+  area.querySelector("#db-refresh-general").onclick=()=>renderServerStatistics(general);
   function formatDeltaBadge(delta, prevLabel) {
     if (delta === null || delta === undefined || isNaN(delta)) {
       return `<span class="trend-badge neutral">Нет сравнения</span>`;
@@ -117,17 +136,16 @@ export async function renderDatabaseView() {
       return `<span class="trend-badge neutral">— 0%${labelStr}</span>`;
     }
   }
+  let analyticsGeneration=0, inspectorGeneration=0;
   const loadAnalytics = async () => {
+    const request=++analyticsGeneration;
     try {
       let url = `/api/analytics/summary?period=${encodeURIComponent(selectedPeriod)}`;
       if (selectedPeriod === "custom" && customFrom && customTo) {
         url += `&from=${customFrom}&to=${customTo}`;
       }
-      const data = await api("GET", url);
-      const topPlayers = await api(
-        "GET",
-        "/api/analytics/top-players?limit=20",
-      ).catch(() => []);
+      const [data,topPlayers]=await Promise.all([api("GET",url),api("GET","/api/analytics/top-players?limit=20").catch(()=>[])]);
+      if(!area.isConnected||area.databaseOwner!==lifetime||request!==analyticsGeneration||!area.querySelector("#db-metrics-grid"))return;
 
       // Update Chart header
       const chartBadge = document.getElementById("db-chart-badge");
@@ -298,12 +316,14 @@ export async function renderDatabaseView() {
 
   // Dedicated player inspector button
   const doInspectPlayer = async () => {
+    const request=++inspectorGeneration;
     const name = document.getElementById("inspect-player-name")?.value.trim();
     const resBox = document.getElementById("inspector-card-result");
     if (!name || !resBox) return;
     resBox.innerHTML = `<div style="text-align:center; padding:20px; color:var(--text-muted);">Поиск...</div>`;
     try {
       const p = await api("GET", `/api/players/${encodeURIComponent(name)}`);
+      if(!resBox.isConnected||request!==inspectorGeneration)return;
       const hours = Math.round((p.playtimeSeconds || 0) / 3600);
       resBox.innerHTML = `
                     <div style="background:var(--card-inner-bg); padding:14px; border-radius:var(--radius-sm); border:1px solid var(--border-light);">
@@ -338,6 +358,7 @@ export async function renderDatabaseView() {
                     </div>
                 `;
     } catch (e) {
+      if(!resBox.isConnected||request!==inspectorGeneration)return;
       resBox.innerHTML = `<div style="color:var(--red); padding:16px; text-align:center;">Игрок «${esc(name)}» не найден</div>`;
     }
   };
