@@ -694,7 +694,7 @@ export async function renderPunishmentsView(
                             <td>
                                 <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
                                     <span class="badge red">${esc(b.ruleReason)}</span>
-                                    ${b.linkedReportId ? `<button type="button" class="btn-tag-link" style="color:#c084fc; border-color:rgba(192, 132, 252, 0.4); display:inline-flex; align-items:center; gap:4px;" onclick="window.openReportDetailModal(${b.linkedReportId})" title="Открыть прикрепленную жалобу #${b.linkedReportId}">${renderSvgIcon("fileText", "violet", 12)} ЖАЛОБА #${b.linkedReportId}</button>` : ""}
+                                    ${b.linkedReportId ? `<button type="button" class="btn-tag-link" style="color:#ff9baa; border-color:rgba(192, 132, 252, 0.4); display:inline-flex; align-items:center; gap:4px;" onclick="window.openReportDetailModal(${b.linkedReportId})" title="Открыть прикрепленную жалобу #${b.linkedReportId}">${renderSvgIcon("fileText", "violet", 12)} ЖАЛОБА #${b.linkedReportId}</button>` : ""}
                                     ${proofUrl ? `<button type="button" class="screenshot-thumb-btn" data-evidence-src="${esc(proofUrl)}">${renderSvgIcon("fileText", "gray", 12)} СКРИНШОТ</button>` : ""}
                                 </div>
                                 ${b.description ? `<div style="font-size:11.5px; color:var(--text-muted); margin-top:4px;">${esc(b.description)}</div>` : ""}
@@ -883,7 +883,7 @@ export async function renderPunishmentsView(
                                 ${(appeal.messages || [])
                                   .map(
                                     (m) => `
-                                    <div style="background:${m.isStaff ? "rgba(124, 58, 237, 0.12)" : "var(--card-inner-bg)"}; border:1px solid ${m.isStaff ? "var(--accent)" : "var(--border)"}; border-radius:6px; padding:10px 12px;">
+                                    <div style="background:${m.isStaff ? "rgba(214, 50, 76, 0.12)" : "var(--card-inner-bg)"}; border:1px solid ${m.isStaff ? "var(--accent)" : "var(--border)"}; border-radius:6px; padding:10px 12px;">
                                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; font-size:11.5px;">
                                             <div style="display:flex; align-items:center; gap:6px;">
                                                 <b>${esc(m.authorName)}</b>

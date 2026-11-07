@@ -69,6 +69,21 @@ public final class ApiCasesHandler extends ApiHandlerSupport {
       }
       return;
     }
+    if ("/assignments".equals(req.getPathInfo())) {
+      String kind = Objects.toString(req.getParameter("kind"), "");
+      if (!Set.of("report","appeal","support").contains(kind)) {
+        sendError(resp,400,"Неизвестный тип дела"); return;
+      }
+      if (requirePermission(req,resp,viewPermission(kind)).isEmpty()) return;
+      String raw=Objects.toString(req.getParameter("ids"), "");
+      if (!raw.matches("[1-9][0-9]{0,8}(,[1-9][0-9]{0,8}){0,199}")) {
+        sendError(resp,400,"Укажите до 200 номеров дел"); return;
+      }
+      try {
+        sendSuccess(resp,plugin.moderation().assignments(kind,Arrays.stream(raw.split(",")).map(Integer::valueOf).toList()));
+      } catch(SQLException error) {throw new IllegalStateException(error);}
+      return;
+    }
     String[] p = path(req);
     int id = Integer.parseInt(p[2]);
     var auth = requirePermission(req, resp, viewPermission(p[1]));

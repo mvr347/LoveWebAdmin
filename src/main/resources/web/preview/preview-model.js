@@ -1458,6 +1458,13 @@
         else target.online=false;
         return {message:'Тестовое действие выполнено'};
       }
+      if(parts[1]==="support"&&method==="GET"){
+        requirePermission("VIEW_REPORTS");
+        const entries=state.support||[];
+        if(n){const item=entries.find(item=>item.id===Number(n));if(!item)fail(404,"Обращение не найдено");return clone(item);}
+        const offset=Math.max(0,Number(url.searchParams.get("offset"))||0);
+        return {items:clone(entries.slice(offset,offset+20)),total:entries.length,open:entries.filter(item=>item.status==="OPEN").length,pageSize:20,offset};
+      }
       if (parts[1] === "bans") {
         requirePermission(method === "GET" ? "VIEW_BANS" : "MANAGE_BANS");
         if (n === "reasons")
@@ -1610,6 +1617,13 @@
         } else fail(404, "Неизвестное действие жалобы");
         audit("Рассмотрена жалоба №" + r.id);
         return {};
+      }
+      if(parts[1]==="cases"&&n==="assignments"){
+        const kind=url.searchParams.get("kind");
+        requirePermission(kind==="appeal"?"VIEW_APPEALS":"VIEW_REPORTS");
+        const result={};for(const id of (url.searchParams.get("ids")||"").split(",")){
+          const key=kind+":"+id;if(state.work[key])result[key]=clone(state.work[key]);
+        }return result;
       }
       if (parts[1] === "cases") {
         if (n === "deliveries") {

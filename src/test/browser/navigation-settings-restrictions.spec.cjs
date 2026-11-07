@@ -17,8 +17,9 @@ test("navigation separates work, moderation and settings; personal security excl
   await page.goto("/preview/");
   await expect(page.locator("#sidebar-nav .nav-section-title")).toHaveText([
     "Работа",
-    "Модерация",
-    "Сервер и игроки",
+    "Обращения",
+    "Наказания",
+    "Сервер",
     "Управление",
   ]);
   await page.locator('[data-nav="settings"]').click();
@@ -194,10 +195,10 @@ test("section shortcuts retain their numbers after navigation grouping", async (
 }) => {
   await page.goto("/preview/");
   for (const [key, section] of [
-    ["4", "anticheat"],
-    ["5", "server"],
-    ["8", "database"],
-    ["9", "restrictions"],
+    ["8", "anticheat"],
+    ["9", "server"],
+    ["3", "reports"],
+    ["6", "restrictions"],
     ["0", "settings"],
   ]) {
     await page.locator("#topbar-page-title").click();

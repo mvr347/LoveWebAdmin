@@ -24,6 +24,16 @@ class ModerationStoreTest {
   }
 
   @Test
+  void assignmentsAreBoundedToTheRequestedKindAndPage() throws Exception {
+    store.claim("report", 1, "Moderator");
+    store.claim("report", 2, "Chief");
+    store.claim("appeal", 1, "Another");
+    assertEquals(Map.of("report:1", Map.of("assignee", "Moderator")), store.assignments("report", List.of(1,3)));
+    assertEquals(Map.of(),store.assignments("report",List.of()));
+    assertThrows(IllegalArgumentException.class,()->store.assignments("report",Collections.nCopies(201,1)));
+  }
+
+  @Test
   void retryingAnOldChannelRequiresExplicitStaffReconciliation() throws Exception {
     store.enqueue("create","report-ticket:7","{\"type\":\"REPORT_TICKET\",\"reportId\":7}");
     int id=((Number)store.due().getFirst().get("id")).intValue();

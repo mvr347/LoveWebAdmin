@@ -178,10 +178,24 @@ export function startApplication() {
       "MANAGE_OPERATORS",
     ],
   });
-  const groupOrder = ["Работа", "Модерация", "Сервер и игроки", "Управление"];
-  state.SECTIONS.sort(
-    (a, b) => groupOrder.indexOf(a.group) - groupOrder.indexOf(b.group),
-  );
+  const originalSections = new Map(state.SECTIONS.map(section=>[section.id,section]));
+  const base = id => ({...originalSections.get(id)});
+  const messageIcon = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`;
+  state.SECTIONS = [
+    {...base('dashboard'),group:'Работа',num:1},
+    {...base('journal'),group:'Работа',num:2},
+    {id:'reports',label:'Жалобы',icon:messageIcon,num:3,group:'Обращения',perm:'VIEW_REPORTS'},
+    {id:'appeals',label:'Апелляции',icon:base('journal').icon,num:4,group:'Обращения',perm:'VIEW_APPEALS'},
+    {id:'support',label:'Поддержка',icon:messageIcon,num:5,group:'Обращения',perm:'VIEW_REPORTS'},
+    {...base('restrictions'),label:'Баны и ограничения',num:6,group:'Наказания'},
+    {id:'penalty-history',label:'История',icon:base('journal').icon,num:7,group:'Наказания',anyPerms:['VIEW_BANS','MANAGE_MUTES','FREEZE_PLAYERS']},
+    {...base('anticheat'),num:8,group:'Сервер'},
+    {...base('server'),num:9,group:'Сервер'},
+    {...base('auth'),num:undefined,group:'Сервер'},
+    {...base('database'),num:undefined,group:'Сервер'},
+    {...base('staff'),num:undefined,group:'Управление'},
+    {...base('settings'),num:10,group:'Управление'},
+  ];
 
   state.ALL_PERMISSIONS = [
     "VIEW_STATS",

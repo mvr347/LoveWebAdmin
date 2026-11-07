@@ -291,6 +291,7 @@ export function mountCase({ root = document, search = location.search } = {}) {
       ? workspace.work.state
       : "IN_PROGRESS";
     messages("notes", workspace.notes);
+    if(isSupport)messages("support-messages",workspace.discussion||[]);
     $("report").hidden = kind !== "report";
     if (kind === "report") {
       messages("discussion", workspace.discussion || []);
