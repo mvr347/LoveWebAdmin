@@ -408,7 +408,7 @@ export async function renderStaffView() {
                                               r.color ||
                                               (r.isOwner
                                                 ? "#a855f7"
-                                                : "#8b5cf6");
+                                                : "#ef4d5d");
                                             const assignedAdmins =
                                               admins.filter(
                                                 (a) => a.roleId === r.id,
@@ -932,7 +932,7 @@ export async function renderStaffView() {
                     <div class="form-group">
                         <label>Цвет роли (для бейджей, списков и журналов)</label>
                         <div style="display:flex; align-items:center; gap:10px;">
-                            <input type="color" id="create-role-color" value="#8b5cf6" style="width:42px; height:34px; padding:0; cursor:pointer; background:none; border:none;">
+                            <input type="color" id="create-role-color" value="#ef4d5d" style="width:42px; height:34px; padding:0; cursor:pointer; background:none; border:none;">
                             <span style="font-size:12px; color:var(--text-muted);">Акцентный цвет оформления роли</span>
                         </div>
                     </div>
@@ -981,7 +981,7 @@ export async function renderStaffView() {
               document.getElementById("create-role-category")?.value ||
               "CUSTOM";
             const color =
-              document.getElementById("create-role-color")?.value || "#8b5cf6";
+              document.getElementById("create-role-color")?.value || "#ef4d5d";
             const permissions = Array.from(
               document.querySelectorAll(".role-perm-cb:checked"),
             ).map((cb) => cb.value);
@@ -1051,7 +1051,7 @@ export async function renderStaffView() {
                     <div class="form-group">
                         <label>Цвет роли (для бейджей, списков и журналов)</label>
                         <div style="display:flex; align-items:center; gap:10px;">
-                            <input type="color" id="edit-role-color" value="${esc(role.color || "#8b5cf6")}" style="width:42px; height:34px; padding:0; cursor:pointer; background:none; border:none;">
+                            <input type="color" id="edit-role-color" value="${esc(role.color || "#ef4d5d")}" style="width:42px; height:34px; padding:0; cursor:pointer; background:none; border:none;">
                             <span style="font-size:12px; color:var(--text-muted);">Акцентный цвет оформления роли</span>
                         </div>
                     </div>
@@ -1097,7 +1097,7 @@ export async function renderStaffView() {
             const category =
               document.getElementById("edit-role-category")?.value || "CUSTOM";
             const color =
-              document.getElementById("edit-role-color")?.value || "#8b5cf6";
+              document.getElementById("edit-role-color")?.value || "#ef4d5d";
             const permissions = Array.from(
               document.querySelectorAll(".role-perm-cb:checked"),
             ).map((cb) => cb.value);

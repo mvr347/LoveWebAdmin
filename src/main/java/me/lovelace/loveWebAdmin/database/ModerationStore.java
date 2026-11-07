@@ -198,6 +198,22 @@ public final class ModerationStore implements AutoCloseable {
     }
   }
 
+  /** Only the requested list page is exposed; notes and transcript never leave here. */
+  public synchronized Map<String, Object> assignments(String kind, List<Integer> ids) throws SQLException {
+    if (ids.size() > 200) throw new IllegalArgumentException("Слишком много дел");
+    if (ids.isEmpty()) return Map.of();
+    var result = new LinkedHashMap<String, Object>();
+    String placeholders = String.join(",", Collections.nCopies(ids.size(), "?"));
+    try (var query = db.prepareStatement("SELECT id,assignee FROM case_work WHERE kind=? AND id IN (" + placeholders + ")")) {
+      query.setString(1, kind(kind));
+      for (int i=0;i<ids.size();i++) query.setInt(i+2,ids.get(i));
+      try (var rows=query.executeQuery()) {
+        while(rows.next()) result.put(kind+":"+rows.getInt("id"), Map.of("assignee",Objects.toString(rows.getString("assignee"),"")));
+      }
+    }
+    return result;
+  }
+
   public synchronized Map<String, Object> work(String kind, int id) throws SQLException {
     try (var q = db.prepareStatement("SELECT * FROM case_work WHERE kind=? AND id=?")) {
       q.setString(1, kind(kind));

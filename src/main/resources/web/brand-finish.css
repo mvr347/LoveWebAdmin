@@ -1,0 +1,258 @@
+/* Shared geometry and controls for the existing red interface. */
+:root {
+  --control-height: 38px;
+  --control-radius: 0px;
+}
+.ui-button,
+.ui-button.ui-icon-button,
+.ui-select-trigger,
+.ui-select-menu,
+.ui-select-option,
+.modal,
+.modal.case-dialog,
+.workspace-dialog,
+.modal-settings,
+.case-section,
+.reference-panel,
+.settings-home-card,
+.settings-section fieldset,
+.table-wrap,
+.reference-list-item,
+.restriction-card,
+.restriction-tabs,
+.segmented-nav,
+textarea,
+input:not([type="checkbox"]):not([type="radio"]),
+select {
+  border-radius: var(--control-radius);
+}
+.ui-button,
+.ui-select-trigger {
+  min-height: var(--control-height);
+  box-shadow: none;
+}
+button,
+a,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+.ui-select-trigger:focus-visible {
+  outline: 2px solid var(--accent-light);
+  outline-offset: 3px;
+}
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--accent);
+}
+a {
+  color: var(--accent-light);
+  text-underline-offset: 3px;
+}
+a:hover {
+  color: var(--text-main);
+}
+a.secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: var(--control-height);
+  padding: 9px 13px;
+  border: 1px solid var(--border-light);
+  background: var(--card-bg);
+  color: var(--text-main);
+  text-decoration: none;
+}
+a.secondary:hover {
+  border-color: var(--accent);
+  background: var(--accent-muted);
+}
+.reference-list-item {
+  min-height: 76px;
+  font: inherit;
+}
+.reference-list-item .reference-item-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.reference-list-item.selected {
+  border-color: var(--border);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.reference-preview-actions .ui-button,
+.reference-preview-actions a {
+  min-height: 38px;
+}
+.view-header {
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.restriction-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+.brand-penalty-view > .view-header {
+  margin-bottom: 18px;
+}
+.reference-penalty-tabs {
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.form-group {
+  margin-bottom: 18px;
+}
+.form-group > label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.form-group textarea {
+  width: 100%;
+  min-height: 120px;
+  resize: vertical;
+  line-height: 1.6;
+}
+.form-error:empty {
+  display: none;
+}
+.form-error:not(:empty) {
+  display: block;
+  padding: 10px 12px;
+  border-left: 2px solid var(--red);
+  background: var(--red-bg);
+  color: var(--red);
+  font-size: 12px;
+  line-height: 1.6;
+}
+#support-compose {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+#support-compose > .modal-body {
+  overflow: auto;
+  min-height: 0;
+}
+#support-compose > .modal-footer {
+  flex-shrink: 0;
+}
+.modal-header,
+.modal-footer {
+  gap: 12px;
+}
+.modal-header h3 {
+  line-height: 1.4;
+}
+.ui-select-menu {
+  border: 1px solid var(--border-light);
+  background: var(--surface-bg, var(--card-bg));
+  box-shadow: 0 12px 32px #0005;
+}
+.ui-select-option {
+  min-height: 36px;
+  line-height: 1.5;
+}
+.ui-select-option[aria-selected="true"] {
+  background: var(--accent-muted);
+  color: var(--accent-light);
+}
+.settings-home-card {
+  padding: 18px;
+  text-align: left;
+  color: var(--text-main);
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  line-height: 1.6;
+}
+.settings-home-card:hover {
+  border-color: var(--accent);
+  background: var(--card-bg-hover);
+}
+@media (max-width: 600px) {
+  .restriction-actions {
+    margin-left: 0;
+    width: 100%;
+  }
+  .restriction-actions > .ui-button {
+    flex: 1;
+  }
+  .view-header {
+    align-items: flex-start;
+  }
+  .modal-footer {
+    flex-wrap: wrap;
+  }
+  .modal-footer > .ui-button {
+    flex: 1;
+  }
+  .reference-case-preview {
+    min-width: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+  }
+}
+
+.modal-overlay {
+  justify-content: flex-end;
+  align-items: stretch;
+  padding: 0;
+  background: rgba(12, 5, 9, 0.3);
+}
+.modal-overlay .modal {
+  width: min(620px, 100vw);
+  max-width: 620px;
+  max-height: 100dvh;
+  height: 100dvh;
+  border-radius: 0;
+  border-top: 0;
+  border-bottom: 0;
+  border-right: 0;
+}
+.modal-overlay .modal.modal-settings {
+  width: min(760px, 100vw);
+  max-width: 760px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .modal-overlay .modal {
+    animation: none;
+  }
+}
+
+.reference-case-pager {
+  flex-wrap: wrap;
+}
+.reference-source-pages {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  width: 100%;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.reference-source-pages > span {
+  margin-right: auto;
+}
+/* Fit the containing viewport, including the isolated Preview banner. */
+.modal-overlay .modal{height:100%;max-height:100%}
+.modal-header,.modal-footer{flex-shrink:0}
+.modal-body{min-height:0}
+.modal>form{display:flex;flex-direction:column;min-height:0;overflow:auto;flex:1}

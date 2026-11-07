@@ -11,7 +11,6 @@ const permissions = [
   "MANAGE_BANS",
   "MANAGE_MUTES",
   "FREEZE_PLAYERS",
-  "KICK_PLAYERS",
 ];
 const date = (seconds) =>
   Number(seconds) > 0
@@ -24,9 +23,8 @@ export async function renderRestrictions(container) {
     return;
   }
   const generation = state.requestGeneration;
-  container.innerHTML = `<section class="restrictions-workspace"><div class="view-header"><div class="view-title-block"><h2>Ограничения</h2><p>Оформление банов, управление мутами и проверками игроков.</p></div><button type="button" class="secondary" data-refresh>Обновить</button></div>
-  <div class="restriction-actions" id="restrictions-actions"></div>
-  <p class="settings-intro">Предварительный бан действует пять минут. Без оформления он снимается автоматически. Окончательные баны находятся в разделе «Наказания».</p>
+  container.innerHTML = `<section class="restrictions-workspace"><div class="view-header"><div class="view-title-block"><h2>Баны и ограничения</h2><p>Оформление банов, управление мутами и проверками игроков.</p></div><div class="restriction-actions" id="restrictions-actions"></div><button type="button" class="secondary" data-refresh>Обновить</button></div>
+  <p class="settings-intro">Предварительный бан действует пять минут. Без оформления он снимается автоматически. Окончательные баны доступны во вкладке этого раздела.</p>
   <div class="segmented-nav restriction-tabs" role="tablist" aria-label="Виды ограничений"></div>
   <div class="restriction-toolbar"><label>Поиск<input type="search" maxlength="100" placeholder="Ник, сотрудник или причина" data-search></label><label>Порядок<select data-sort><option value="deadline">Ближайший срок</option><option value="newest">Сначала новые</option><option value="name">По нику</option></select></label></div>
   <p data-error class="form-error" role="alert"></p><div data-results aria-live="polite"><p>Загрузка ограничений…</p></div><div class="restriction-pagination"><button type="button" class="secondary" data-prev>Предыдущая</button><span data-page></span><button type="button" class="secondary" data-next>Следующая</button></div></section>`;
@@ -127,7 +125,7 @@ export async function renderRestrictions(container) {
               `<article class="restriction-card"><div class="restriction-card-heading"><strong>${esc(r.name || "Имя не сохранено")}</strong><span class="badge">${selected === "pending" ? "Ожидает оформления" : r.kind === "MUTE" ? "Мут" : "Проверка"}${selected === "history" ? ` · ${r.action === "APPLIED" ? "Выдано" : "Снято"}` : ""}</span></div><p>${esc(r.reason || "Нужно указать нарушение, срок и доказательства.")}</p><dl class="restriction-metadata"><div><dt>Сотрудник</dt><dd>${esc(r.actor)}</dd></div><div><dt>${selected === "history" ? "Когда" : "Начало"}</dt><dd>${date(r.at || r.createdAt || r.created)}</dd></div>${selected === "history" ? "" : `<div><dt>${selected === "pending" ? "Оформить до" : "Окончание"}</dt><dd>${selected === "pending" ? `<span data-deadline="${Number(r.deadline)}"></span>` : r.expires < 0 ? "Бессрочно" : date(r.expires)}</dd></div>`}</dl><div class="restriction-card-actions">${selected === "pending" ? (hasPerm("MANAGE_BANS") ? `<button type="button" class="primary" data-finalize="${Number(r.id)}">Оформить №${Number(r.id)}</button><button type="button" class="secondary" data-remove="${i}">Отменить предварительный бан</button>` : "<small>Оформление доступно сотруднику с правом управления банами.</small>") : selected === "history" ? "" : `<button type="button" class="secondary" data-remove="${i}">${r.kind === "MUTE" ? "Снять мут" : "Завершить проверку"}</button>`}</div></article>`,
           )
           .join("")
-      : `<div class="restriction-empty"><h3>${query ? "Ничего не найдено" : "Список пуст"}</h3><p>${query ? "Измените запрос или выберите другую вкладку." : selected === "history" ? "Здесь появятся выдачи и снятия мутов и проверок. История окончательных банов хранится в «Наказаниях»." : "В этой категории сейчас нет ограничений."}</p></div>`;
+      : `<div class="restriction-empty"><h3>${query ? "Ничего не найдено" : "Список пуст"}</h3><p>${query ? "Измените запрос или выберите другую вкладку." : selected === "history" ? "Здесь появятся выдачи и снятия мутов и проверок. Полная история доступна в пункте «История» бокового меню." : "В этой категории сейчас нет ограничений."}</p></div>`;
     target
       .querySelectorAll("[data-finalize]")
       .forEach(
@@ -228,7 +226,6 @@ export async function renderRestrictions(container) {
     ["ban", "Предварительный бан", "MANAGE_BANS"],
     ["mute", "Мут", "MANAGE_MUTES"],
     ["freeze", "Проверка", "FREEZE_PLAYERS"],
-    ["kick", "Кик", "KICK_PLAYERS"],
   ]) {
     if (!hasPerm(permission)) continue;
     const button = document.createElement("button");

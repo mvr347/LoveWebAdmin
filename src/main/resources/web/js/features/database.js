@@ -188,7 +188,7 @@ export async function renderDatabaseView() {
                         </div>
                         <div class="stat-card">
                             <div class="stat-label">СООБЩЕНИЙ В ЧАТЕ</div>
-                            <div class="stat-value" style="color:#c084fc;">${(data.chatMessages || 0).toLocaleString()}</div>
+                            <div class="stat-value" style="color:#ff9baa;">${(data.chatMessages || 0).toLocaleString()}</div>
                             <div>${formatDeltaBadge(data.chatMessagesDelta, data.prevPeriodLabel)}</div>
                         </div>
                         <div class="stat-card">

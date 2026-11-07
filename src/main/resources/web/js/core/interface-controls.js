@@ -11,6 +11,7 @@ const icons = {
 let installed = false;
 export function enhanceButtons(root = document) {
   for (const button of root.querySelectorAll("button,a.secondary,a.primary")) {
+    if(button.matches(".reference-list-item,.settings-home-card")) continue;
     button.classList.add("ui-button");
     if (
       button.classList.contains("close-btn") ||
@@ -64,7 +65,7 @@ export function enhanceButtons(root = document) {
     icon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="${icons[key]}"/></svg>`;
     const label = document.createElement("span");
     label.className = "ui-button__label";
-    label.textContent = text;
+    label.textContent = text.replace(/^[←→↗]\s*|\s*[←→↗]$/g, "");
     button.replaceChildren(icon, label);
   }
 }

@@ -1,6 +1,7 @@
 package me.lovelace.loveWebAdmin.config;
 
 import static org.junit.jupiter.api.Assertions.*;
+
 import java.nio.file.*;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.junit.jupiter.api.*;
@@ -19,7 +20,16 @@ class ConfigUpgradeTest {
   void removalOfOldMessagingSecretsKeepsAnExactBackupAndOtherSettings() throws Exception {
     var file = dir.resolve("config.yml");
     String original =
-        "config-version: 2\nweb:\n  port: 9090\nsecurity:\n  webhooks:\n    enabled: true\n    telegram:\n      bot-token: old-secret\n      chat-id: '12345'\n    discord-url: https://discord.com/api/webhooks/123456789/legacy-secret\n";
+        "config-version: 2\n"
+            + "web:\n"
+            + "  port: 9090\n"
+            + "security:\n"
+            + "  webhooks:\n"
+            + "    enabled: true\n"
+            + "    telegram:\n"
+            + "      bot-token: old-secret\n"
+            + "      chat-id: '12345'\n"
+            + "    discord-url: https://discord.com/api/webhooks/123456789/legacy-secret\n";
     Files.writeString(file, original);
     var migration = ConfigUpgrade.upgrade(file, template());
     assertEquals(original, Files.readString(migration.backup()));
@@ -40,16 +50,69 @@ class ConfigUpgradeTest {
     ConfigUpgrade.upgrade(file, template());
     var after = YamlConfiguration.loadConfiguration(file.toFile());
     assertTrue(after.getBoolean("discord.tickets.support.enabled"));
-    assertEquals(4, after.getMapList("discord.tickets.support.topics").size());
+    assertEquals(3, after.getMapList("discord.tickets.support.topics").size());
 
     Files.writeString(
         file,
-        "config-version: 3\ndiscord:\n  tickets:\n    support:\n      enabled: true\n      topics:\n"
-            + "        - id: only\n          label: Единственная\n          description: ''\n");
+        "config-version: 3\n"
+            + "discord:\n"
+            + "  tickets:\n"
+            + "    support:\n"
+            + "      enabled: true\n"
+            + "      topics:\n"
+            + "        - id: only\n"
+            + "          label: Единственная\n"
+            + "          description: ''\n");
     ConfigUpgrade.upgrade(file, template());
-    var kept = YamlConfiguration.loadConfiguration(file.toFile()).getMapList("discord.tickets.support.topics");
+    var kept =
+        YamlConfiguration.loadConfiguration(file.toFile())
+            .getMapList("discord.tickets.support.topics");
     assertEquals(1, kept.size());
     assertEquals("only", kept.getFirst().get("id"));
+  }
+
+  @Test
+  void removedDonationTopicIsMigratedOnceWithoutChangingOtherTopicsOrSettings() throws Exception {
+    var path = dir.resolve("config.yml");
+    Files.writeString(path, template());
+    var old = YamlConfiguration.loadConfiguration(path.toFile());
+    old.set("web.port", 9090);
+    old.set(
+        "discord.tickets.support.topics",
+        java.util.List.of(
+            java.util.Map.of("id", "question", "label", "Мой вопрос", "description", "Описание"),
+            java.util.Map.of("id", "donate", "label", "Донат", "description", "Покупки"),
+            java.util.Map.of(
+                "id", "custom", "label", "Своя тема", "description", "Пользовательская")));
+    old.save(path.toFile());
+    String before = Files.readString(path);
+    var result = ConfigUpgrade.upgrade(path, template());
+    assertTrue(result.changed());
+    assertEquals(before, Files.readString(result.backup()));
+    var after = YamlConfiguration.loadConfiguration(path.toFile());
+    var topics = after.getMapList("discord.tickets.support.topics");
+    assertEquals(
+        java.util.List.of("question", "custom"),
+        topics.stream().map(row -> row.get("id")).toList());
+    assertEquals("Мой вопрос", topics.getFirst().get("label"));
+    assertEquals("Пользовательская", topics.getLast().get("description"));
+    assertEquals(9090, after.getInt("web.port"));
+    assertFalse(ConfigUpgrade.upgrade(path, template()).changed());
+  }
+
+  @Test
+  void donationOnlyListStaysEmptyAfterRemovalAndDefaultsDoNotReappear() throws Exception {
+    var path = dir.resolve("config.yml");
+    Files.writeString(path, template());
+    var old = YamlConfiguration.loadConfiguration(path.toFile());
+    old.set(
+        "discord.tickets.support.topics",
+        java.util.List.of(java.util.Map.of("id", "donate", "label", "Донат")));
+    old.save(path.toFile());
+    ConfigUpgrade.upgrade(path, template());
+    var after = YamlConfiguration.loadConfiguration(path.toFile());
+    assertTrue(after.getMapList("discord.tickets.support.topics").isEmpty());
+    assertFalse(ConfigUpgrade.upgrade(path, template()).changed());
   }
 
   @Test

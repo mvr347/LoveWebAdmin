@@ -17,8 +17,9 @@ test("navigation separates work, moderation and settings; personal security excl
   await page.goto("/preview/");
   await expect(page.locator("#sidebar-nav .nav-section-title")).toHaveText([
     "Работа",
-    "Модерация",
-    "Сервер и игроки",
+    "Обращения",
+    "Наказания",
+    "Сервер",
     "Управление",
   ]);
   await page.locator('[data-nav="settings"]').click();
@@ -194,10 +195,10 @@ test("section shortcuts retain their numbers after navigation grouping", async (
 }) => {
   await page.goto("/preview/");
   for (const [key, section] of [
-    ["4", "anticheat"],
-    ["5", "server"],
-    ["8", "database"],
-    ["9", "restrictions"],
+    ["8", "anticheat"],
+    ["9", "server"],
+    ["3", "reports"],
+    ["6", "restrictions"],
     ["0", "settings"],
   ]) {
     await page.locator("#topbar-page-title").click();
@@ -297,4 +298,14 @@ test("console restrictions use the shared validated form and preserve a tab draf
       () => LovePreview.model.snapshot().config.commandBlacklist,
     ),
   ).toEqual(["stop", "restart", "server:op"]);
+});
+
+test("kick remains outside the punishment workspace", async ({ page }) => {
+  await page.goto("/preview/");
+  await openRestrictions(page);
+  await expect(page.locator("#restrictions-actions").getByRole("button", { name: "Кик", exact: true })).toHaveCount(0);
+  await expect(page.locator("#restrictions-actions").getByRole("button", { name: "Мут", exact: true })).toBeVisible();
+  await page.evaluate(() => LovePreview.model.request("PUT", "/api/roles/2", { permissions: ["KICK_PLAYERS"] }));
+  await page.locator("#preview-role").selectOption("2");
+  await expect(page.locator('[data-nav="restrictions"]')).toHaveCount(0);
 });

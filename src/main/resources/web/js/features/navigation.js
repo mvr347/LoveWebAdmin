@@ -1,3 +1,4 @@
+import { renderSeparatedCases, renderSeparatedPenalties } from "./separated-workspace.js";
 import { captureView, restoreView } from "../core/view-state.js";
 import { state } from "../state.js";
 import {
@@ -53,14 +54,7 @@ export function renderAppLayout() {
                 <aside class="app-sidebar ${state.sidebarCollapsed ? "collapsed" : ""}" id="app-sidebar">
                     <div class="sidebar-brand">
                         <div class="sidebar-logo-cube">
-                            <svg viewBox="0 0 32 32" width="28" height="28" fill="none">
-                                <polygon points="16,2 30,10 16,18 2,10" fill="#9B5CFF"/>
-                                <polygon points="16,2 23,6 16,10 9,6" fill="#B788FF" opacity="0.6"/>
-                                <polygon points="2,10 16,18 16,30 2,22" fill="#4C1D95"/>
-                                <polygon points="16,18 30,10 30,22 16,30" fill="#6D28D9"/>
-                                <polyline points="2,10 16,18 30,10" stroke="#1F2440" stroke-width="0.8"/>
-                                <line x1="16" y1="18" x2="16" y2="30" stroke="#1F2440" stroke-width="0.8"/>
-                            </svg>
+                            <img src="${location.pathname.startsWith('/preview/')?'/preview':''}/webadmin.svg" width="28" height="28" alt="">
                         </div>
                         <div class="sidebar-brand-info">
                             <span class="sidebar-brand-name">MINECRAFT</span>
@@ -80,11 +74,11 @@ export function renderAppLayout() {
                             .filter(isSectionVisible)
                             .at(-1);
                           return `${previous?.group !== s.group ? `<div class="nav-section-title">${esc(s.group)}</div>` : ""}
-                                <div class="nav-item ${isActive ? "active" : ""}" data-nav="${s.id}" data-tooltip="${esc(s.label)} (Клавиша: ${keyShortcut})">
+                                <div class="nav-item ${isActive ? "active" : ""}" data-nav="${s.id}" data-tooltip="${esc(s.label)}${keyShortcut!==undefined?` (Клавиша: ${keyShortcut})`:""}">
                                     <span class="nav-icon">${s.icon}</span>
                                     <span class="nav-label">${esc(s.label)}</span>
                                     ${s.id === "punishments" || s.id === "reports" ? '<span class="nav-counter-badge" id="reports-pending-badge" style="display:none;">0</span>' : ""}
-                                    <span class="nav-key-badge">${keyShortcut}</span>
+                                    ${keyShortcut!==undefined?`<span class="nav-key-badge">${keyShortcut}</span>`:""}
                                 </div>
                             `;
                         }).join("")}
@@ -335,7 +329,10 @@ export function startTopbarStatusPoller() {
   }, 5000);
 }
 export async function navigateTo(sectionId, recordHistory = true) {
+  if(sectionId === "punishments") sectionId="reports";
+  if(sectionId === "bans"){state.separatedPenaltyView="bans";sectionId="restrictions";}
   const target = state.SECTIONS.find((s) => s.id === sectionId);
+  if(!target)return;
   if (target && !isSectionVisible(target)) return;
   closeAllModals();
   captureView();
@@ -393,13 +390,22 @@ export async function navigateTo(sectionId, recordHistory = true) {
       await renderJournalView();
       break;
     case "punishments":
-      await renderPunishmentsView("reports");
+      await renderSeparatedCases(area,"report");
       break;
     case "bans":
       await renderPunishmentsView("bans");
       break;
     case "reports":
-      await renderPunishmentsView("reports");
+      await renderSeparatedCases(area,"report");
+      break;
+    case "appeals":
+      await renderSeparatedCases(area,"appeal");
+      break;
+    case "support":
+      await renderSeparatedCases(area,"support");
+      break;
+    case "penalty-history":
+      await renderSeparatedPenalties(area,true);
       break;
     case "anticheat":
       await renderAnticheatView();
@@ -415,7 +421,7 @@ export async function navigateTo(sectionId, recordHistory = true) {
       await renderStaffView();
       break;
     case "restrictions":
-      await renderRestrictions(area);
+      await renderSeparatedPenalties(area);
       break;
     case "settings":
       renderSettingsHome();

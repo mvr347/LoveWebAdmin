@@ -19,8 +19,9 @@ for (const mobile of [false, true]) {
     expect(new URL(page.url()).pathname).toBe("/preview/");
     const box = await dialog.boundingBox(),
       size = page.viewportSize();
-    expect(box.width).toBeLessThan(size.width - 20);
-    expect(box.height).toBeLessThan(size.height - 30);
+    expect(box.width).toBeLessThanOrEqual(Math.min(620, size.width));
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.height).toBeLessThanOrEqual(size.height);
     await dialog
       .locator("summary")
       .filter({ hasText: "Ответственный" })

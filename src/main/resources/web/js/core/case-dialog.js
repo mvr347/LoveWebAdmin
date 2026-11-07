@@ -23,10 +23,10 @@ export function installCaseDialogs(openModal) {
       return;
     const kind = url.searchParams.get("kind"),
       id = url.searchParams.get("id");
-    if (!["appeal", "report"].includes(kind) || !/^\d+$/.test(id || "")) return;
+    if (!["appeal", "report", "support"].includes(kind) || !/^\d+$/.test(id || "")) return;
     event.preventDefault();
     openModal(
-      `<div class="modal-header"><div><span class="ui-eyebrow">ОБРАЩЕНИЕ</span><h3>${kind === "report" ? "Жалоба" : "Апелляция"} №${Number(id)}</h3></div><button type="button" class="close-btn" data-modal-close aria-label="Закрыть дело">×</button></div><div class="modal-body case-dialog-content workspace-page"><p role="status">Загружаем дело…</p></div>`,
+      `<div class="modal-header"><div><span class="ui-eyebrow">ОБРАЩЕНИЕ</span><h3>${({report:"Жалоба",appeal:"Апелляция",support:"Поддержка"})[kind]} №${Number(id)}</h3></div><button type="button" class="close-btn" data-modal-close aria-label="Закрыть дело">×</button></div><div class="modal-body case-dialog-content workspace-page"><p role="status">Загружаем дело…</p></div>`,
       null,
       "case-dialog",
     );

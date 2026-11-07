@@ -119,7 +119,10 @@ test("navigation and ban form work; removed shifts are not exposed", async ({
     .toBe(1);
   for (const section of [
     "journal",
-    "punishments",
+    "reports",
+    "appeals",
+    "support",
+    "restrictions",
     "anticheat",
     "server",
     "auth",

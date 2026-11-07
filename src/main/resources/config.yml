@@ -53,9 +53,6 @@ discord:
         - id: bug
           label: "Ошибка / баг"
           description: "Что-то сломалось"
-        - id: donate
-          label: "Донат"
-          description: "Покупки и привилегии"
         - id: other
           label: "Другое"
           description: "Не подходит ни одна тема"

@@ -391,6 +391,21 @@ class DiscordTicketDeskTest {
     await(() -> ticketState("support", 1).equals("CLOSED"));
     assertEquals(1, discord.deleted.get());
     assertEquals("CLOSED", plugin.moderation().support(1).orElseThrow().get("status"));
+    await(() -> {
+      try {
+        return plugin.moderation().deliveries().stream()
+            .anyMatch(row -> row.get("event").equals("desk-close:support:1"));
+      } catch (java.sql.SQLException error) {
+        throw new AssertionError(error);
+      }
+    });
+    var notice = plugin.moderation().due().stream()
+        .filter(row -> row.get("recipient").equals("10000"))
+        .map(row -> JsonUtils.parseObject(row.get("payload").toString()))
+        .filter(body -> body.get("content").toString().contains("закрыто"))
+        .findFirst().orElseThrow();
+    assertTrue(((List<?>) notice.get("components")).isEmpty(), "Closure notifications have no buttons");
+    assertTrue(JsonUtils.toJson(notice.get("embeds")).contains("Вопрос решён"));
   }
 
   @Test
