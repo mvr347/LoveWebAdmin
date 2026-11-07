@@ -160,7 +160,6 @@ export function startApplication() {
       "MANAGE_BANS",
       "MANAGE_MUTES",
       "FREEZE_PLAYERS",
-      "KICK_PLAYERS",
     ],
   });
   state.SECTIONS.push({

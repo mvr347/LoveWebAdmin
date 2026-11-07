@@ -1,7 +1,7 @@
 package me.lovelace.loveWebAdmin.config;
 
-import java.nio.file.*;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.*;
 import java.util.*;
 import org.bukkit.configuration.file.YamlConfiguration;
 
@@ -27,8 +27,13 @@ public final class ConfigUpgrade {
     }
     int version = source.getInt("config-version", 0), target = defaults.getInt("config-version", 0);
     if (version > target) return new Result(false, null);
+    String supportTopicsKey = "discord.tickets.support.topics";
+    var supportTopics = source.getMapList(supportTopicsKey);
+    boolean hasRemovedSupportTopic =
+        supportTopics.stream().anyMatch(ConfigUpgrade::isRemovedSupportTopic);
     boolean missing =
-        version < target
+        hasRemovedSupportTopic
+            || version < target
             || source.isSet("security.webhooks.telegram")
             || source.isSet("security.webhooks.discord.enabled")
             || source.isSet("security.webhooks.discord-url");
@@ -71,12 +76,17 @@ public final class ConfigUpgrade {
     defaults.set("security.webhooks.telegram", null);
     defaults.set("security.webhooks.discord.enabled", null);
     defaults.set("security.webhooks.discord-url", null);
+    if (hasRemovedSupportTopic)
+      defaults.set(
+          supportTopicsKey,
+          supportTopics.stream().filter(topic -> !isRemovedSupportTopic(topic)).toList());
     defaults.set("config-version", target);
     if (defaults.isSet("discord.notifications.escalation"))
       defaults.setComments(
           "discord.notifications.escalation",
           List.of(
-              "Сохранено для совместимости. Актуальные сроки: discord.tickets.waiting; руководство: discord.tickets.supervisor-role-ids."));
+              "Сохранено для совместимости. Актуальные сроки: discord.tickets.waiting; руководство:"
+                  + " discord.tickets.supervisor-role-ids."));
     String migrated = defaults.saveToString();
     var validated = new YamlConfiguration();
     validated.loadFromString(migrated);
@@ -97,5 +107,9 @@ public final class ConfigUpgrade {
       Files.deleteIfExists(temporary);
     }
     return new Result(true, backup);
+  }
+
+  private static boolean isRemovedSupportTopic(Map<?, ?> topic) {
+    return "donate".equalsIgnoreCase(Objects.toString(topic.get("id"), "").trim());
   }
 }

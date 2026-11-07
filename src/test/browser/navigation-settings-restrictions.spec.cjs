@@ -298,3 +298,13 @@ test("console restrictions use the shared validated form and preserve a tab draf
     ),
   ).toEqual(["stop", "restart", "server:op"]);
 });
+
+test("kick remains outside the punishment workspace", async ({ page }) => {
+  await page.goto("/preview/");
+  await openRestrictions(page);
+  await expect(page.locator("#restrictions-actions").getByRole("button", { name: "Кик", exact: true })).toHaveCount(0);
+  await expect(page.locator("#restrictions-actions").getByRole("button", { name: "Мут", exact: true })).toBeVisible();
+  await page.evaluate(() => LovePreview.model.request("PUT", "/api/roles/2", { permissions: ["KICK_PLAYERS"] }));
+  await page.locator("#preview-role").selectOption("2");
+  await expect(page.locator('[data-nav="restrictions"]')).toHaveCount(0);
+});

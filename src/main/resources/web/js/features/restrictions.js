@@ -11,7 +11,6 @@ const permissions = [
   "MANAGE_BANS",
   "MANAGE_MUTES",
   "FREEZE_PLAYERS",
-  "KICK_PLAYERS",
 ];
 const date = (seconds) =>
   Number(seconds) > 0
@@ -228,7 +227,6 @@ export async function renderRestrictions(container) {
     ["ban", "Предварительный бан", "MANAGE_BANS"],
     ["mute", "Мут", "MANAGE_MUTES"],
     ["freeze", "Проверка", "FREEZE_PLAYERS"],
-    ["kick", "Кик", "KICK_PLAYERS"],
   ]) {
     if (!hasPerm(permission)) continue;
     const button = document.createElement("button");

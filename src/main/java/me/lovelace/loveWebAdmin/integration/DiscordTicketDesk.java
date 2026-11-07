@@ -1741,17 +1741,7 @@ public final class DiscordTicketDesk {
                             + " закрыто. Переписка сохранена."
                             + (isSupport(ticket.kind()) ? "" : " Закрытие канала не меняет наказание."),
                         ticket.reason().isBlank() ? "Переписка завершена" : ticket.reason(),
-                        List.of(
-                            row(
-                                isSupport(ticket.kind())
-                                    ? List.of(
-                                        button("Открыть обращение","lwa:mine:open:"+ticket.kind()+":"+ticket.id(),1))
-                                    : List.of(
-                                        button("Открыть обращение","lwa:mine:open:"+ticket.kind()+":"+ticket.id(),1),
-                                        button(
-                                            "Есть новые доказательства",
-                                            "lwa:flow:review:new:" + ticket.kind() + ":" + ticket.id(),
-                                            1)))))));
+                        List.of())));
 
       if (!queueChannel.isBlank())
         publish(
