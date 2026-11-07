@@ -100,6 +100,11 @@ public class LoveCoreDiscordBridge implements Listener {
                 plugin,
                 () -> {
                   if (closed) return;
+                  // Switched off while running: take the commands and menu sections back from the bot.
+                  if (!discordEnabled(plugin.getConfig())) {
+                    if (registeredService != null) unregister();
+                    return;
+                  }
                   discord()
                       .filter(DiscordService::isEnabled)
                       .ifPresent(
@@ -826,7 +831,16 @@ public class LoveCoreDiscordBridge implements Listener {
     }
   }
 
+  /**
+   * The master switch {@code discord.enabled}: off means none of LoveWebAdmin's Discord features (commands,
+   * private-menu sections, ticket panel, notices) touch the shared bot, so it can serve authorization alone.
+   */
+  public static boolean discordEnabled(org.bukkit.configuration.file.FileConfiguration config) {
+    return config.getBoolean("discord.enabled", true);
+  }
+
   public Optional<DiscordService> discord() {
+    if (!discordEnabled(plugin.getConfig())) return Optional.empty();
     try {
       return LoveCore.service(DiscordService.class);
     } catch (Throwable t) {
