@@ -127,10 +127,7 @@ export async function renderAnticheatView() {
   };
   const renderStream = async (container) => {
     try {
-      const res = await api(
-        "GET",
-        `/api/vesuvio/violations?player=${encodeURIComponent(playerName)}&limit=50`,
-      ).catch(() => api("GET", "/api/vesuvio/violations?limit=50"));
+      const res = await api("GET", "/api/vesuvio/violations?limit=50");
       const list = Array.isArray(res) ? res : res.violations || [];
       let filtered = list;
       if (currentCheckFilter) {
