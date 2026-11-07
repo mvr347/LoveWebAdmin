@@ -1890,8 +1890,8 @@ tr:hover td {
 }
 
 .totp-copy-btn {
-    background: rgba(168, 85, 247, 0.15);
-    border: 1px solid rgba(168, 85, 247, 0.3);
+    background: rgba(239, 77, 93, 0.15);
+    border: 1px solid rgba(239, 77, 93, 0.3);
     color: var(--accent-light);
     border-radius: 6px;
     padding: 6px 10px;
@@ -2894,7 +2894,7 @@ tr:hover td {
 }
 
 .autocomplete-item:hover, .autocomplete-item.selected {
-    background: rgba(168, 85, 247, 0.18);
+    background: rgba(239, 77, 93, 0.18);
 }
 
 .autocomplete-item-name {
@@ -2933,13 +2933,13 @@ tr:hover td {
 }
 
 .report-picker-card:hover {
-    background: rgba(168, 85, 247, 0.08);
+    background: rgba(239, 77, 93, 0.08);
     border-color: var(--accent-light);
     transform: translateY(-1px);
 }
 
 .report-picker-card.selected {
-    background: rgba(168, 85, 247, 0.15);
+    background: rgba(239, 77, 93, 0.15);
     border-color: var(--accent);
 }
 
@@ -3774,7 +3774,7 @@ body.theme-light .btn-remove-screenshot:hover {
     font-family: 'JetBrains Mono', monospace;
     font-size: 26px;
     font-weight: 800;
-    color: var(--accent, #a855f7);
+    color: var(--accent, #ef4d5d);
     letter-spacing: 4px;
     margin-bottom: 14px;
     user-select: all;
@@ -3789,7 +3789,7 @@ body.theme-light .btn-remove-screenshot:hover {
 }
 
 .totp-secret-mask:hover {
-    color: var(--accent, #a855f7);
+    color: var(--accent, #ef4d5d);
 }
 
 .totp-input-masked {

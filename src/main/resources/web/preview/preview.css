@@ -16,9 +16,9 @@ body.love-preview .main-viewport {
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
-  background: #291c48;
-  color: #efe8ff;
-  border-bottom: 2px solid #aa83e5;
+  background: #30171e;
+  color: #fff3f7;
+  border-bottom: 2px solid #ef4d5d;
   font: 13px system-ui;
 }
 #love-preview-banner strong {
@@ -27,9 +27,9 @@ body.love-preview .main-viewport {
 #love-preview-banner button,
 #love-preview-banner select,
 #love-preview-tools button {
-  border: 1px solid #9472bf;
-  border-radius: 8px;
-  background: #3b295b;
+  border: 1px solid #7e3a4b;
+  border-radius: 0;
+  background: #48212c;
   color: #fff;
   padding: 7px;
   cursor: pointer;
@@ -40,11 +40,11 @@ body.love-preview .main-viewport {
   max-width: 170px;
 }
 #love-preview-banner a {
-  color: #dcc6ff;
+  color: #ffb4bf;
   margin-left: auto;
 }
 #love-preview-banner span {
-  color: #c6b6db;
+  color: #d9aab5;
 }
 #love-preview-tools {
   position: fixed;

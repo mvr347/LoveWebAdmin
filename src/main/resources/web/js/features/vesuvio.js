@@ -37,9 +37,9 @@ export async function renderAnticheatView() {
 
             <!-- Sub-Tabs: Stream / Suspects / Models -->
             <div style="background:var(--card-bg); border:1px solid var(--border); border-radius:var(--radius-md); padding:12px 16px; margin-bottom:16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
-                <div class="filter-tags" id="anticheat-tabs"><button type="button" class="filter-tag-btn" data-tab="wave">Волна банов</button>
+                <div class="panel-tabs" id="anticheat-tabs" aria-label="Разделы античита"><button type="button" class="filter-tag-btn" data-tab="wave">Волна банов</button>
                     <button type="button" class="filter-tag-btn active" data-tab="stream">Поток нарушений</button>
-                    <button type="button" class="filter-tag-btn" data-tab="suspects">Разбивка по игрокам / Наблюдение</button>
+                    <button type="button" class="filter-tag-btn" data-tab="suspects">Наблюдение за игроками</button>
                     <button type="button" class="filter-tag-btn" data-tab="punishments">Журнал наказаний</button><button type="button" class="filter-tag-btn" data-tab="models">Модели и типы проверок</button>
                 </div>
 

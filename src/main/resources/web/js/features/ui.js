@@ -12,7 +12,7 @@ import { boot } from "./auth.js";
 export function renderSvgIcon(name, colorType = "gray", size = 16) {
   let color = "currentColor";
   if (colorType === "violet" || colorType === "purple")
-    color = "var(--accent, #a855f7)";
+    color = "var(--accent, #ef4d5d)";
   else if (colorType === "white") color = "#ffffff";
   else if (colorType === "gray") color = "var(--text-muted, #94a3b8)";
   else if (colorType === "green") color = "var(--green, #22c55e)";
