@@ -11,7 +11,7 @@ import {
   esc,
   hasPerm,
   isModeratorRole,
-  openModal,
+  openModal as openDialog,
   renderSvgIcon,
   showToast,
 } from "./ui.js";
@@ -20,7 +20,21 @@ import { applyUserTheme } from "./notifications.js";
 // UNIFIED ADMIN SETTINGS MODAL (REAL SETTINGS & ICONS)
 // ==========================================================================
 
-export async function openAdminSettingsModal(initialTab = "general") {
+export async function openAdminSettingsModal(
+  initialTab = "general",
+  embeddedHost = null,
+) {
+  const personal = ["general", "security", "notifications"].includes(
+    initialTab,
+  );
+  const openModal = (html, onMount, customClass) => {
+    if (!embeddedHost) return openDialog(html, onMount, customClass);
+    if (!embeddedHost.isConnected) return;
+    embeddedHost.innerHTML = `<section class="modal settings-workspace ${customClass}">${html}</section>`;
+    embeddedHost.querySelector(".close-btn")?.remove();
+    embeddedHost.querySelector(".modal-footer")?.remove();
+    onMount?.(embeddedHost);
+  };
   const requestGeneration = state.requestGeneration;
   const token = state.token;
   const isMod = isModeratorRole();
@@ -144,7 +158,18 @@ export async function openAdminSettingsModal(initialTab = "general") {
         danger: state.me.isOwner,
       })[tab.id] ?? true,
   );
-  if (!tabs.some((tab) => tab.id === currentTab)) currentTab = "general";
+  const personalIds = ["general", "security", "notifications"];
+  tabs.splice(
+    0,
+    tabs.length,
+    ...tabs.filter((t) => personal === personalIds.includes(t.id)),
+  );
+  if (!tabs.some((tab) => tab.id === currentTab)) currentTab = tabs[0]?.id;
+  if (!tabs.length) {
+    if (embeddedHost)
+      embeddedHost.innerHTML = "<p>Нет доступа к настройкам панели.</p>";
+    return;
+  }
   const groups = [
     ["Личный аккаунт", ["general", "security", "notifications"]],
     [
@@ -156,7 +181,7 @@ export async function openAdminSettingsModal(initialTab = "general") {
   openModal(
     `
             <div class="modal-header">
-                <h3>Настройки</h3>
+                <h3>${personal ? "Мои настройки" : "Настройки веб-панели"}</h3>
                 <button type="button" class="close-btn" data-modal-close="true">${renderSvgIcon("close", "gray", 16)}</button>
             </div>
             <div class="modal-body" style="padding:0; max-height:82vh; overflow:hidden; display:flex; flex-direction:column;">
@@ -184,13 +209,13 @@ export async function openAdminSettingsModal(initialTab = "general") {
                 <button type="button" class="secondary" data-modal-close="true">ЗАКРЫТЬ</button>
             </div>
         `,
-    () => {
-      const contentPane = document.getElementById("settings-tab-content");
+    (mountedRoot) => {
+      const contentPane = mountedRoot.querySelector("#settings-tab-content");
       const owner = contentPane.closest(".modal-overlay");
       const switchSettingsTab = async (tabId) => {
         if (!contentPane.isConnected) return;
         currentTab = tabId;
-        document.querySelectorAll(".settings-tab-btn").forEach((b) => {
+        mountedRoot.querySelectorAll(".settings-tab-btn").forEach((b) => {
           b.classList.toggle("active", b.dataset.tab === tabId);
         });
         if (!contentPane) return;
@@ -253,6 +278,16 @@ export async function openAdminSettingsModal(initialTab = "general") {
                             </button>
                         </div>
 
+                        <fieldset class="personal-workspace-options"><legend>Рабочее пространство</legend><label>Начальная страница<select id="personal-start-page">${state.SECTIONS.filter(
+                          (t) => !t.perm || hasPerm(t.perm),
+                        )
+                          .map(
+                            (t) =>
+                              `<option value="${esc(t.id)}" ${userPrefs.startPage === t.id ? "selected" : ""}>${esc(t.label)}</option>`,
+                          )
+                          .join(
+                            "",
+                          )}</select></label><label><input type="checkbox" id="personal-compact" ${userPrefs.compactRows ? "checked" : ""}> Компактные строки списков</label><label><input type="checkbox" id="personal-remember-filters" ${userPrefs.rememberFilters !== false ? "checked" : ""}> Запоминать фильтры списков в браузере</label><label><input type="checkbox" id="personal-reduced-motion" ${userPrefs.reduceMotion ? "checked" : ""}> Уменьшить анимации интерфейса</label></fieldset>
                         <button type="button" class="primary btn-sm" id="btn-save-general-settings" style="width:100%; margin-top:6px; display:flex; align-items:center; justify-content:center; gap:6px;">
                             ${renderSvgIcon("save", "white", 14)} СОХРАНИТЬ ОБЩИЕ НАСТРОЙКИ
                         </button>
@@ -287,6 +322,25 @@ export async function openAdminSettingsModal(initialTab = "general") {
                 userPrefs.minecraftNick = document
                   .getElementById("gen-mc-nick")
                   .value.trim();
+                userPrefs.startPage = document.getElementById(
+                  "personal-start-page",
+                ).value;
+                userPrefs.compactRows =
+                  document.getElementById("personal-compact").checked;
+                userPrefs.reduceMotion = document.getElementById(
+                  "personal-reduced-motion",
+                ).checked;
+                userPrefs.rememberFilters = document.getElementById(
+                  "personal-remember-filters",
+                ).checked;
+                document.body.classList.toggle(
+                  "compact-rows",
+                  userPrefs.compactRows,
+                );
+                document.body.classList.toggle(
+                  "reduce-motion",
+                  userPrefs.reduceMotion,
+                );
                 try {
                   await api("PUT", "/api/me/preferences", {
                     uiPreferences: userPrefs,
@@ -559,7 +613,7 @@ export async function openAdminSettingsModal(initialTab = "general") {
       };
 
       // Sidebar tab click handler
-      document.querySelectorAll(".settings-tab-btn").forEach((btn) => {
+      mountedRoot.querySelectorAll(".settings-tab-btn").forEach((btn) => {
         btn.addEventListener("click", () => {
           const tid = btn.dataset.tab;
           if (tid) switchSettingsTab(tid);

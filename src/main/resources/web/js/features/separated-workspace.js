@@ -1,10 +1,4 @@
-import {
-  api,
-  esc,
-  fmtTime,
-  hasPerm,
-  showToast,
-} from "./ui.js";
+import { api, esc, fmtTime, hasPerm, showToast } from "./ui.js";
 import { state } from "../state.js";
 import { renderRestrictions } from "./restrictions.js";
 import { renderPunishmentsView } from "./moderation.js";
@@ -130,7 +124,8 @@ export async function renderSeparatedCases(area, kind = "report") {
       memory.selected = visible[0]?.id || null;
     host.classList.toggle("reference-cases-empty", !visible.length);
     host.querySelector(".reference-case-preview").hidden = !visible.length;
-    host.querySelector(".reference-case-pager").hidden = !sourceSize && !memory.offset;
+    host.querySelector(".reference-case-pager").hidden =
+      !sourceSize && !memory.offset;
     list.innerHTML = visible.length
       ? visible
           .map(
@@ -277,7 +272,13 @@ export async function renderSeparatedCases(area, kind = "report") {
 }
 export async function renderSeparatedPenalties(area, history = false) {
   area.classList.remove("brand-penalty-view");
-  const memory = state.separatedPenaltyView || "limits";
+  const memory =
+    state.separatedPenaltyView ||
+    (hasPerm("VIEW_BANS")
+      ? "bans"
+      : hasPerm("MANAGE_BANS")
+        ? "pending"
+        : "limits");
   if (!history && memory === "bans" && hasPerm("VIEW_BANS")) {
     await renderPunishmentsView("bans");
     if (!area.querySelector("#punishments-subtab-container")) return;
@@ -300,7 +301,7 @@ export async function renderSeparatedPenalties(area, history = false) {
   const host = area.querySelector("[data-penalty-body]");
   if (history) {
     host.innerHTML =
-      '<div class="view-header"><div class="view-title-block"><h2>ИСТОРИЯ НАКАЗАНИЙ</h2><p>Выдача и снятие ограничений. Переписка по обращениям остаётся в их делах.</p></div></div><div data-history-content>Загрузка истории…</div>';
+      '<div class="view-header"><div class="view-title-block"><h2>ИСТОРИЯ НАКАЗАНИЙ</h2><p>Выдача и снятие ограничений. Переписка по обращениям остаётся в их делах.</p></div></div><label class="history-search">Поиск<input type="search" data-history-search data-search placeholder="Игрок, причина или сотрудник"></label><div data-history-content id="restriction-history">Загрузка истории…</div>';
     try {
       const [historyData, bans] = await Promise.all([
         api("GET", "/api/moderation/history"),
@@ -333,9 +334,22 @@ export async function renderSeparatedPenalties(area, history = false) {
           at: item.createdAt,
         })),
       ].sort((a, b) => b.at - a.at);
-      host.querySelector("[data-history-content]").innerHTML = rows.length
-        ? `<div class="table-wrap"><table><thead><tr><th>Игрок</th><th>Действие</th><th>Причина</th><th>Сотрудник</th><th>Когда</th></tr></thead><tbody>${rows.map((row) => `<tr><td>${esc(row.name)}</td><td>${esc(row.action)}</td><td>${esc(row.reason)}</td><td>${esc(row.actor)}</td><td>${esc(fmtTime(row.at))}</td></tr>`).join("")}</tbody></table></div>`
-        : "<p>История пока пуста.</p>";
+      const historySearch = host.querySelector("[data-history-search]");
+      const drawHistory = () => {
+        const filteredRows = rows.filter((row) =>
+          [row.name, row.reason, row.actor, row.action].some((text) =>
+            String(text || "")
+              .toLocaleLowerCase("ru")
+              .includes(historySearch.value.trim().toLocaleLowerCase("ru")),
+          ),
+        );
+        host.querySelector("[data-history-content]").innerHTML =
+          filteredRows.length
+            ? `<div class="table-wrap"><table><thead><tr><th>Игрок</th><th>Действие</th><th>Причина</th><th>Сотрудник</th><th>Когда</th></tr></thead><tbody>${filteredRows.map((row) => `<tr><td>${esc(row.name)}</td><td>${esc(row.action)}</td><td>${esc(row.reason)}</td><td>${esc(row.actor)}</td><td>${esc(fmtTime(row.at))}</td></tr>`).join("")}</tbody></table></div>`
+            : "<p>Ничего не найдено. История пока пуста или нет совпадений.</p>";
+      };
+      historySearch.oninput = drawHistory;
+      drawHistory();
     } catch (error) {
       if (host.isConnected)
         host.querySelector("[data-history-content]").textContent =
@@ -343,9 +357,11 @@ export async function renderSeparatedPenalties(area, history = false) {
     }
     return;
   }
-  await renderRestrictions(host);
+  await renderRestrictions(host, {
+    kinds: memory === "pending" ? ["pending"] : ["mute", "freeze"],
+  });
   if (!host.isConnected) return;
-  host.querySelector(".view-header")?.after(penaltyTabs("limits"));
+  host.querySelector(".view-header")?.after(penaltyTabs(memory));
   area.querySelector("[data-penalty-tabs]")?.remove();
   const title = host.querySelector("h2");
   if (title) title.textContent = "Баны и ограничения";
@@ -358,11 +374,14 @@ function penaltyTabs(active) {
   const nav = document.createElement("nav");
   nav.className = "reference-penalty-tabs";
   nav.setAttribute("aria-label", "Виды наказаний");
-  nav.innerHTML = `<button type="button" class="secondary ${active === "limits" ? "active" : ""}" data-penalty="limits">Оформление, муты и проверки</button><button type="button" class="secondary ${active === "bans" ? "active" : ""}" data-penalty="bans">Окончательные баны</button>`;
-  nav.querySelector('[data-penalty="bans"]').hidden = !hasPerm("VIEW_BANS");
+  nav.innerHTML = `${hasPerm("VIEW_BANS") ? `<button type="button" class="secondary ${active === "bans" ? "active" : ""}" data-penalty="bans">Действующие баны</button>` : ""}${hasPerm("VIEW_BANS") || hasPerm("MANAGE_BANS") ? `<button type="button" class="secondary ${active === "pending" ? "active" : ""}" data-penalty="pending">На оформлении</button>` : ""}${hasPerm("MANAGE_MUTES") || hasPerm("FREEZE_PLAYERS") ? `<button type="button" class="secondary ${active === "limits" ? "active" : ""}" data-penalty="limits">Муты и заморозки</button>` : ""}<button type="button" class="secondary" data-penalty="history">История</button>`;
   nav.onclick = (event) => {
     const button = event.target.closest("[data-penalty]");
     if (button) {
+      if (button.dataset.penalty === "history") {
+        window.navigateTo("penalty-history");
+        return;
+      }
       state.separatedPenaltyView = button.dataset.penalty;
       window.navigateTo("restrictions");
     }

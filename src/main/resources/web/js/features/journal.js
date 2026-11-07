@@ -4,10 +4,10 @@ import { api, esc, fmtTime, hasPerm, openModal, renderSvgIcon } from "./ui.js";
 // 2. ЖУРНАЛ (ПОЛНЫЙ ЛОГ, ФИЛЬТРЫ, ДЕТАЛИ, ЭКСПОРТ)
 // ==========================================================================
 
-export async function renderJournalView() {
+export async function renderJournalView(mode = "server") {
   const area = document.getElementById("content-area");
   const canViewWebLogs = hasPerm("VIEW_WEB_LOGS");
-  let primaryMode = canViewWebLogs ? "web" : "server"; // 'web' or 'server'
+  let primaryMode = mode === "web" && canViewWebLogs ? "web" : "server"; // 'web' or 'server'
   let webSubfilter = "ALL"; // ALL, AUTH, PUNISHMENTS, REPORTS, ROLES
   let serverSubfilter = "ALL"; // ALL, COMMANDS, GAME, WARNINGS
   let filterStaff = "";
@@ -247,7 +247,25 @@ export async function renderJournalView() {
       typeClass: "cyan",
     };
   };
-  const loadLogs = async () => {
+  let loadVersion = 0,
+    pendingLogs = null;
+  const newEvents = document.createElement("button");
+  newEvents.type = "button";
+  newEvents.className = "secondary journal-new-events";
+  newEvents.hidden = true;
+  area.querySelector(".view-header").append(newEvents);
+  newEvents.onclick = () => {
+    if (!pendingLogs) return;
+    cachedWebLogs = pendingLogs.web;
+    cachedServerLogs = pendingLogs.server;
+    pendingLogs = null;
+    newEvents.hidden = true;
+    renderTableRows();
+  };
+  const loadLogs = async (background = false) => {
+    const version = ++loadVersion;
+    let nextWeb = cachedWebLogs,
+      nextServer = cachedServerLogs;
     const body = document.getElementById("journal-table-body");
     try {
       if (primaryMode === "web") {
@@ -266,7 +284,7 @@ export async function renderJournalView() {
           queryUrl += `&to=${toSec}`;
         }
         const rawLogs = await api("GET", queryUrl).catch(() => []);
-        cachedWebLogs = rawLogs
+        nextWeb = rawLogs
           .filter((l) => {
             const act = (l.action || "").toLowerCase();
             if (act.includes("открыл раздел") || act.includes("открыл вкладку"))
@@ -286,7 +304,7 @@ export async function renderJournalView() {
               raw: l,
             };
           });
-        cachedWebLogs = applySort(cachedWebLogs);
+        nextWeb = applySort(nextWeb);
       } else {
         const [sLogs, cmdLogs] = await Promise.all([
           api("GET", "/api/logs/server?limit=200").catch(() => []),
@@ -332,7 +350,11 @@ export async function renderJournalView() {
             typeClass = "cyan";
           }
           list.push({
-            id: "srv_" + (s.id != null ? s.id : Math.random()),
+            id:
+              "srv_" +
+              (s.id != null
+                ? s.id
+                : String(c.timestamp) + ":" + String(c.command)),
             time: normalizeLogTime(s.timestamp),
             actor: s.logger || s.actor || "Сервер",
             action: msg,
@@ -347,7 +369,11 @@ export async function renderJournalView() {
         cmdArr.forEach((c) => {
           const cmd = c.command != null ? String(c.command) : c.action || "";
           list.push({
-            id: "cmd_" + (c.id != null ? c.id : Math.random()),
+            id:
+              "cmd_" +
+              (c.id != null
+                ? c.id
+                : String(c.timestamp) + ":" + String(c.command)),
             time: normalizeLogTime(c.timestamp),
             actor: c.adminUsername || c.actor || "Персонал",
             action: cmd ? (cmd.startsWith("/") ? cmd : "/" + cmd) : "",
@@ -356,11 +382,38 @@ export async function renderJournalView() {
             raw: c,
           });
         });
-        cachedServerLogs = applySort(list);
+        nextServer = applySort(list);
       }
+      if (version !== loadVersion || !body?.isConnected) return;
+      if (background) {
+        const before = JSON.stringify(
+            primaryMode === "web" ? cachedWebLogs : cachedServerLogs,
+          ),
+          after = JSON.stringify(primaryMode === "web" ? nextWeb : nextServer);
+        if (before !== after) {
+          pendingLogs = { web: nextWeb, server: nextServer };
+          newEvents.hidden = false;
+          const oldIds = new Set(
+            (primaryMode === "web" ? cachedWebLogs : cachedServerLogs).map(
+              (row) => row.id,
+            ),
+          );
+          const count = (primaryMode === "web" ? nextWeb : nextServer).filter(
+            (row) => !oldIds.has(row.id),
+          ).length;
+          newEvents.textContent = count
+            ? `Новых событий: ${count} — показать`
+            : "События обновились — показать";
+        }
+        return;
+      }
+      cachedWebLogs = nextWeb;
+      cachedServerLogs = nextServer;
+      pendingLogs = null;
+      newEvents.hidden = true;
       renderTableRows();
     } catch (e) {
-      if (body)
+      if (body?.isConnected && version === loadVersion && !background)
         body.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--red); padding:24px;">Ошибка загрузки журнала: ${esc(e.message)}</td></tr>`;
     }
   };
@@ -553,11 +606,16 @@ export async function renderJournalView() {
       renderTableRows();
     });
   renderSubfilters();
+  area.querySelector(".segmented-nav-tabs").hidden = true;
+  area.querySelector("h2").textContent =
+    primaryMode === "web" ? "ВЕБ-ЖУРНАЛ" : "ИГРОВОЙ ЖУРНАЛ";
   renderTableHead();
   await loadLogs();
 
   // Auto-refresh without manual button
-  state.pollers["journal_auto_refresh"] = setInterval(loadLogs, 10000);
+  state.pollers["journal_auto_refresh"] = setInterval(() => {
+    if (!document.hidden) loadLogs(true);
+  }, 10000);
 }
 
 // ==========================================================================

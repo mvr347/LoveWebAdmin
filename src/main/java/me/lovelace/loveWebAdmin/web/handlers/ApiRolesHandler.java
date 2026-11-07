@@ -4,6 +4,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import me.lovelace.loveWebAdmin.LoveWebAdmin;
 import me.lovelace.loveWebAdmin.managers.RoleManager;
+import me.lovelace.loveWebAdmin.managers.RolePermissionPolicy;
 import me.lovelace.loveWebAdmin.models.Permission;
 import me.lovelace.loveWebAdmin.models.WebRole;
 import me.lovelace.loveWebAdmin.models.WebSession;
@@ -27,6 +28,16 @@ public class ApiRolesHandler extends ApiHandlerSupport {
 
     public ApiRolesHandler(LoveWebAdmin plugin) {
         super(plugin);
+    }
+
+    private boolean allowed(HttpServletRequest req,HttpServletResponse resp,WebSession session,Set<Permission> requested,WebRole existing) throws IOException {
+      if(RolePermissionPolicy.owner(plugin,session.adminUsername()))return true;
+      if(existing!=null&&(existing.id()==plugin.getDatabaseManager().getAdminById(session.adminId()).map(a->a.roleId()).orElse(-1)
+          ||existing.isOwner()||existing.permissions().stream().anyMatch(p->!hasPermission(session,p)))) {
+        sendError(resp,403,"Нельзя изменять собственную роль или роль с правами выше ваших");return false;
+      }
+      if(requested.stream().anyMatch(p->!hasPermission(session,p))){sendError(resp,403,"Можно выдавать только собственные права");return false;}
+      return true;
     }
 
     @Override
@@ -58,7 +69,7 @@ public class ApiRolesHandler extends ApiHandlerSupport {
         }
         String lpGroup = stringOrNull(body.get("lpGroup"));
         String color = stringOrNull(body.get("color"));
-        Set<Permission> permissions = parsePermissions(body.get("permissions"));
+        Set<Permission> permissions = RolePermissionPolicy.withNewDependencies(parsePermissions(body.get("permissions")), Set.of());
 
         if (name == null || name.isBlank()) {
             sendError(resp, 400, "Не указано название роли");
@@ -69,6 +80,8 @@ public class ApiRolesHandler extends ApiHandlerSupport {
             return;
         }
 
+        if(!RolePermissionPolicy.owner(plugin,sessionOpt.get().adminUsername()) && lpGroup!=null && !lpGroup.isBlank()){sendError(resp,403,"Привязку внешней группы меняет Управляющий");return;}
+        if (!allowed(req,resp,sessionOpt.get(),permissions,null)) return;
         WebRole role = plugin.getRoleManager().createRole(name, description, category, sortOrder, lpGroup, permissions, color);
         plugin.getLogManager().logWebAction(sessionOpt.get().adminUsername(), "Создал роль " + name);
         sendSuccess(resp, toRoleMap(role));
@@ -99,16 +112,18 @@ public class ApiRolesHandler extends ApiHandlerSupport {
         String name = stringOrNull(body.get("name"));
         String description = stringOrNull(body.get("description"));
         String category = stringOrNull(body.get("category"));
-        int sortOrder = 0;
+        int sortOrder = existing.get().sortOrder();
         if (body.get("sortOrder") != null) {
             try {
                 sortOrder = (int) Double.parseDouble(String.valueOf(body.get("sortOrder")));
             } catch (Exception ignored) {}
         }
-        String lpGroup = stringOrNull(body.get("lpGroup"));
+        String lpGroup = body.containsKey("lpGroup") ? stringOrNull(body.get("lpGroup")) : existing.get().lpGroup();
         String color = stringOrNull(body.get("color"));
-        Set<Permission> permissions = parsePermissions(body.get("permissions"));
+        Set<Permission> permissions = RolePermissionPolicy.withNewDependencies(body.containsKey("permissions") ? parsePermissions(body.get("permissions")) : existing.get().permissions(), existing.get().permissions());
 
+        if(!RolePermissionPolicy.owner(plugin,sessionOpt.get().adminUsername()) && !java.util.Objects.equals(lpGroup,existing.get().lpGroup())){sendError(resp,403,"Привязку внешней группы меняет Управляющий");return;}
+        if (!allowed(req,resp,sessionOpt.get(),permissions,existing.get())) return;
         boolean ok = plugin.getRoleManager().updateRole(roleId, name, description, category, sortOrder, lpGroup, permissions, color);
         if (!ok) {
             sendError(resp, 400, "Не удалось обновить роль (возможно, такое имя уже занято)");
@@ -130,6 +145,7 @@ public class ApiRolesHandler extends ApiHandlerSupport {
         }
 
         Optional<WebRole> existing = plugin.getDatabaseManager().getRoleById(roleId);
+        if(existing.isPresent()&&!allowed(req,resp,sessionOpt.get(),existing.get().permissions(),existing.get()))return;
         RoleManager.DeleteResult result = plugin.getRoleManager().deleteRole(roleId);
         switch (result) {
             case OK -> {
@@ -158,13 +174,14 @@ public class ApiRolesHandler extends ApiHandlerSupport {
     }
 
     private Set<Permission> parsePermissions(Object raw) {
+        if(raw!=null && !(raw instanceof List<?>))throw new IllegalArgumentException("Права должны быть списком");
         Set<Permission> result = new LinkedHashSet<>();
         if (raw instanceof List<?> list) {
             for (Object item : list) {
                 try {
                     result.add(Permission.valueOf(String.valueOf(item)));
-                } catch (IllegalArgumentException ignored) {
-                    // неизвестное право - игнорируем
+                } catch (IllegalArgumentException invalid) {
+                    throw new IllegalArgumentException("Неизвестное право доступа: " + item);
                 }
             }
         }

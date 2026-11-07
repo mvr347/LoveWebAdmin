@@ -173,7 +173,7 @@ class SupportApiTest {
                       case "isCommitted" -> false;
                       default -> null;
                     });
-    invoke(handler, method.equals("GET") ? "doGet" : "doPost", req, resp);
+    invoke(handler, switch(method){case "GET"->"doGet";case "PUT"->"doPut";case "DELETE"->"doDelete";default->"doPost";}, req, resp);
     return result;
   }
 

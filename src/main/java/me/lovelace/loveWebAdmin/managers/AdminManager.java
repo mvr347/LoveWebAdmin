@@ -375,7 +375,7 @@ public class AdminManager {
     Optional<WebAdmin> targetOpt = plugin.getDatabaseManager().getAdminById(targetId);
     if (targetOpt.isEmpty()) return false;
     Optional<WebRole> roleOpt = plugin.getDatabaseManager().getRoleById(roleId);
-    if (roleOpt.isEmpty()) return false;
+    if (roleOpt.isEmpty() || !RolePermissionPolicy.canDelegate(plugin,actorUsername,roleOpt.get())) return false;
 
     boolean ok = plugin.getDatabaseManager().approveAdmin(targetId, roleId);
     if (ok) {
@@ -417,7 +417,7 @@ public class AdminManager {
       return AddResult.ALREADY_EXISTS;
     }
     Optional<WebRole> roleOpt = plugin.getDatabaseManager().getRoleById(roleId);
-    if (roleOpt.isEmpty()) return AddResult.ROLE_NOT_FOUND;
+    if (roleOpt.isEmpty() || !RolePermissionPolicy.canDelegate(plugin,actorUsername,roleOpt.get())) return AddResult.ROLE_NOT_FOUND;
 
     long now = System.currentTimeMillis() / 1000L;
     WebAdmin admin =
@@ -488,7 +488,8 @@ public class AdminManager {
     Optional<WebAdmin> targetOpt = plugin.getDatabaseManager().getAdminById(targetId);
     if (targetOpt.isEmpty()) return false;
     Optional<WebRole> newRoleOpt = plugin.getDatabaseManager().getRoleById(newRoleId);
-    if (newRoleOpt.isEmpty()) return false;
+    if (newRoleOpt.isEmpty() || !RolePermissionPolicy.canDelegate(plugin,actorUsername,newRoleOpt.get())) return false;
+    if (!RolePermissionPolicy.owner(plugin,actorUsername) && (targetOpt.get().username().equalsIgnoreCase(actorUsername) || !plugin.getDatabaseManager().getRoleById(targetOpt.get().roleId()).map(r->RolePermissionPolicy.canDelegate(plugin,actorUsername,r)).orElse(false))) return false;
 
     String oldRoleName =
         plugin

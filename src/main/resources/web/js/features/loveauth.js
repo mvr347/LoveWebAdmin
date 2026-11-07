@@ -15,9 +15,9 @@ import {
 // 6. АУТЕНТИФИКАЦИЯ (СЕССИИ, ИСТОРИЯ ВХОДОВ, LOVEAUTH)
 // ==========================================================================
 
-export async function renderAuthView() {
+export async function renderAuthView(mode = "web") {
   const area = document.getElementById("content-area");
-  let currentAuthTab = "web";
+  let currentAuthTab = mode === "game" ? "loveauth" : "web";
   let inspectedPlayer = null;
   area.innerHTML = `
             <div class="view-header">
@@ -46,6 +46,9 @@ export async function renderAuthView() {
             </div>
         `;
 
+  area.querySelector("#auth-subtabs").hidden = true;
+  area.querySelector("h2").textContent =
+    mode === "game" ? "БЕЗОПАСНОСТЬ АККАУНТОВ" : "АВТОРИЗАЦИЯ ПАНЕЛИ";
   // Switcher Logic
   const renderCurrentSubTab = async () => {
     const container = document.getElementById("auth-tab-content");
@@ -208,7 +211,7 @@ export async function renderAuthView() {
                 <div class="loveauth-card" style="margin-bottom:20px;">
                     <h3 style="font-size:14px; margin-bottom:10px; color:var(--text-main);">АККАУНТ ИГРОКА</h3>
                     <div style="display:flex; gap:10px; margin-bottom:14px;">
-                        <input type="text" id="loveauth-search-input" placeholder="Введите точный ник игрока..." style="flex:1;">
+                        <input type="text" id="loveauth-search-input" placeholder="Начните вводить ник игрока…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="account-suggestions" style="flex:1;">
                         <button type="button" class="primary" id="btn-loveauth-search">НАЙТИ АККАУНТ</button>
                     </div>
 
@@ -243,6 +246,90 @@ export async function renderAuthView() {
             `;
     const searchBtn = document.getElementById("btn-loveauth-search");
     const searchInput = document.getElementById("loveauth-search-input");
+    const suggestions = document.createElement("div");
+    suggestions.id = "account-suggestions";
+    suggestions.className = "account-suggestions";
+    suggestions.role = "listbox";
+    suggestions.hidden = true;
+    searchInput?.parentElement.after(suggestions);
+    let searchVersion = 0,
+      timer = null,
+      selected = -1;
+    const dismiss = () => {
+      searchVersion++;
+      clearTimeout(timer);
+      suggestions.hidden = true;
+      searchInput?.setAttribute("aria-expanded", "false");
+    };
+    searchInput?.addEventListener("input", () => {
+      const version = ++searchVersion;
+      clearTimeout(timer);
+      const q = searchInput.value.trim();
+      suggestions.hidden = true;
+      selected = -1;
+      if (!q) return;
+      timer = setTimeout(async () => {
+        if (version !== searchVersion || !searchInput.isConnected) return;
+        try {
+          const entries = await api(
+            "GET",
+            `/api/players/search?q=${encodeURIComponent(q)}&limit=8`,
+          );
+          if (version !== searchVersion || !searchInput.isConnected) return;
+          suggestions.replaceChildren();
+          for (const entry of entries) {
+            const option = document.createElement("button");
+            option.type = "button";
+            option.role = "option";
+            option.textContent = entry.name;
+            option.onclick = () => {
+              searchInput.value = entry.name;
+              dismiss();
+              window.inspectLoveAuthPlayer(entry.name);
+            };
+            suggestions.append(option);
+          }
+          suggestions.hidden = !entries.length;
+          searchInput.setAttribute("aria-expanded", String(!!entries.length));
+        } catch {
+          if (version === searchVersion) dismiss();
+        }
+      }, 220);
+    });
+    searchInput?.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        dismiss();
+        return;
+      }
+      const options = [...suggestions.querySelectorAll("button")];
+      if (
+        !suggestions.hidden &&
+        options.length &&
+        ["ArrowDown", "ArrowUp", "Enter"].includes(event.key)
+      ) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        if (event.key === "Enter") {
+          if (selected >= 0) options[selected].click();
+          return;
+        }
+        selected =
+          (selected + (event.key === "ArrowDown" ? 1 : -1) + options.length) %
+          options.length;
+        options.forEach((option, i) =>
+          option.setAttribute("aria-selected", String(i === selected)),
+        );
+        searchInput.setAttribute(
+          "aria-activedescendant",
+          (options[selected].id ||= "account-option-" + selected),
+        );
+      }
+    });
+    searchInput?.addEventListener("blur", () =>
+      setTimeout(() => {
+        if (!suggestions.contains(document.activeElement)) dismiss();
+      }, 100),
+    );
     const doSearch = () => {
       const name = searchInput?.value.trim();
       if (name) window.inspectLoveAuthPlayer(name);

@@ -1,3 +1,5 @@
+import {esc,hasPerm} from "../core/access.js";
+export {esc,hasPerm};
 import { showReportPicker } from "../core/report-picker.js";
 import { openModalLayer, closeModalLayer, closeAllModalLayers, installModalKeys } from "../core/modal-stack.js";
 import { installCaseDialogs } from "../core/case-dialog.js";
@@ -65,11 +67,6 @@ export function renderSvgIcon(name, colorType = "gray", size = 16) {
 }
 
 // ---------- Helpers ----------
-export function esc(s) {
-  return String(s ?? "").replace(/[&<>"']/g, char => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-  })[char]);
-}
 export function fmtTime(ts) {
   if (!ts || ts <= 0) return "Никогда";
   return new Date(ts * 1000).toLocaleString("ru-RU");
@@ -113,11 +110,6 @@ export function isModeratorRole() {
   if (state.me.isOwner) return false;
   const role = (state.me.role || "").toLowerCase();
   return role.includes("модератор") || role.includes("mod");
-}
-export function hasPerm(perm) {
-  if (!state.me) return false;
-  if (state.me.isOwner) return true;
-  return Boolean(state.me.permissions && state.me.permissions.includes(perm));
 }
 export function isSectionVisible(section) {
   if (!state.me) return false;

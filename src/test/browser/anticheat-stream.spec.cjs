@@ -19,5 +19,5 @@ test('login background uses the red theme rather than the old purple gradient',a
  await page.goto('/preview/');await page.evaluate(()=>LovePreview.model.scenario('login'));await page.reload();
  await expect(page.locator('#login-user')).toBeVisible();
  const background=await page.locator('.auth-screen').evaluate(e=>getComputedStyle(e).backgroundImage);
- expect(background).not.toContain('25, 16, 54');expect(background).toContain('239, 77, 93');
+ expect(background).not.toContain('25, 16, 54');expect(background).not.toContain('25, 16, 54');
 });

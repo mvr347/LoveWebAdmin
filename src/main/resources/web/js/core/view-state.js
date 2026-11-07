@@ -1,3 +1,4 @@
+import {state} from "../state.js";
 /** View state belongs to the current account and mode, never to a global role name. */
 const prefix = "lwa-view:v2:";
 let current = null,
@@ -31,8 +32,10 @@ function fields() {
       !el.matches("[type=password],[type=file]"),
   );
 }
+function rememberFilters(){try{const prefs=typeof state.me?.uiPreferences==='string'?JSON.parse(state.me.uiPreferences):state.me?.uiPreferences;return prefs?.rememberFilters!==false;}catch{return true;}}
 export function captureView() {
   if (!current || restoring) return;
+  if(!rememberFilters()){try{sessionStorage.removeItem(key(current));}catch{}return;}
   try {
     const previous = JSON.parse(sessionStorage.getItem(key(current)) || "{}");
     previous.scroll = document.scrollingElement.scrollTop;
@@ -47,6 +50,7 @@ export function captureView() {
 }
 export async function restoreView(section) {
   current = section;
+  if(!rememberFilters()){try{sessionStorage.removeItem(key(section));}catch{}return;}
   let snapshot;
   try {
     snapshot = JSON.parse(sessionStorage.getItem(key(section)) || "null");

@@ -41,7 +41,7 @@ export async function renderServerView(initialTab = "players") {
 
             <!-- Sub Tabs -->
             <div style="background:var(--card-bg); border:1px solid var(--border); border-radius:var(--radius-md); padding:10px 16px; margin-bottom:18px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
-                <div class="filter-tags" id="server-sub-tabs">
+                <div class="panel-tabs" id="server-sub-tabs">
                     ${tabs.map(([id, label]) => `<button type="button" class="filter-tag-btn ${id === subTab ? "active" : ""}" data-sub="${id}">${label}</button>`).join("")}
                 </div>
             </div>
@@ -64,13 +64,13 @@ export async function renderServerView(initialTab = "players") {
   // Server auto-refresh
   state.pollers["server_auto_refresh"] = setInterval(() => {
     if (subTab === "players") {
-      const srvSearch = document.getElementById("srv-player-search");
-      if (srvSearch && !srvSearch.value.trim()) mountSubTab();
+      if(!document.hidden)document.getElementById("server-tab-container")?.refreshPlayers?.();
     }
   }, 8000);
   const mountSubTab = () => {
     const container = document.getElementById("server-tab-container");
     if (!container) return;
+    delete container.refreshPlayers;
     clearInterval(state.pollers.console_logs_poller);
     delete state.pollers.console_logs_poller;
     if (subTab === "players") renderServerPlayersTab(container);
@@ -111,7 +111,9 @@ export async function renderServerPlayersTab(container) {
                 </table>
             </div>
         `;
+  let loadVersion=0;
   const loadList = async () => {
+    const version=++loadVersion;
     const tbody = document.getElementById("srv-players-tbody");
     const q = (
       document.getElementById("srv-player-search")?.value || ""
@@ -139,6 +141,8 @@ export async function renderServerPlayersTab(container) {
           `/api/players/search?q=${encodeURIComponent(q)}`,
         );
       }
+      if(!tbody?.isConnected||version!==loadVersion)return;
+      if(onlyOnline&&q)playerList=playerList.filter(player=>player.name.toLowerCase().includes(q.toLowerCase()));
       if (!playerList.length) {
         tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--text-dim); padding:24px;">Игроки не найдены</td></tr>`;
         return;
@@ -171,7 +175,7 @@ export async function renderServerPlayersTab(container) {
         })
         .join("");
     } catch (e) {
-      tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--red); padding:20px;">Ошибка загрузки списка</td></tr>`;
+      if(tbody?.isConnected&&version===loadVersion)tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--red); padding:20px;">Ошибка загрузки списка</td></tr>`;
     }
   };
   document
@@ -180,6 +184,7 @@ export async function renderServerPlayersTab(container) {
   document
     .getElementById("srv-player-status-filter")
     ?.addEventListener("change", loadList);
+  container.refreshPlayers=loadList;
   await loadList();
 }
 

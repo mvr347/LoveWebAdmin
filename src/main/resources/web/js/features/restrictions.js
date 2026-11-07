@@ -16,7 +16,7 @@ const date = (seconds) =>
   Number(seconds) > 0
     ? new Date(Number(seconds) * 1000).toLocaleString("ru-RU")
     : "—";
-export async function renderRestrictions(container) {
+export async function renderRestrictions(container, options={}) {
   if (!permissions.some(hasPerm)) {
     container.innerHTML =
       '<p class="settings-intro">Нет права просмотра ограничений.</p>';
@@ -44,7 +44,7 @@ export async function renderRestrictions(container) {
       "История",
       hasPerm("MANAGE_MUTES") || hasPerm("FREEZE_PLAYERS"),
     ],
-  ].filter((t) => t[2]);
+  ].filter((t) => t[2] && (!options.kinds || options.kinds.includes(t[0])));
   let selected = tabs[0]?.[0] || "pending",
     page = 0,
     activeSort = "deadline",
@@ -227,7 +227,7 @@ export async function renderRestrictions(container) {
     ["mute", "Мут", "MANAGE_MUTES"],
     ["freeze", "Проверка", "FREEZE_PLAYERS"],
   ]) {
-    if (!hasPerm(permission)) continue;
+    if (!hasPerm(permission) || (options.kinds && !options.kinds.includes(action === "ban" ? "pending" : action))) continue;
     const button = document.createElement("button");
     button.type = "button";
     button.className = "secondary";

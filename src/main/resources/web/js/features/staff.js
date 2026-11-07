@@ -1,3 +1,4 @@
+import {permissionEditor} from "../core/permission-editor.js";
 import { bindValidation } from "../core/form-validation.js";
 import { noticeDialog } from "../core/dialogs.js";
 import { state } from "../state.js";
@@ -884,22 +885,7 @@ export async function renderStaffView() {
   };
 
   // Helper to render permissions checkboxes
-  const renderPermCheckboxes = (activePerms = []) => {
-    return state.ALL_PERMISSIONS.map((p) => {
-      const has = activePerms.includes(p);
-      const desc = state.PERMISSION_LABELS[p] || p;
-      const displayName = state.PERMISSION_NAMES[p] || p;
-      return `
-                    <label style="display:flex; align-items:flex-start; gap:10px; padding:10px 12px; background:var(--card-bg); border:1px solid var(--border); border-radius:5px; cursor:pointer;" title="${esc(desc)}">
-                        <input type="checkbox" class="role-perm-cb" value="${p}" ${has ? "checked" : ""} style="width:16px; height:16px; accent-color:var(--accent); margin-top:2px;">
-                        <div>
-                            <div style="font-size:12.5px; font-weight:700; color:var(--text-heading);">${esc(displayName)}</div>
-                            <div style="font-size:11.5px; color:var(--text-muted); line-height:1.35; margin-top:3px;">${esc(desc)}</div>
-                        </div>
-                    </label>
-                `;
-    }).join("");
-  };
+  const renderPermCheckboxes = permissionEditor;
 
   // Modal: Create Role
   function openCreateRoleModal() {
@@ -1111,7 +1097,7 @@ export async function renderStaffView() {
                 name,
                 description,
                 category,
-                lpGroup: "",
+                lpGroup: role.lpGroup ?? null,
                 color,
                 permissions,
               });

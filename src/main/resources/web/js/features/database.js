@@ -23,7 +23,7 @@ export async function renderDatabaseView() {
                 <button type="button" class="filter-tag-btn active" role="tab" aria-selected="true" data-db-view="unique">Уникальные игроки</button>
                 <button type="button" class="filter-tag-btn" role="tab" aria-selected="false" data-db-view="general">Общая статистика сервера</button>
             </div>
-            <section id="db-general-view" hidden><button type="button" class="secondary" id="db-refresh-general">Обновить общую статистику</button><div id="db-general-content"></div></section>
+            <section id="db-general-view" hidden><div id="db-general-content"></div></section>
             <section id="db-unique-view">
             <!-- Period Filter Toolbar with Percentage Trend Badges -->
             <div class="period-filter-toolbar">
@@ -119,7 +119,7 @@ export async function renderDatabaseView() {
     area.querySelector("#db-general-view").hidden=mode!=="general";
     if(mode==="general"&&!generalLoaded){generalLoaded=true;renderServerStatistics(general);}
   });
-  area.querySelector("#db-refresh-general").onclick=()=>renderServerStatistics(general);
+
   function formatDeltaBadge(delta, prevLabel) {
     if (delta === null || delta === undefined || isNaN(delta)) {
       return `<span class="trend-badge neutral">Нет сравнения</span>`;

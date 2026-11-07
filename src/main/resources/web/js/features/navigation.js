@@ -160,9 +160,11 @@ export function renderAppLayout() {
             </div>
         `;
 
+  document.body.classList.toggle("compact-rows",!!userPrefs.compactRows);
+  document.body.classList.toggle("reduce-motion",!!userPrefs.reduceMotion);
   // Apply theme from preferences
   const savedTheme =
-    userPrefs.theme || state.browserStorage.getItem("wa_theme") || "dark";
+    state.browserStorage.getItem("wa_theme") || userPrefs.theme || document.documentElement.dataset.theme || "dark";
   applyUserTheme(savedTheme);
 
   // Theme button click
@@ -272,7 +274,7 @@ export function renderAppLayout() {
 
   // Navigate to initially selected section
   const route = new URLSearchParams(location.hash.slice(1));
-  const section = route.get("section");
+  const section = route.get("section") || userPrefs.startPage;
   const visible = state.SECTIONS.filter(isSectionVisible);
   if (section && visible.some((s) => s.id === section))
     state.activeNavSection = section;
@@ -387,7 +389,7 @@ export async function navigateTo(sectionId, recordHistory = true) {
       await renderDashboardView();
       break;
     case "journal":
-      await renderJournalView();
+      await renderJournalView("server");
       break;
     case "punishments":
       await renderSeparatedCases(area,"report");
@@ -413,6 +415,10 @@ export async function navigateTo(sectionId, recordHistory = true) {
     case "server":
       await renderServerView();
       break;
+    case "web-journal":
+      await renderJournalView("web");break;
+    case "game-auth":
+      await renderAuthView("game");break;
     case "auth":
       await renderAuthView();
       break;
