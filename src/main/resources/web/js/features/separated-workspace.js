@@ -128,6 +128,9 @@ export async function renderSeparatedCases(area, kind = "report") {
     );
     if (!visible.some((row) => row.id === memory.selected))
       memory.selected = visible[0]?.id || null;
+    host.classList.toggle("reference-cases-empty", !visible.length);
+    host.querySelector(".reference-case-preview").hidden = !visible.length;
+    host.querySelector(".reference-case-pager").hidden = !sourceSize && !memory.offset;
     list.innerHTML = visible.length
       ? visible
           .map(
@@ -135,7 +138,7 @@ export async function renderSeparatedCases(area, kind = "report") {
               `<button type="button" class="reference-list-item ${memory.selected === row.id ? "selected" : ""}" data-case-id="${row.id}" aria-pressed="${memory.selected === row.id}"><span class="reference-type-dot ${isClosed(row) ? "closed" : ""}"></span><span class="reference-item-content"><strong>${esc(row.name)} · ${esc(row.reason)}</strong><small>${esc(row.author)} · ${workFor(row).assignee ? "В работе: " + esc(workFor(row).assignee) : isClosed(row) ? "Закрыто" : "Новая запись"}</small></span><span class="reference-item-time">№${row.id}</span></button>`,
           )
           .join("")
-      : `<div class="reference-empty">${memory.query ? "Ничего не найдено. Измени поиск." : "В этой категории обращений пока нет."}</div>`;
+      : `<div class="reference-empty reference-empty-state"><span class="ui-eyebrow">${esc(definition.title)}</span><h3>${memory.query ? "Ничего не найдено" : memory.filter === "working" ? "Нет обращений в работе" : "Обращений пока нет"}</h3><p>${memory.query ? "Попробуйте другой ник или сократите поисковый запрос." : memory.filter === "working" ? "Здесь появятся обращения, которые сотрудник взял в работу." : kind === "appeal" ? "Когда игрок подаст апелляцию, она появится в этом списке." : kind === "support" ? "Здесь появятся вопросы, отправленные игроками через бота." : "Когда игрок отправит жалобу, она появится здесь."}</p></div>`;
     host.querySelector(".reference-case-pager").innerHTML =
       `<span>${filteredRows.length ? memory.page * pageSize + 1 : 0}–${Math.min((memory.page + 1) * pageSize, filteredRows.length)} из ${filteredRows.length}</span><div><button type="button" class="secondary btn-sm" data-page="-1" ${memory.page === 0 ? "disabled" : ""}>Назад</button><button type="button" class="secondary btn-sm" data-page="1" ${(memory.page + 1) * pageSize >= filteredRows.length ? "disabled" : ""}>Вперёд</button></div><div class="reference-source-pages"><span>Поиск и фильтр в текущих ${sourceSize} записях</span><button type="button" class="secondary btn-sm" data-batch="-1" ${!memory.offset ? "disabled" : ""}>Более новые</button><button type="button" class="secondary btn-sm" data-batch="1" ${sourceSize < batchSize ? "disabled" : ""}>Более ранние</button></div>`;
   }
@@ -192,7 +195,7 @@ export async function renderSeparatedCases(area, kind = "report") {
         );
     } catch (error) {
       if (alive() && request === selectedGeneration)
-        preview.innerHTML = `<p class="error">${esc(error.message)}</p>`;
+        preview.innerHTML = `<p class="reference-error" role="alert">${esc(error.message)}</p>`;
     }
   }
   async function load() {

@@ -190,7 +190,7 @@ export async function renderStaffView() {
                                         ? roleObj.name
                                         : `Роль #${inv.roleId}`);
                                     const roleColor =
-                                      (roleObj && roleObj.color) || "#6366f1";
+                                      (roleObj && roleObj.color) || "#ef4d5d";
                                     const expiry = inv.expiresAt
                                       ? fmtTime(inv.expiresAt)
                                       : "7 дней";
@@ -276,11 +276,11 @@ export async function renderStaffView() {
                                   (r) => r.id === a.roleId,
                                 ) || {
                                   name: "Неизвестно",
-                                  color: "#6366f1",
+                                  color: "#ef4d5d",
                                 };
                                 const roleColor =
                                   roleObj.color ||
-                                  (roleObj.isOwner ? "#a855f7" : "#6366f1");
+                                  "#ef4d5d";
                                 const hasTotp = a.totpEnabled;
                                 const isSelf =
                                   state.me &&
@@ -406,9 +406,7 @@ export async function renderStaffView() {
                                           .map((r) => {
                                             const rCol =
                                               r.color ||
-                                              (r.isOwner
-                                                ? "#a855f7"
-                                                : "#ef4d5d");
+                                              "#ef4d5d";
                                             const assignedAdmins =
                                               admins.filter(
                                                 (a) => a.roleId === r.id,
