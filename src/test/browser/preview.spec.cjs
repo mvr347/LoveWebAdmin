@@ -214,7 +214,7 @@ test("late dashboard responses cannot replace a newer section", async ({
   });
   await page.locator('[data-nav="dashboard"]').click();
   await page.locator('[data-nav="staff"]').click();
-  await expect(page.locator("#topbar-page-title")).toContainText("Персонал");
+  await expect(page.locator("#topbar-page-title")).toContainText("Сотрудники и роли");
   await page.waitForTimeout(650);
   await expect(page.locator("#content-area")).not.toContainText(
     "Открыт другой раздел",

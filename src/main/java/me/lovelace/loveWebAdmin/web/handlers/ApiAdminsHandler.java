@@ -125,6 +125,7 @@ public class ApiAdminsHandler extends ApiHandlerSupport {
 
         int roleId = (int) Double.parseDouble(String.valueOf(roleIdObj));
         Optional<me.lovelace.loveWebAdmin.models.WebRole> roleOpt = plugin.getDatabaseManager().getRoleById(roleId);
+        if(roleOpt.isPresent()&&!me.lovelace.loveWebAdmin.managers.RolePermissionPolicy.canDelegate(plugin,session.adminUsername(),roleOpt.get())){sendError(resp,403,"Нельзя выдать роль с правами выше ваших");return;}
         if (roleOpt.isEmpty()) {
             sendError(resp, 400, "Указанная роль не найдена");
             return;

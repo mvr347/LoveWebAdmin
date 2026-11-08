@@ -16,6 +16,7 @@ import {
 
 export function applyUserTheme(theme) {
   const isLight = theme === "light";
+  document.documentElement.dataset.theme = isLight ? "light" : "dark";
   document.body.classList.toggle("theme-light", isLight);
   const icon = document.getElementById("theme-btn-icon");
   if (icon)
@@ -24,7 +25,9 @@ export function applyUserTheme(theme) {
       isLight ? "yellow" : "violet",
       15,
     );
-  state.browserStorage.setItem("wa_theme", theme);
+  try {
+    state.browserStorage.setItem("wa_theme", theme);
+  } catch {}
 }
 
 // ==========================================================================
@@ -39,7 +42,7 @@ export async function updateNotificationsBadge() {
     const res = await api("GET", "/api/notifications/unread-count");
     const badge = document.getElementById("topbar-notif-badge");
     if (badge) {
-      const count = res.unreadCount || 0;
+      const count = res.unreadCount ?? res.count ?? 0;
       badge.textContent = count > 99 ? "99+" : count;
       badge.style.display = count > 0 ? "inline-flex" : "none";
     }
@@ -56,7 +59,7 @@ export async function openNotificationsModal() {
                     <button type="button" class="close-btn" data-modal-close="true">${renderSvgIcon("close", "gray", 16)}</button>
                 </div>
             </div>
-            <div class="modal-body" id="notifs-modal-body" style="max-height:65vh; overflow-y:auto;">
+            <nav class="panel-tabs" aria-label="Фильтр уведомлений"><button type="button" class="secondary active" data-notification-filter="new">Новые</button><button type="button" class="secondary" data-notification-filter="all">Все</button></nav><div class="modal-body" id="notifs-modal-body" style="max-height:65vh; overflow-y:auto;">
                 <div style="text-align:center; padding:24px; color:var(--text-muted);">Загрузка уведомлений...</div>
             </div>
             <div class="modal-footer">
@@ -65,10 +68,30 @@ export async function openNotificationsModal() {
         `,
     async () => {
       const body = document.getElementById("notifs-modal-body");
+      let filter = "new";
+      const groups = new Map(),
+        busy = new Set();
       const loadList = async () => {
         try {
           const data = await api("GET", "/api/notifications?limit=50");
-          const list = data.notifications || [];
+          if (!body.isConnected) return;
+          groups.clear();
+          const merged = new Map();
+          for (const item of data.notifications || []) {
+            if (filter === "new" && item.read) continue;
+            const key = JSON.stringify([
+              item.type,
+              item.title,
+              item.message,
+              item.sender,
+              item.read,
+            ]);
+            if (!merged.has(key)) merged.set(key, { ...item, ids: [] });
+            merged.get(key).ids.push(item.id);
+          }
+          const list = [...merged.values()];
+          for (const item of list) groups.set(item.id, item.ids);
+
           if (!list.length) {
             body.innerHTML = `
                             <div style="text-align:center; padding:32px; color:var(--text-dim);">
@@ -97,7 +120,7 @@ export async function openNotificationsModal() {
                                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
                                     <div style="display:flex; align-items:center; gap:8px;">
                                         <span class="badge ${badgeClass}">${typeLabel}</span>
-                                        <b style="color:var(--text-main); font-size:13.5px;">${esc(n.title)}</b>
+                                        <b style="color:var(--text-main); font-size:13.5px;">${esc(n.title)}${n.ids.length > 1 ? ` · ${n.ids.length}` : ""}</b>
                                     </div>
                                     <span class="font-mono" style="font-size:11px; color:var(--text-dim);">${fmtTime(n.createdAt)}</span>
                                 </div>
@@ -125,11 +148,21 @@ export async function openNotificationsModal() {
         }
       };
       window.markNotifRead = async (id) => {
+        if (busy.has(id)) return;
+        busy.add(id);
         try {
-          await api("POST", `/api/notifications/${id}/read`);
+          await Promise.all(
+            (groups.get(id) || [id]).map((key) =>
+              api("POST", `/api/notifications/${key}/read`),
+            ),
+          );
           updateNotificationsBadge();
           loadList();
-        } catch (_) {}
+        } catch (error) {
+          showToast("Не удалось отметить уведомление", error.message, "error");
+        } finally {
+          busy.delete(id);
+        }
       };
       document
         .getElementById("btn-read-all-notifs")
@@ -148,6 +181,20 @@ export async function openNotificationsModal() {
       document
         .getElementById("btn-create-notif")
         ?.addEventListener("click", openNewAnnouncementModal);
+      body
+        .closest(".modal")
+        .querySelectorAll("[data-notification-filter]")
+        .forEach(
+          (button) =>
+            (button.onclick = () => {
+              filter = button.dataset.notificationFilter;
+              body
+                .closest(".modal")
+                .querySelectorAll("[data-notification-filter]")
+                .forEach((b) => b.classList.toggle("active", b === button));
+              loadList();
+            }),
+        );
       await loadList();
     },
   );

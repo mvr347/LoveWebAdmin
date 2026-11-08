@@ -6,8 +6,9 @@ async function moderation(page, body) {
     body,
   );
 }
-async function openRestrictions(page) {
+async function openRestrictions(page, kind="limits") {
   await page.locator('[data-nav="restrictions"]').click();
+  if(await page.locator(`[data-penalty="${kind}"]`).count())await page.locator(`[data-penalty="${kind}"]`).click();
   await expect(page.locator(".restrictions-workspace")).toBeVisible();
 }
 
@@ -18,24 +19,21 @@ test("navigation separates work, moderation and settings; personal security excl
   await expect(page.locator("#sidebar-nav .nav-section-title")).toHaveText([
     "Работа",
     "Обращения",
-    "Наказания",
+    "Модерация",
     "Сервер",
-    "Управление",
+    "Вебадмин",
   ]);
   await page.locator('[data-nav="settings"]').click();
-  await expect(page.locator(".settings-home-group h3")).toHaveText([
-    "Веб-панель",
-    "Игровой сервер",
-    "Discord и проверка",
-  ]);
-  await page.locator('[data-settings="panel-security"]').click();
+  await expect(page.locator('.settings-workspace')).toBeVisible();
+  await page.locator('.settings-tab-btn[data-tab="panel-security"]').click();
   await expect(page.locator("#setting-minPasswordLength")).toBeVisible();
-  await page.locator('.settings-tab-btn[data-tab="security"]').click();
+  await page.evaluate(async()=>{const m=await import("/preview/js/features/settings.js");await m.openAdminSettingsModal("security");});
   await expect(page.locator("#sec-old-pass")).toBeVisible();
-  await expect(page.locator("#setting-minPasswordLength")).toHaveCount(0);
-  await expect(page.locator("#settings-tab-content")).toContainText(
+  await expect(page.locator(".modal-overlay #setting-minPasswordLength")).toHaveCount(0);
+  await expect(page.locator(".modal-overlay #settings-tab-content")).toContainText(
     "только вашей",
   );
+  await page.locator(".modal-overlay .close-btn").click();
   await page.locator('.settings-tab-btn[data-tab="maintenance"]').click();
   await expect(page.locator("#settings-tab-content")).toContainText(
     "Minecraft-сервер продолжает работать",
@@ -93,7 +91,7 @@ test("restrictions paginate, filter, validate and retain a replaced mute when an
   await expect(page.locator("#active-restrictions")).toContainText(
     "Новая версия",
   );
-  await page.getByRole("tab", { name: "История", exact: true }).click();
+  await page.locator('[data-penalty="history"]').click();
   await expect(page.locator("#restriction-history")).toContainText(
     "Нарушение правил",
   );
@@ -116,7 +114,7 @@ test("cancelling pending ban is distinct from unban and requires a reason", asyn
 }) => {
   await page.goto("/preview/");
   const created = await moderation(page, { action: "ban", player: "Ada123" });
-  await openRestrictions(page);
+  await openRestrictions(page,"pending");
   await page
     .getByRole("button", { name: "Отменить предварительный бан", exact: true })
     .click();
@@ -143,7 +141,8 @@ test("server access confirms the actual name and blocks duplicate operator grant
 }) => {
   await page.goto("/preview/");
   await page.locator('[data-nav="settings"]').click();
-  await page.locator('[data-settings="game-access"]').click();
+  await page.evaluate(()=>window.navigateTo("server"));
+  await page.locator('[data-sub="whitelist"]').click();
   const section = page.locator('[data-access="ops"]');
   await section.locator("[name=player]").fill("Ada123");
   await section.locator("[type=submit]").click();
@@ -166,14 +165,14 @@ for (const viewport of [
     await page.setViewportSize(viewport);
     await page.goto("/preview/");
     await page.evaluate(() => window.navigateTo("restrictions"));
-    await expect(page.locator(".restrictions-workspace")).toBeVisible();
+    await expect(page.locator("#bans-search-input")).toBeVisible();
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth,
       ),
     ).toBe(true);
     await page.evaluate(() => window.navigateTo("settings"));
-    await page.locator('[data-settings="discord"]').click();
+    await page.locator('.settings-tab-btn[data-tab="discord"]').click();
     await expect(page.locator("#setting-discordPanelChannelId")).toBeVisible();
     expect(
       await page.evaluate(
@@ -283,7 +282,7 @@ test("console restrictions use the shared validated form and preserve a tab draf
 }) => {
   await page.goto("/preview/");
   await page.locator('[data-nav="settings"]').click();
-  await page.locator('[data-settings="blacklist"]').click();
+  await page.locator('.settings-tab-btn[data-tab="blacklist"]').click();
   const input = page.locator("#setting-commandBlacklist");
   await input.fill("stop\nrestart\nserver:op");
   await page.locator('.settings-tab-btn[data-tab="panel-security"]').click();
@@ -304,6 +303,7 @@ test("kick remains outside the punishment workspace", async ({ page }) => {
   await page.goto("/preview/");
   await openRestrictions(page);
   await expect(page.locator("#restrictions-actions").getByRole("button", { name: "Кик", exact: true })).toHaveCount(0);
+  await page.locator('[data-penalty="limits"]').click();
   await expect(page.locator("#restrictions-actions").getByRole("button", { name: "Мут", exact: true })).toBeVisible();
   await page.evaluate(() => LovePreview.model.request("PUT", "/api/roles/2", { permissions: ["KICK_PLAYERS"] }));
   await page.locator("#preview-role").selectOption("2");

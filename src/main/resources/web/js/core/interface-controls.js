@@ -1,3 +1,4 @@
+import {enhancePermissionEditors} from "./permission-editor.js";
 import { enhanceSelects, installSelectControls } from "./select-controls.js";
 import { installFormValidation } from "./form-validation.js";
 const icons = {
@@ -10,6 +11,8 @@ const icons = {
 };
 let installed = false;
 export function enhanceButtons(root = document) {
+  enhancePermissionEditors();
+  for(const link of root.querySelectorAll('a[href*="case.html"]'))link.classList.add("secondary");
   for (const button of root.querySelectorAll("button,a.secondary,a.primary")) {
     if(button.matches(".reference-list-item,.settings-home-card")) continue;
     button.classList.add("ui-button");

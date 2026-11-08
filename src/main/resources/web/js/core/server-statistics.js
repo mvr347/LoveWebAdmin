@@ -12,7 +12,7 @@ export async function renderServerStatistics(host) {
     )
       .map(
         (section) =>
-          `<section class="server-statistics-section" data-stat-section="${esc(section.id)}"><h3>${esc(section.title)}</h3><p class="stat-source">${esc(section.source)}${section.observedAt ? " · " + esc(fmtTime(section.observedAt)) : ""}${section.stale ? " · Сохранённый снимок" : ""}</p>${section.reason ? `<p class="muted">${esc(section.reason)}</p>` : ""}<dl>${Object.entries(
+          `<section class="server-statistics-section" data-stat-section="${esc(section.id)}"><h3>${esc(section.title)}</h3><p class="stat-source">Обновлено${section.observedAt ? " · " + esc(fmtTime(section.observedAt)) : ""}${section.stale ? " · Сохранённый снимок" : ""}</p>${section.reason ? `<p class="muted">Данные пока недоступны</p>` : ""}<dl>${Object.entries(
             section.fields || {},
           )
             .map(

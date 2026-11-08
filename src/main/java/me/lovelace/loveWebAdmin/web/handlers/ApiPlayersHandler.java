@@ -30,10 +30,11 @@ public class ApiPlayersHandler extends ApiHandlerSupport {
 
   @Override
   protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws IOException {
-    Optional<WebSession> sessionOpt = requirePermission(req, resp, Permission.VIEW_PLAYERS);
+    Optional<WebSession> sessionOpt = requireSession(req, resp);
     if (sessionOpt.isEmpty()) return;
-
     String pathInfo = req.getPathInfo();
+    boolean suggestions="/search".equals(pathInfo);
+    if(!hasPermission(sessionOpt.get(),Permission.VIEW_PLAYERS) && !(suggestions&&hasPermission(sessionOpt.get(),Permission.MANAGE_LOVEAUTH))){sendError(resp,403,"Нет права просмотра игроков");return;}
     if (pathInfo == null
         || pathInfo.isEmpty()
         || "/".equals(pathInfo)
@@ -42,8 +43,10 @@ public class ApiPlayersHandler extends ApiHandlerSupport {
       String query = req.getParameter("q");
       if (query == null) query = "";
       int limit = parseIntOrDefault(req.getParameter("limit"), 50);
+      if(limit<1||limit>100||query.length()>128){sendError(resp,400,"Укажите до 100 игроков и поисковый запрос до 128 символов");return;}
       List<Map<String, Object>> list =
           plugin.getDatabaseManager().searchPlayers(query.trim(), limit);
+      if(!hasPermission(sessionOpt.get(),Permission.VIEW_PLAYERS))list=list.stream().map(row->Map.<String,Object>of("name",row.get("name"))).toList();
       sendSuccess(resp, list);
       return;
     }

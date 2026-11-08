@@ -102,12 +102,12 @@ test("mobile navigation has named sections without hamburger controls",async({pa
   await page.setViewportSize({width:390,height:844});await ready(page);
   await expect(page.locator("#mobile-menu-toggle")).toHaveCount(0);
   const sections=page.getByRole("navigation",{name:"Разделы панели"});
-  await sections.getByRole("button",{name:"Журнал",exact:true}).click();
-  await expect(page.locator("#topbar-page-title")).toHaveText("Журнал");
+  await sections.getByRole("button",{name:"Игровой журнал",exact:true}).click();
+  await expect(page.locator("#topbar-page-title")).toHaveText("Игровой журнал");
   const exit=page.locator("#logout-btn");
   const box=await page.locator(".topbar-right").boundingBox();
   expect(box.x+box.width).toBeLessThanOrEqual(390);
-  await expect(page.getByRole("button",{name:"Настройки панели",exact:true})).toBeVisible();
+  await expect(page.locator("#topbar-settings-btn")).toBeVisible();
   await page.screenshot({path:"test-results/nov05-mobile-navigation.png"});
 });
 

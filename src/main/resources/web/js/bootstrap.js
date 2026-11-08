@@ -56,7 +56,17 @@ import {
 export function startApplication() {
   installViewState();
   installTableControls();
-  state.browserStorage = window.LovePreview?.storage || window.localStorage;
+  try {
+    state.browserStorage = window.LovePreview?.storage || window.localStorage;
+    state.browserStorage.getItem("wa_theme");
+  } catch {
+    const memory = new Map();
+    state.browserStorage = {
+      getItem: (key) => memory.get(key) ?? null,
+      setItem: (key, value) => memory.set(key, String(value)),
+      removeItem: (key) => memory.delete(key),
+    };
+  }
   state.app = document.getElementById("app");
   state.token =
     state.browserStorage.getItem("wa_token") ||
@@ -155,12 +165,7 @@ export function startApplication() {
     icon: state.SECTIONS.find((s) => s.id === "punishments").icon,
     num: 9,
     group: "Модерация",
-    anyPerms: [
-      "VIEW_BANS",
-      "MANAGE_BANS",
-      "MANAGE_MUTES",
-      "FREEZE_PLAYERS",
-    ],
+    anyPerms: ["VIEW_BANS", "MANAGE_BANS", "MANAGE_MUTES", "FREEZE_PLAYERS"],
   });
   state.SECTIONS.push({
     id: "settings",
@@ -178,23 +183,96 @@ export function startApplication() {
       "MANAGE_OPERATORS",
     ],
   });
-  const originalSections = new Map(state.SECTIONS.map(section=>[section.id,section]));
-  const base = id => ({...originalSections.get(id)});
+  const originalSections = new Map(
+    state.SECTIONS.map((section) => [section.id, section]),
+  );
+  const base = (id) => ({ ...originalSections.get(id) });
   const messageIcon = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`;
   state.SECTIONS = [
-    {...base('dashboard'),group:'Работа',num:1},
-    {...base('journal'),group:'Работа',num:2},
-    {id:'reports',label:'Жалобы',icon:messageIcon,num:3,group:'Обращения',perm:'VIEW_REPORTS'},
-    {id:'appeals',label:'Апелляции',icon:base('journal').icon,num:4,group:'Обращения',perm:'VIEW_APPEALS'},
-    {id:'support',label:'Поддержка',icon:messageIcon,num:5,group:'Обращения',perm:'VIEW_REPORTS'},
-    {...base('restrictions'),label:'Баны и ограничения',num:6,group:'Наказания'},
-    {id:'penalty-history',label:'История',icon:base('journal').icon,num:7,group:'Наказания',anyPerms:['VIEW_BANS','MANAGE_MUTES','FREEZE_PLAYERS']},
-    {...base('anticheat'),num:8,group:'Сервер'},
-    {...base('server'),num:9,group:'Сервер'},
-    {...base('auth'),num:undefined,group:'Сервер'},
-    {...base('database'),num:undefined,group:'Сервер'},
-    {...base('staff'),num:undefined,group:'Управление'},
-    {...base('settings'),num:10,group:'Управление'},
+    { ...base("dashboard"), group: "Работа", num: 1 },
+    {
+      ...base("journal"),
+      label: "Игровой журнал",
+      perm: "VIEW_SERVER_LOGS",
+      anyPerms: undefined,
+      group: "Работа",
+      num: 2,
+    },
+    {
+      id: "reports",
+      label: "Жалобы",
+      icon: messageIcon,
+      num: 3,
+      group: "Обращения",
+      perm: "VIEW_REPORTS",
+    },
+    {
+      id: "appeals",
+      label: "Апелляции",
+      icon: base("journal").icon,
+      num: 4,
+      group: "Обращения",
+      perm: "VIEW_APPEALS",
+    },
+    {
+      id: "support",
+      label: "Поддержка",
+      icon: messageIcon,
+      num: 5,
+      group: "Обращения",
+      perm: "VIEW_REPORTS",
+    },
+    {
+      ...base("restrictions"),
+      label: "Баны и ограничения",
+      num: 6,
+      group: "Модерация",
+    },
+    {
+      id: "penalty-history",
+      label: "История",
+      icon: base("journal").icon,
+      num: 7,
+      group: "Модерация",
+      anyPerms: ["VIEW_BANS", "MANAGE_MUTES", "FREEZE_PLAYERS"],
+    },
+    { ...base("anticheat"), num: 8, group: "Модерация" },
+    { ...base("server"), num: 9, group: "Сервер" },
+    {
+      id: "game-auth",
+      label: "Безопасность аккаунтов",
+      icon: base("auth").icon,
+      perm: "MANAGE_LOVEAUTH",
+      group: "Сервер",
+    },
+    { ...base("database"), num: undefined, group: "Сервер" },
+    {
+      ...base("staff"),
+      label: "Сотрудники и роли",
+      num: undefined,
+      group: "Вебадмин",
+    },
+    {
+      ...base("auth"),
+      label: "Авторизация панели",
+      anyPerms: ["MANAGE_ADMINS"],
+      perm: undefined,
+      group: "Вебадмин",
+    },
+    {
+      id: "web-journal",
+      label: "Веб-журнал",
+      icon: base("journal").icon,
+      perm: "VIEW_WEB_LOGS",
+      group: "Вебадмин",
+    },
+    {
+      ...base("settings"),
+      anyPerms:["MANAGE_PANEL_SETTINGS","MANAGE_SECURITY_SETTINGS","MANAGE_INTEGRATIONS","MANAGE_MAINTENANCE","MANAGE_PREVIEW","MANAGE_API"],
+      label: "Настройки панели",
+      num: 10,
+      group: "Вебадмин",
+    },
   ];
 
   state.ALL_PERMISSIONS = [
@@ -249,7 +327,8 @@ export function startApplication() {
     VIEW_STATS: "Просмотр метрик сервера (TPS, MSPT, память, онлайн)",
     VIEW_ANALYTICS: "Просмотр аналитики базы данных и активности",
     VIEW_PLAYERS: "Просмотр списков и профилей игроков",
-    MANAGE_PLAYERS: "Управление игроками (кик, очистка инвентаря)",
+    MANAGE_PLAYERS:
+      "Заметки и операции с досье. Бан, кик, телепорт и другие действия требуют отдельных прав.",
     VIEW_BANS: "Просмотр списка банов",
     MANAGE_MUTES: "Управление мутами",
     MANAGE_BANS: "Выдача и управление банами",
@@ -271,7 +350,7 @@ export function startApplication() {
     VIEW_STAFF_AUDIT: "Аудит команд персонала и KPI метрики",
     VIEW_ECONOMY: "Просмотр оборота экономики",
     MANAGE_ECONOMY: "Управление балансом игроков",
-    MANAGE_API: "Управление API ключами и вебхуками",
+    MANAGE_API: "Шаблоны Discord, диагностика доставки и служебные подключения",
     VIEW_SERVER_INTERNALS:
       "Позволяет видеть ошибки плагинов, технические детали сервера, расширенные логи и stacktrace",
     BYPASS_MAINTENANCE:
@@ -281,7 +360,7 @@ export function startApplication() {
     VIEW_STATS: "Просмотр метрик сервера",
     VIEW_ANALYTICS: "Аналитика активности",
     VIEW_PLAYERS: "Просмотр игроков",
-    MANAGE_PLAYERS: "Управление игроками",
+    MANAGE_PLAYERS: "Администрирование досье",
     VIEW_BANS: "Просмотр банов",
     MANAGE_MUTES: "Управление мутами",
     MANAGE_BANS: "Выдача и снятие банов",
@@ -303,7 +382,7 @@ export function startApplication() {
     VIEW_STAFF_AUDIT: "Аудит действий персонала",
     VIEW_ECONOMY: "Просмотр экономики",
     MANAGE_ECONOMY: "Управление балансами",
-    MANAGE_API: "Управление API-ключами",
+    MANAGE_API: "Служебные подключения",
     VIEW_SERVER_INTERNALS: "Техническая информация и ошибки",
     BYPASS_MAINTENANCE: "Обход тех. работ панели",
   };
