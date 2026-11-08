@@ -3,6 +3,7 @@ import { noticeDialog } from "../core/dialogs.js";
 import { state } from "../state.js";
 import {
   api,
+  hasPerm,
   attachPlayerAutocomplete,
   closeModal,
   confirmAction,
@@ -19,11 +20,11 @@ export function getActiveQuickActions() {
     const saved = state.browserStorage.getItem("wa_quick_actions");
     if (saved) {
       const parsed = JSON.parse(saved);
-      const valid = parsed.filter((k) => state.ALL_QUICK_ACTIONS[k]);
+      const valid = parsed.filter((k) => state.ALL_QUICK_ACTIONS[k] && hasPerm(state.ALL_QUICK_ACTIONS[k].permission));
       if (valid.length > 0) return valid;
     }
   } catch (e) {}
-  return ["ban", "mute", "kick", "vanish", "clear_chat", "dossier"];
+  return ["ban", "mute", "kick", "vanish", "clear_chat", "dossier"].filter(key => hasPerm(state.ALL_QUICK_ACTIONS[key].permission));
 }
 export function saveActiveQuickActions(keys) {
   state.browserStorage.setItem("wa_quick_actions", JSON.stringify(keys));
@@ -43,6 +44,7 @@ export function exposeOpenQuickActionsConfigModal() {
                 </div>
                 <div style="display:flex; flex-direction:column; gap:10px;">
                     ${Object.values(state.ALL_QUICK_ACTIONS)
+                      .filter(action => hasPerm(action.permission))
                       .map(
                         (a) => `
                         <label class="toggle-switch-wrap" style="justify-content:space-between;">
@@ -145,7 +147,7 @@ export function exposeQuickClearChatAction() {
           });
           showToast("Чат очищен", "Команда очистки чата выполнена", "info");
         } catch (e) {
-          showToast("Чат очищен", "Сообщение отправлено на сервер", "info");
+          showToast("Ошибка", e.message || "Не удалось очистить чат", "error");
         }
       },
       "ОЧИСТИТЬ",

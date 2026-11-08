@@ -4,6 +4,8 @@ const retired = new Set([
   "VIEW_PLAYER_INVENTORY",
   "CONFISCATE_ITEMS",
   "RESTORE_ITEMS",
+  "REVIEW_VESUVIO_SAMPLES",
+  "MANAGE_VESUVIO_MODELS",
 ]);
 const dependencies = {
   MANAGE_BANS: "VIEW_BANS",
