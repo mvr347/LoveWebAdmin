@@ -20,7 +20,6 @@ public class AdminManager {
   private final java.util.concurrent.ConcurrentHashMap<String, String> pendingOwnerTotp =
       new java.util.concurrent.ConcurrentHashMap<>();
 
-  private static final long SEVEN_DAYS_SECONDS = 7L * 24L * 3600L;
 
   private final LoveWebAdmin plugin;
 
@@ -278,15 +277,10 @@ public class AdminManager {
     if (!admin.totpEnabled() || admin.totpSecret() == null || admin.totpSecret().isBlank())
       return new LoginResult(LoginStatus.INVALID_CREDENTIALS, null, null, null);
 
-    // Проверка 2FA (раз в неделю или при смене IP).
-    if (admin.totpEnabled()) {
-      long now = System.currentTimeMillis() / 1000L;
-      boolean ipChanged = admin.last2faIp() == null || !admin.last2faIp().equals(ip);
-      boolean weekPassed = (now - admin.last2faAt()) >= SEVEN_DAYS_SECONDS;
-
-      if (ipChanged || weekPassed) {
-        return new LoginResult(LoginStatus.NEED_2FA, null, null, admin);
-      }
+    // A password login is enough only for the IP explicitly confirmed by 2FA.
+    // Ordinary logins never refresh this trust marker.
+    if (admin.last2faAt() <= 0 || admin.last2faIp() == null || !admin.last2faIp().equals(ip)) {
+      return new LoginResult(LoginStatus.NEED_2FA, null, null, admin);
     }
 
     return completeLogin(admin, ip, userAgent);

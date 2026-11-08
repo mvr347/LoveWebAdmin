@@ -42,7 +42,7 @@ public class CorsFilter implements Filter {
             httpResponse.setHeader("Access-Control-Allow-Origin", origin != null ? origin : "*");
             httpResponse.setHeader("Vary", "Origin");
             httpResponse.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-            httpResponse.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key, Accept, Origin, X-Requested-With, X-Appeal-Token, Idempotency-Key");
+            httpResponse.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key, Accept, Origin, X-Requested-With, X-Appeal-Token, Idempotency-Key, X-LWA-2FA");
         }
 
         if (httpRequest.getRequestURI().startsWith("/api/")) {
@@ -59,7 +59,7 @@ public class CorsFilter implements Filter {
             "font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'");
 
         if ("OPTIONS".equalsIgnoreCase(httpRequest.getMethod())) {
-            httpResponse.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key, Accept, Origin, X-Requested-With, X-Appeal-Token, Idempotency-Key");
+            httpResponse.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key, Accept, Origin, X-Requested-With, X-Appeal-Token, Idempotency-Key, X-LWA-2FA");
             httpResponse.setStatus(HttpServletResponse.SC_OK);
             return;
         }

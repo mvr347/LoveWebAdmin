@@ -790,7 +790,7 @@ public class ApiAuthHandler extends ApiHandlerSupport {
 
     WebAdmin admin = adminOpt.get();
     // МГНОВЕННЫЙ КИК С САЙТА ПРИ НЕВЕРНОМ СТАРОМ ПАРОЛЕ
-    if (admin.passwordHash() != null && !PasswordUtils.verify(oldPassword, admin.passwordHash())) {
+    if (admin.passwordHash() == null || !PasswordUtils.verify(oldPassword, admin.passwordHash())) {
       plugin.getSessionManager().invalidate(sessionOpt.get().token());
       plugin.getDatabaseManager().deleteSession(sessionOpt.get().token());
       plugin
@@ -813,18 +813,19 @@ public class ApiAuthHandler extends ApiHandlerSupport {
       return;
     }
 
-    if (admin.totpEnabled() && admin.totpSecret() != null && !admin.totpSecret().isBlank()) {
-      if (totpCode == null || totpCode.trim().isBlank()) {
-        sendError(resp, 400, "Требуется 6-значный код Google Authenticator (2FA)");
-        return;
-      }
-      if (!TotpUtils.verifyCode(admin.totpSecret(), totpCode.trim())) {
-        sendError(resp, 400, "Неверный код 2FA");
-        return;
-      }
+    if (!admin.totpEnabled() || admin.totpSecret() == null || admin.totpSecret().isBlank()) {
+      sendError(resp, 403, "Для смены пароля требуется настроенная 2FA");
+      return;
     }
+    if (totpCode == null || totpCode.trim().isBlank()) {
+      sendError(resp, 400, "Требуется 6-значный код Google Authenticator (2FA)");
+      return;
+    }
+    if (!verifySensitiveCode(req, resp, admin, totpCode.trim())) return;
 
     plugin.getDatabaseManager().setAdminPassword(admin.id(), PasswordUtils.hash(newPassword));
+    plugin.getDatabaseManager().deleteOtherSessions(admin.id(), sessionOpt.get().token());
+    plugin.getSessionManager().invalidateOtherSessions(admin.id(), sessionOpt.get().token());
     plugin.getLogManager().logWebAction(admin.username(), "Успешно изменил пароль");
     sendSuccess(resp, Map.of("message", "Пароль успешно изменён"));
   }

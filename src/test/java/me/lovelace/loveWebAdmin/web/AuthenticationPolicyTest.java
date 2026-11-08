@@ -161,6 +161,46 @@ class AuthenticationPolicyTest {
     }
   }
 
+  @Test
+  void passwordChangeRequiresSecondFactorAndRevokesOtherSessions() throws Exception {
+    String secret = TotpUtils.generateSecret(),
+        password = "LongSecure!Password2026",
+        next = "AnotherSecure!Password2026";
+    var db = plugin.getDatabaseManager();
+    var role = db.getRoleByName("Модератор").orElseThrow();
+    db.saveAdmin(
+        new WebAdmin(
+            0,
+            "PasswordStaff",
+            PasswordUtils.hash(password),
+            role.id(),
+            1,
+            0,
+            secret,
+            true,
+            1,
+            "192.0.2.1",
+            "ACTIVE",
+            "{}",
+            "[]"));
+    var admin = db.getAdminByUsername("PasswordStaff").orElseThrow();
+    var current = plugin.getSessionManager().createSession(admin, role, "192.0.2.1", "current");
+    var other = plugin.getSessionManager().createSession(admin, role, "192.0.2.1", "other");
+    var body =
+        new HashMap<String, Object>(
+            Map.of("oldPassword", password, "newPassword", next, "confirmPassword", next));
+    var headers = Map.of("Authorization", "Bearer " + current.token());
+    assertEquals(400, postAt("/api/me", "/password", body, headers).status);
+    assertTrue(
+        PasswordUtils.verify(password, db.getAdminById(admin.id()).orElseThrow().passwordHash()));
+    body.put("totpCode", code(secret));
+    assertEquals(200, postAt("/api/me", "/password", body, headers).status);
+    assertTrue(
+        PasswordUtils.verify(next, db.getAdminById(admin.id()).orElseThrow().passwordHash()));
+    assertTrue(plugin.getSessionManager().validate(other.token()).isEmpty());
+    assertTrue(plugin.getSessionManager().validate(current.token()).isPresent());
+  }
+
   static String code(String secret) throws Exception {
     var decode = TotpUtils.class.getDeclaredMethod("decodeBase32", String.class);
     decode.setAccessible(true);
@@ -173,6 +213,12 @@ class AuthenticationPolicyTest {
   }
 
   Result post(String path, Map<String, Object> body) throws Exception {
+    return postAt("/api/auth", path, body, Map.of());
+  }
+
+  Result postAt(
+      String servletPath, String path, Map<String, Object> body, Map<String, String> headers)
+      throws Exception {
     auth.body = body;
     var result = new Result();
     var req =
@@ -182,9 +228,10 @@ class AuthenticationPolicyTest {
                 new Class[] {HttpServletRequest.class},
                 (p, m, a) ->
                     switch (m.getName()) {
+                      case "getServletPath" -> servletPath;
                       case "getPathInfo" -> path;
                       case "getRemoteAddr" -> "192.0.2.1";
-                      case "getHeader" -> null;
+                      case "getHeader" -> headers.get(a[0]);
                       default -> null;
                     });
     var resp =

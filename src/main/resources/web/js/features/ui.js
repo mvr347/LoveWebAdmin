@@ -1,3 +1,4 @@
+import { secondFactorDialog } from "../core/dialogs.js";
 import {esc,hasPerm} from "../core/access.js";
 export {esc,hasPerm};
 import { showReportPicker } from "../core/report-picker.js";
@@ -127,6 +128,7 @@ export function setToken(newToken) {
   if (state.token !== newToken) {
     closeAllModals();
     delete state.punishmentWorkspace;
+    document.dispatchEvent(new Event("lwa:account-change"));
   }
   state.token = newToken;
   if (state.token) {
@@ -181,6 +183,15 @@ export async function api(method, path, body) {
   assertCurrentAccount();
   if (method === "GET" && generation !== state.requestGeneration)
     throw new Error("Открыт другой раздел");
+  if (res.status === 403 && json.code === "SECOND_FACTOR_REQUIRED") {
+    const code = await secondFactorDialog();
+    assertCurrentAccount();
+    if (!code) throw new Error("Подтверждение отменено. Действие не выполнено");
+    res = await requestFetch(path, {...opts, headers: {...opts.headers, "X-LWA-2FA": code}});
+    assertCurrentAccount();
+    json = await res.json();
+    assertCurrentAccount();
+  }
   if (!res.ok || !json.success) {
     if (res.status === 401 && state.token && !path.includes("/login")) {
       setToken(null);
