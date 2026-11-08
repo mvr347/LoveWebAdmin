@@ -36,8 +36,8 @@ export async function renderAnticheatView() {
 
             <!-- Разделы античита -->
             <div class="anticheat-nav">
-                <div class="workspace-primary-tabs" id="anticheat-tabs" aria-label="Разделы античита"><button type="button" class="filter-tag-btn" data-tab="wave">Волна наказаний</button>
-                    <button type="button" class="filter-tag-btn active" data-tab="stream">Поток нарушений</button>
+                <div class="workspace-primary-tabs" id="anticheat-tabs" aria-label="Разделы античита"><button type="button" class="filter-tag-btn active" data-tab="stream">Поток нарушений</button>
+                    <button type="button" class="filter-tag-btn" data-tab="wave">Волна наказаний</button>
                     <button type="button" class="filter-tag-btn" data-tab="suspects">Наблюдение за игроками</button>
                     <button type="button" class="filter-tag-btn" data-tab="punishments">Журнал наказаний</button>
                 </div>
