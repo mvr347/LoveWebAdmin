@@ -15,6 +15,21 @@ class RestrictionsStoreTest {
   }
 
   @Test
+  void historyFiltersKindActorAndTimeBeforePagination() throws Exception {
+    try (var store = new RestrictionsStore(directory.resolve("filters.db"))) {
+      store.put(
+          new RestrictionsStore.Restriction("MUTE", "a", "Ada", "Alice", "Причина", 100, 1000));
+      store.put(new RestrictionsStore.Restriction("MUTE", "b", "Bob", "Bob", "Причина", 200, 1000));
+      store.put(
+          new RestrictionsStore.Restriction("FREEZE", "c", "Cat", "Alice", "Причина", 200, 1000));
+      assertEquals(
+          1L, store.history(java.util.Set.of("MUTE"), "", 0, "Alice", 50, 150).get("total"));
+      assertEquals(
+          0L, store.history(java.util.Set.of("MUTE"), "", 0, "Alice", 151, 300).get("total"));
+    }
+  }
+
+  @Test
   void restartPreservesBlocksAndRealDeadlines() throws Exception {
     var file = directory.resolve("test.db");
     try (var s = new RestrictionsStore(file)) {

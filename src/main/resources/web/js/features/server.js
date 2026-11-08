@@ -1,3 +1,4 @@
+import {trustScoreCard} from "../core/trust-score.js";
 import { renderGameAccess } from "./server-access.js";
 import { noticeDialog } from "../core/dialogs.js";
 import { state } from "../state.js";
@@ -232,8 +233,7 @@ export function exposeViewPlayerProfile() {
 
                         <!-- Trust Score Pill -->
                         <div style="text-align:right; background:var(--card-bg); padding:10px 14px; border-radius:8px; border:1px solid var(--border);">
-                            <div style="font-size:10.5px; font-weight:700; color:var(--text-dim); text-transform:uppercase;">Trust Score</div>
-                            <div style="font-family:'Outfit'; font-size:24px; font-weight:800; color:${trustColor};">${trustGrade} <span style="font-size:16px;">(${trustScore}/100)</span></div>
+                            ${trustScoreCard(p)}
                         </div>
                     </div>
 

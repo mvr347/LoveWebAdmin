@@ -40,7 +40,7 @@ export async function renderAnticheatView() {
                 <div class="panel-tabs" id="anticheat-tabs" aria-label="Разделы античита"><button type="button" class="filter-tag-btn" data-tab="wave">Волна банов</button>
                     <button type="button" class="filter-tag-btn active" data-tab="stream">Поток нарушений</button>
                     <button type="button" class="filter-tag-btn" data-tab="suspects">Наблюдение за игроками</button>
-                    <button type="button" class="filter-tag-btn" data-tab="punishments">Журнал наказаний</button><button type="button" class="filter-tag-btn" data-tab="models">Модели и типы проверок</button>
+                    <button type="button" class="filter-tag-btn" data-tab="punishments">Журнал наказаний</button>${state.me.isOwner?'<button type="button" class="filter-tag-btn" data-tab="models">Модели и типы проверок</button>':''}
                 </div>
 
                 <div style="width:220px;">
@@ -106,7 +106,7 @@ export async function renderAnticheatView() {
         body.replaceChildren();
         for (const entry of entries) {
           const card = document.createElement("article");
-          card.className = "message";
+          card.className = "punishment-event";
           card.textContent =
             entry.name +
             " · " +
@@ -117,7 +117,7 @@ export async function renderAnticheatView() {
             fmtTime(entry.timestamp);
           body.append(card);
         }
-        if (!entries.length) body.textContent = "Записей о наказаниях пока нет";
+        if (!entries.length) body.innerHTML = '<div class="reference-empty-state"><h3>Журнал наказаний пуст</h3><p>Решения автоматических проверок появятся здесь после применения.</p></div>';
       } catch (e) {
         body.textContent = e.message;
       }

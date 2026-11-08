@@ -61,8 +61,6 @@ export async function openAdminSettingsModal(
     minPasswordLength: 12,
     previewEnabled: false,
     commandBlacklist: ["stop", "restart", "op", "deop", "sudo", "pex", "lp"],
-    webhooksEnabled: false,
-    discordWebhookUrl: "",
   };
   let configError = "";
   const drafts = {};
@@ -116,11 +114,6 @@ export async function openAdminSettingsModal(
       icon: renderSvgIcon("ban", "red", 16),
     },
     {
-      id: "webhooks",
-      label: "Уведомления безопасности",
-      icon: renderSvgIcon("bell", "violet", 16),
-    },
-    {
       id: "discord",
       label: "Бот и обращения",
       icon: renderSvgIcon("bell", "violet", 16),
@@ -150,7 +143,6 @@ export async function openAdminSettingsModal(
       ({
         server: hasPerm("MANAGE_PANEL_SETTINGS"),
         discord: hasPerm("MANAGE_INTEGRATIONS"),
-        webhooks: hasPerm("MANAGE_INTEGRATIONS"),
         preview: hasPerm("MANAGE_PREVIEW"),
         "panel-security": hasPerm("MANAGE_SECURITY_SETTINGS"),
         blacklist: hasPerm("MANAGE_SECURITY_SETTINGS"),
@@ -176,7 +168,7 @@ export async function openAdminSettingsModal(
       "Веб-панель",
       ["server", "panel-security", "blacklist", "maintenance", "danger"],
     ],
-    ["Discord и тестирование", ["discord", "webhooks", "preview"]],
+    ["Discord и тестирование", ["discord", "preview"]],
   ];
   openModal(
     `
@@ -185,7 +177,7 @@ export async function openAdminSettingsModal(
                 <button type="button" class="close-btn" data-modal-close="true">${renderSvgIcon("close", "gray", 16)}</button>
             </div>
             <div class="modal-body" style="padding:0; max-height:82vh; overflow:hidden; display:flex; flex-direction:column;">
-                <div class="settings-modal-layout" style="flex:1; min-height:480px; display:flex; width:100%;">
+                <div class="settings-modal-layout ${personal ? "personal-settings-layout" : ""}" style="flex:1; min-height:480px; display:flex; width:100%;">
                     <!-- Left Navigation Sidebar -->
                     <aside class="settings-nav-sidebar">
                         ${groups
@@ -231,7 +223,7 @@ export async function openAdminSettingsModal(
             // TAB 1: ОБЩИЕ
             const isLight = document.body.classList.contains("theme-light");
             contentPane.innerHTML = `
-                        <h4 style="color:var(--text-heading); margin-bottom:14px;">ОБЩИЙ ПРОФИЛЬ СОТРУДНИКА</h4>
+                        <h4 style="color:var(--text-heading); margin-bottom:14px;">Профиль сотрудника</h4>
                         <div style="background:var(--card-inner-bg); padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-bottom:16px;">
                             <div style="display:flex; align-items:center; gap:12px;">
                                 <div class="sidebar-user-avatar" style="width:46px; height:46px; font-size:18px;">
@@ -242,7 +234,7 @@ export async function openAdminSettingsModal(
                                         ${esc(state.me.username)} <span class="badge purple">${esc(roleName)}</span>
                                     </div>
                                     <div style="font-size:12px; color:var(--text-muted); margin-top:2px;">
-                                        2FA Статус: <b>${state.me.totpEnabled ? "Включена (TOTP)" : "Отключена"}</b> • IP последнего входа: ${esc(state.me.last2faIp || "—")}
+                                        Защита входа: <b>${state.me.totpEnabled ? "Включена (TOTP)" : "Отключена"}</b> • IP последнего входа: ${esc(state.me.last2faIp || "—")}
                                     </div>
                                 </div>
                             </div>
@@ -251,7 +243,7 @@ export async function openAdminSettingsModal(
                         <div class="form-group">
                             <label>Привязанный игровой никнейм Minecraft</label>
                             <input type="text" id="gen-mc-nick" value="${esc(userPrefs.minecraftNick || state.me.username || "")}" placeholder="Никнейм в игре...">
-                            <div style="font-size:11.5px; color:var(--text-muted); margin-top:4px;">Используется для быстрого автозаполнения и синхронизации смен в игре</div>
+                            <div style="font-size:11.5px; color:var(--text-muted); margin-top:4px;">Используется для автозаполнения игровых форм. Права панели задаются отдельно.</div>
                         </div>
 
                         <div style="background:var(--card-inner-bg); padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-bottom:16px;">
@@ -260,10 +252,10 @@ export async function openAdminSettingsModal(
 
                             <div style="display:flex; gap:12px;">
                                 <button type="button" class="secondary ${!isLight ? "active" : ""}" id="btn-theme-dark" style="flex:1; padding:12px; display:flex; align-items:center; justify-content:center; gap:8px;">
-                                    ${renderSvgIcon("moon", "violet", 16)} ТЁМНАЯ ТЕМА (DARK)
+                                    ${renderSvgIcon("moon", "violet", 16)} Тёмная тема
                                 </button>
                                 <button type="button" class="secondary ${isLight ? "active" : ""}" id="btn-theme-light" style="flex:1; padding:12px; display:flex; align-items:center; justify-content:center; gap:8px;">
-                                    ${renderSvgIcon("sun", "yellow", 16)} СВЕТЛАЯ ТЕМА (LIGHT)
+                                    ${renderSvgIcon("sun", "yellow", 16)} Светлая тема
                                 </button>
                             </div>
                         </div>
@@ -360,7 +352,6 @@ export async function openAdminSettingsModal(
               "server",
               "discord",
               "preview",
-              "webhooks",
               "panel-security",
               "maintenance",
               "blacklist",

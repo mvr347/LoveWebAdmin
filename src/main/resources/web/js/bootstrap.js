@@ -224,7 +224,7 @@ export function startApplication() {
     },
     {
       ...base("restrictions"),
-      label: "Баны и ограничения",
+      label: "Наказания",
       num: 6,
       group: "Модерация",
     },

@@ -56,7 +56,8 @@ class LoveWebAdminCommandTest {
     var code = Pattern.compile("confirm (\\d{4})").matcher(asked);
     assertTrue(code.find());
     // A wrong code never starts the operation and issues a fresh warning instead.
-    String wrong = run(console, "discord", "purge", "confirm", "0000".equals(code.group(1)) ? "1111" : "0000");
+    String wrong =
+        run(console, "discord", "purge", "confirm", "0000".equals(code.group(1)) ? "1111" : "0000");
     assertFalse(wrong.contains("Очистка запущена"));
     assertTrue(wrong.contains("confirm"));
   }
@@ -68,5 +69,20 @@ class LoveWebAdminCommandTest {
     String token = run(console, "generatetoken");
     if (plugin.getAdminManager().hasOwner()) assertTrue(token.contains("уже создан"));
     else assertTrue(token.contains("LWA-"));
+  }
+
+  @Test
+  void previewCommandsNeedAdminAndEnabledSandboxAndUsePublicUrl() {
+    var console = server.getConsoleSender();
+    plugin.getConfig().set("preview.enabled", false);
+    assertTrue(run(console, "test", "support").contains("preview.enabled"));
+    plugin.getConfig().set("preview.enabled", true);
+    plugin.getConfig().set("web.public-url", "https://panel.example.test/");
+    assertTrue(
+        run(console, "test", "support")
+            .contains("https://panel.example.test/preview/?test=support#section=support"));
+    assertTrue(run(console, "test", "unknown").contains("Тесты:"));
+    var player = server.addPlayer();
+    assertFalse(run(player, "test", "cases").contains("/preview/"));
   }
 }

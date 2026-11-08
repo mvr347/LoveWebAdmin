@@ -326,23 +326,9 @@ test("settings keep domain permissions, reject invalid batches and never return 
     400,
   );
   const secret = "https://discord.com/api/webhooks/123456789/preview-secret";
-  const saved = call(m, "POST", "/api/server/config", {
-    discordWebhookUrl: secret,
-    webhooksEnabled: true,
-  });
-  assert.equal(JSON.stringify(saved).includes("preview-secret"), false);
-  assert.equal(saved.discordWebhookConfigured, true);
-  assert.equal(JSON.stringify(m.snapshot()).includes("preview-secret"), false);
-  assert.equal(
-    call(m, "POST", "/api/server/config", { discordWebhookUrl: "" })
-      .discordWebhookConfigured,
-    true,
-  );
-  assert.equal(
-    call(m, "POST", "/api/server/config", { clearDiscordWebhookUrl: true })
-      .discordWebhookConfigured,
-    false,
-  );
+  assert.equal(m.request("POST","/api/server/config",{discordWebhookUrl:secret,webhooksEnabled:true}).status,400);
+  assert.equal(JSON.stringify(call(m,"GET","/api/server/config")).includes("preview-secret"),false);
+  assert.equal(m.request("POST","/api/server/config",{clearDiscordWebhookUrl:true}).status,400);
   assert.equal(
     m.request("POST", "/api/server/config", { telegramBotToken: "removed" })
       .status,

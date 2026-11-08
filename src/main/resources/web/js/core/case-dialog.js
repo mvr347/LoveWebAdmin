@@ -23,10 +23,14 @@ export function installCaseDialogs(openModal) {
       return;
     const kind = url.searchParams.get("kind"),
       id = url.searchParams.get("id");
-    if (!["appeal", "report", "support"].includes(kind) || !/^\d+$/.test(id || "")) return;
+    if (
+      !["appeal", "report", "support"].includes(kind) ||
+      !/^\d+$/.test(id || "")
+    )
+      return;
     event.preventDefault();
     openModal(
-      `<div class="modal-header"><div><span class="ui-eyebrow">ОБРАЩЕНИЕ</span><h3>${({report:"Жалоба",appeal:"Апелляция",support:"Поддержка"})[kind]} №${Number(id)}</h3></div><button type="button" class="close-btn" data-modal-close aria-label="Закрыть дело">×</button></div><div class="modal-body case-dialog-content workspace-page"><p role="status">Загружаем дело…</p></div>`,
+      `<div class="modal-header"><div><span class="ui-eyebrow">ОБРАЩЕНИЕ</span><h3>${{ report: "Жалоба", appeal: "Апелляция", support: "Поддержка" }[kind]} №${Number(id)}</h3></div><button type="button" class="close-btn" data-modal-close aria-label="Закрыть дело">×</button></div><div class="modal-body case-dialog-content workspace-page"><p role="status">Загружаем дело…</p></div>`,
       null,
       "case-dialog",
     );
@@ -54,8 +58,38 @@ export function installCaseDialogs(openModal) {
       host.replaceChildren(document.importNode(main, true));
       const dispose = mountCase({ root: host, search: url.search });
       overlay.addEventListener("lwa:dispose", dispose, { once: true });
+      const toolbar = document.createElement("div");
+      toolbar.className = "case-actions-sticky";
+      toolbar.setAttribute("aria-label", "Действия с обращением");
+      const claim = host.querySelector("#claim");
+      if (claim) toolbar.append(claim);
+      let closeAction;
+      if (kind === "support") {
+        closeAction = document.createElement("button");
+        closeAction.type = "button";
+        closeAction.className = "secondary";
+        closeAction.textContent = "Закрыть обращение";
+        closeAction.onclick = () => {
+          const reason = host.querySelector("#support-close-reason");
+          reason?.scrollIntoView({ block: "center", behavior: "smooth" });
+          reason?.focus();
+        };
+        toolbar.append(closeAction);
+      }
+      host.prepend(toolbar);
       const sections = [...host.querySelectorAll("main > section")];
       for (const [index, section] of sections.entries()) {
+        if (
+          index === 0 ||
+          section.querySelector(
+            "#claim,#support-close-form,#support-reply-form,#approve",
+          )
+        ) {
+          section.classList.add(
+            index === 0 ? "case-overview" : "case-persistent-actions",
+          );
+          continue;
+        }
         const disclosure = document.createElement("details");
         disclosure.className = "case-section";
         disclosure.open = index === 0;
@@ -73,14 +107,24 @@ export function installCaseDialogs(openModal) {
         });
       }
       const syncVisibility = () => {
+        if (closeAction)
+          closeAction.disabled = !!host.querySelector("#support-close-reason")
+            ?.disabled;
         for (const section of sections)
-          section.parentElement.hidden = section.hidden;
+          if (section.parentElement.matches("details.case-section"))
+            section.parentElement.hidden = section.hidden;
       };
       const observer = new MutationObserver(syncVisibility);
       for (const section of sections)
         observer.observe(section, {
           attributes: true,
           attributeFilter: ["hidden"],
+        });
+      const closeReason = host.querySelector("#support-close-reason");
+      if (closeReason)
+        observer.observe(closeReason, {
+          attributes: true,
+          attributeFilter: ["disabled"],
         });
       syncVisibility();
       overlay.addEventListener("lwa:dispose", () => observer.disconnect(), {

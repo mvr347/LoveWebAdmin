@@ -42,7 +42,8 @@ export function mountCase({ root = document, search = location.search } = {}) {
     $("status").className = "error";
   }
   function messages(target, items) {
-    $(target).replaceChildren();
+    const host=$(target);if(!host)throw new Error("Отсутствует блок переписки: "+target);
+    host.replaceChildren();
     for (const m of items) {
       const el = document.createElement("p");
       el.className = "message";

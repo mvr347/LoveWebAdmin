@@ -2,18 +2,17 @@ package me.lovelace.loveWebAdmin.web.handlers;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
 import me.lovelace.loveWebAdmin.LoveWebAdmin;
 import me.lovelace.loveWebAdmin.integration.VesuvioBridge;
 import me.lovelace.loveWebAdmin.models.Permission;
 import me.lovelace.loveWebAdmin.models.WebSession;
 import me.lovelace.loveWebAdmin.utils.JsonUtils;
 import org.bukkit.Bukkit;
-
-import java.io.IOException;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
 
 /**
  * Античит (Vesuvio):
@@ -36,6 +35,17 @@ public class ApiVesuvioHandler extends ApiHandlerSupport {
         this.bridge = plugin.getVesuvioBridge();
     }
 
+  private boolean ownerOnly(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+    var session = requireSession(req, resp);
+    if (session.isEmpty()) return false;
+    if (!me.lovelace.loveWebAdmin.managers.RolePermissionPolicy.owner(
+        plugin, session.get().adminUsername())) {
+      sendError(resp, 403, "Раздел доступен только Управляющему");
+      return false;
+    }
+    return true;
+  }
+
     @Override
     protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws IOException {
         String pathInfo = req.getPathInfo();
@@ -46,10 +56,16 @@ public class ApiVesuvioHandler extends ApiHandlerSupport {
             return;
         }
 
+    if ((pathInfo.equals("/engine")
+            || pathInfo.startsWith("/review/")
+            || pathInfo.startsWith("/models"))
+        && !ownerOnly(req, resp)) return;
         String playerFilter = req.getParameter("player");
         final String filterLower = (playerFilter != null && !playerFilter.isBlank()) ? playerFilter.trim().toLowerCase() : null;
 
-        if ("/wave".equals(pathInfo)) {handleBasic(req,resp,()->bridge.call("getModerationWave"));return;}
+        if ("/wave".equals(pathInfo)) {
+      handleBasic(req, resp, () -> bridge.call("getModerationWave"));
+      return;}
         if ("/suspects".equals(pathInfo)) {
             handleBasic(req, resp, () -> {
                 Object result = bridge.call("getSuspects");
@@ -63,25 +79,31 @@ public class ApiVesuvioHandler extends ApiHandlerSupport {
 
         if ("/punishments".equals(pathInfo)) {
       int limit = Math.clamp(parseIntOrDefault(req.getParameter("limit"), 100), 1, 200);
-            handleBasic(req, resp, () -> {
-                Object result = bridge.call("getRecentPunishments", new Class<?>[]{int.class}, limit);
-                if (filterLower != null && result instanceof List<?> list) {
-                    return list.stream().filter(item -> matchesPlayer(item, filterLower)).toList();
-                }
-                return result;
-            });
+      handleBasic(
+          req,
+          resp,
+          () -> {
+            Object result = bridge.call("getRecentPunishments", new Class<?>[] {int.class}, limit);
+            if (filterLower != null && result instanceof List<?> list) {
+              return list.stream().filter(item -> matchesPlayer(item, filterLower)).toList();
+            }
+            return result;
+          });
             return;
         }
 
         if ("/violations".equals(pathInfo)) {
       int limit = Math.clamp(parseIntOrDefault(req.getParameter("limit"), 200), 1, 200);
-            handleAdvanced(req, resp, () -> {
-                Object result = bridge.call("getRecentViolations", new Class<?>[]{int.class}, limit);
-                if (filterLower != null && result instanceof List<?> list) {
-                    return list.stream().filter(item -> matchesPlayer(item, filterLower)).toList();
-                }
-                return result;
-            });
+      handleAdvanced(
+          req,
+          resp,
+          () -> {
+            Object result = bridge.call("getRecentViolations", new Class<?>[] {int.class}, limit);
+            if (filterLower != null && result instanceof List<?> list) {
+              return list.stream().filter(item -> matchesPlayer(item, filterLower)).toList();
+            }
+            return result;
+          });
             return;
         }
 
@@ -109,7 +131,8 @@ public class ApiVesuvioHandler extends ApiHandlerSupport {
                 return;
             }
             final UUID finalUuid = uuid;
-            handleAdvanced(req, resp, () -> bridge.call("getPlayerDetail", new Class<?>[]{UUID.class}, finalUuid));
+      handleAdvanced(
+          req, resp, () -> bridge.call("getPlayerDetail", new Class<?>[] {UUID.class}, finalUuid));
             return;
         }
 
@@ -156,22 +179,41 @@ public class ApiVesuvioHandler extends ApiHandlerSupport {
         String pathInfo = req.getPathInfo();
     if("/wave".equals(pathInfo)) {
       var session=requirePermission(req,resp,Permission.MANAGE_VESUVIO);if(session.isEmpty())return;
-      if(!hasPermission(session.get(),Permission.MANAGE_BANS)){sendError(resp,403,"Нужны права управления наказаниями");return;}
+      if(!hasPermission(session.get(),Permission.MANAGE_BANS)){
+        sendError(resp, 403, "Нужны права управления наказаниями");
+        return;}
       var body=readJsonBody(req);String action=java.util.Objects.toString(body.get("action"),"");
-      Object result=switch(action) {
-        case "execute"->bridge.call("executeModerationWave");
-        case "remove"->bridge.call("removeModerationWave",new Class<?>[]{String.class},java.util.Objects.toString(body.get("event"),""));
-        case "edit"->{long seconds=body.get("duration") instanceof Number n?n.longValue():-1;
-          plugin.getModerationService().checkDuration(session.get().adminUsername(),"BAN",seconds);
-          yield bridge.call("editModerationWave",new Class<?>[]{String.class,String.class,long.class},java.util.Objects.toString(body.get("event"),""),java.util.Objects.toString(body.get("reason"),""),seconds);}
-        default->throw new IllegalArgumentException("Неизвестное действие волны");
-      };
-      if(Boolean.FALSE.equals(result)){sendError(resp,409,"Запись волны уже изменена; обновите список");return;}
+      Object result =
+          switch (action) {
+            case "execute" -> bridge.call("executeModerationWave");
+            case "remove" ->
+                bridge.call(
+                    "removeModerationWave",
+                    new Class<?>[] {String.class},
+                    java.util.Objects.toString(body.get("event"), ""));
+            case "edit" -> {
+              long seconds = body.get("duration") instanceof Number n ? n.longValue() : -1;
+              plugin
+                  .getModerationService()
+                  .checkDuration(session.get().adminUsername(), "BAN", seconds);
+              yield bridge.call(
+                  "editModerationWave",
+                  new Class<?>[] {String.class, String.class, long.class},
+                  java.util.Objects.toString(body.get("event"), ""),
+                  java.util.Objects.toString(body.get("reason"), ""),
+                  seconds);
+            }
+            default -> throw new IllegalArgumentException("Неизвестное действие волны");
+          };
+      if(Boolean.FALSE.equals(result)){
+        sendError(resp, 409, "Запись волны уже изменена; обновите список");
+        return;}
       plugin.getLogManager().logWebAction(session.get().adminUsername(),"Волна наказаний: "+action);
       sendSuccess(resp,java.util.Map.of("result",result));return;
     }
     if (pathInfo != null
         && (pathInfo.equals("/models/reload") || pathInfo.startsWith("/review/"))) {
+      if (!ownerOnly(req, resp)) return;
       var session =
           requirePermission(
               req,
@@ -240,15 +282,21 @@ public class ApiVesuvioHandler extends ApiHandlerSupport {
                     bridge.call("resetViolationLevel", new Class<?>[]{UUID.class}, uuid);
           if (Boolean.TRUE.equals(body.get("reduceRisk")))
             bridge.call("adjustRisk", new Class<?>[] {UUID.class, double.class}, uuid, -30d);
-                    plugin.getLogManager().logWebAction(session.adminUsername(), "Античит: сброс VL игроку " + uuid);
+          plugin
+              .getLogManager()
+              .logWebAction(session.adminUsername(), "Античит: сброс VL игроку " + uuid);
                     sendSuccess(resp, null);
                 }
                 case "suspect" -> {
                     Map<String, Object> body = readJsonBody(req);
                     boolean suspect = Boolean.TRUE.equals(body.get("suspect"));
-                    bridge.call("setManualSuspect", new Class<?>[]{UUID.class, boolean.class}, uuid, suspect);
-                    plugin.getLogManager().logWebAction(session.adminUsername(),
-                            "Античит: " + (suspect ? "пометил подозреваемым " : "снял подозрение с ") + uuid);
+          bridge.call(
+              "setManualSuspect", new Class<?>[] {UUID.class, boolean.class}, uuid, suspect);
+          plugin
+              .getLogManager()
+              .logWebAction(
+                  session.adminUsername(),
+                  "Античит: " + (suspect ? "пометил подозреваемым " : "снял подозрение с ") + uuid);
                     sendSuccess(resp, null);
                 }
                 default -> sendError(resp, 404, "Не найдено");

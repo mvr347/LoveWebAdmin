@@ -1,19 +1,16 @@
 package me.lovelace.loveWebAdmin.managers;
 
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import me.lovelace.loveWebAdmin.LoveWebAdmin;
 import me.lovelace.loveWebAdmin.integration.LoveAuthBridge;
 import me.lovelace.loveWebAdmin.integration.LoveBehaviorBridge;
 import me.lovelace.loveWebAdmin.integration.VesuvioBridge;
 import me.lovelace.loveWebAdmin.models.WebBan;
 import org.bukkit.Bukkit;
-import org.bukkit.OfflinePlayer;
 import org.bukkit.entity.Player;
-
-import java.net.InetSocketAddress;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
 
 /**
  * Агрегирует полную информацию об игроке (онлайн статус, пинг, наигранное время,
@@ -43,16 +40,34 @@ public class PlayerProfileManager {
         var stored=plugin.getDatabaseManager().getPlayerStats(requested);
         UUID known=null;
         try{known=UUID.fromString(requested);}catch(IllegalArgumentException ignored){}
-        if(known==null&&stored.isPresent()&&stored.get().get("uuid")!=null)known=UUID.fromString(stored.get().get("uuid").toString());
+    if (known == null && stored.isPresent() && stored.get().get("uuid") != null)
+      known = UUID.fromString(stored.get().get("uuid").toString());
         final UUID lookupId=known;
-        Live live=plugin.main().call(()->{
-            Player player=lookupId==null?Bukkit.getPlayerExact(requested):Bukkit.getPlayer(lookupId);
-            if(player==null||!player.isOnline())return null;
-            var economy=plugin.getLoveEconomyBridge();
-            String address=player.getAddress()==null||player.getAddress().getAddress()==null?"—":player.getAddress().getAddress().getHostAddress();
-            return new Live(player.getUniqueId(),player.getName(),player.getPing(),address,economy.isAvailable()?economy.balance(player):null);
-        }).join();
-        if(live==null&&stored.isEmpty())throw new IllegalArgumentException("Игрок не найден в данных сервера");
+    Live live =
+        plugin
+            .main()
+            .call(
+                () -> {
+                  Player player =
+                      lookupId == null
+                          ? Bukkit.getPlayerExact(requested)
+                          : Bukkit.getPlayer(lookupId);
+                  if (player == null || !player.isOnline()) return null;
+                  var economy = plugin.getLoveEconomyBridge();
+                  String address =
+                      player.getAddress() == null || player.getAddress().getAddress() == null
+                          ? "—"
+                          : player.getAddress().getAddress().getHostAddress();
+                  return new Live(
+                      player.getUniqueId(),
+                      player.getName(),
+                      player.getPing(),
+                      address,
+                      economy.isAvailable() ? economy.balance(player) : null);
+                })
+            .join();
+    if (live == null && stored.isEmpty())
+      throw new IllegalArgumentException("Игрок не найден в данных сервера");
         UUID uuid=live!=null?live.uuid():known;
         String name=live!=null?live.name():stored.get().get("name").toString();
         profile.put("name", name);
@@ -103,7 +118,11 @@ public class PlayerProfileManager {
 
         if (isVesuvioAvail) {
             try {
-                Object detail = plugin.main().call(()->vb.call("getPlayerDetail", new Class<?>[]{UUID.class}, uuid)).join();
+        Object detail =
+            plugin
+                .main()
+                .call(() -> vb.call("getPlayerDetail", new Class<?>[] {UUID.class}, uuid))
+                .join();
                 if (detail instanceof Map<?, ?> dMap) {
                     anticheatData.putAll((Map<String, Object>) dMap);
                     Object r = dMap.get("risk");
@@ -132,6 +151,7 @@ public class PlayerProfileManager {
         profile.put("trustGrade", trustScore.grade());
         profile.put("trustDescription", trustScore.description());
         profile.put("trustColor", trustScore.color());
+    profile.put("trustFactors", trustScore.factors());
 
         // 6. Баланс LoveEconomy
         Map<String, Object> ecoData = new LinkedHashMap<>();
@@ -177,6 +197,8 @@ public class PlayerProfileManager {
             long playtimeSeconds,
             long firstJoinedTimestamp) {
 
+    var factors = new java.util.ArrayList<String>();
+    factors.add("Базовая оценка: +70");
         double baseScore = 70.0; // Базовый уровень
 
         // LoveBehavior влияние (+20 / -20)
@@ -185,32 +207,46 @@ public class PlayerProfileManager {
             int sPoints = (int) behaviorData.getOrDefault("playstylePoints", 3500);
             double behaviorBonus = ((pPoints - 3500) / 3500.0) * 15.0 + ((sPoints - 3500) / 3500.0) * 10.0;
             baseScore += behaviorBonus;
+      factors.add(
+          "Поведение и стиль игры: "
+              + String.format(java.util.Locale.ROOT, "%+.1f", behaviorBonus));
         }
 
         // Штрафы античита
         if (anticheatRisk > 0) {
+      factors.add(
+          "Риск нарушений: −" + String.format(java.util.Locale.ROOT, "%.1f", anticheatRisk * 0.4));
             baseScore -= (anticheatRisk * 0.4); // до -40 баллов
         }
         if (anticheatVl > 0) {
+      factors.add(
+          "Срабатывания проверок: −"
+              + String.format(java.util.Locale.ROOT, "%.1f", Math.min(anticheatVl * 0.2, 15.0)));
             baseScore -= Math.min(anticheatVl * 0.2, 15.0);
         }
         if (manualSuspect) {
-            baseScore -= 15.0;
+      baseScore -= 15.0;
+      factors.add("Ручное наблюдение сотрудника: −15");
         }
 
         // Штраф за активные баны
         if (activeBansCount > 0) {
-            baseScore -= (activeBansCount * 40.0);
+      baseScore -= (activeBansCount * 40.0);
+      factors.add("Учтённые блокировки (" + activeBansCount + "): −" + (activeBansCount * 40));
         }
 
         // Бонус за наигранное время (до +15 баллов)
         double hours = playtimeSeconds / 3600.0;
-        baseScore += Math.min(hours * 0.5, 15.0);
+    baseScore += Math.min(hours * 0.5, 15.0);
+    factors.add(
+        "Время игры: +"
+            + String.format(java.util.Locale.ROOT, "%.1f", Math.min(hours * 0.5, 15.0)));
 
         // Бонус за выдержку аккаунта (>30 дней)
         long now = System.currentTimeMillis() / 1000L;
         if (firstJoinedTimestamp > 0 && (now - firstJoinedTimestamp) > 30L * 86400L && activeBansCount == 0) {
-            baseScore += 5.0;
+      baseScore += 5.0;
+      factors.add("Аккаунт старше 30 дней без учтённых блокировок: +5");
         }
 
         int finalScore = (int) Math.round(Math.max(0, Math.min(100, baseScore)));
@@ -241,8 +277,13 @@ public class PlayerProfileManager {
             color = "#ef4444"; // Красный
         }
 
-        return new TrustScore(finalScore, grade, description, color);
+    return new TrustScore(finalScore, grade, description, color, java.util.List.copyOf(factors));
     }
 
-    public record TrustScore(int score, String grade, String description, String color) {}
+  public record TrustScore(
+      int score, String grade, String description, String color, java.util.List<String> factors) {
+    public TrustScore(int score, String grade, String description, String color) {
+      this(score, grade, description, color, java.util.List.of());
+    }
+  }
 }

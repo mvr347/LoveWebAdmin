@@ -1,5 +1,9 @@
 package me.lovelace.loveWebAdmin.commands;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Locale;
 import me.lovelace.loveWebAdmin.LoveWebAdmin;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -8,11 +12,6 @@ import org.bukkit.command.TabCompleter;
 import org.bukkit.util.StringUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Locale;
 
 /**
  * Единая административная команда плагина: {@code /lovewebadmin <info|reload|resetowner>}.
@@ -25,7 +24,8 @@ import java.util.Locale;
  */
 public class LoveWebAdminCommand implements CommandExecutor, TabCompleter {
 
-    private static final List<String> SUBCOMMANDS = List.of("reload", "info", "generatetoken", "resetowner", "discord");
+  private static final List<String> SUBCOMMANDS =
+      List.of("reload", "info", "generatetoken", "resetowner", "discord", "test");
     private static final long CONFIRM_WINDOW_MS = 60_000L;
 
     /** One-time codes for destructive console commands: operation -> code and its expiry. */
@@ -52,6 +52,7 @@ public class LoveWebAdminCommand implements CommandExecutor, TabCompleter {
 
         String sub = args[0].toLowerCase(Locale.ROOT);
         switch (sub) {
+      case "test" -> testPreview(sender, args);
             case "info" -> info(sender);
             case "generatetoken" -> generateToken(sender);
             case "resetowner" -> resetOwner(sender, args);
@@ -61,75 +62,153 @@ public class LoveWebAdminCommand implements CommandExecutor, TabCompleter {
         return true;
     }
 
+  private void testPreview(CommandSender sender, String[] args) {
+    String kind = args.length > 1 ? args[1].toLowerCase(Locale.ROOT) : "cases";
+    if (!List.of("report", "appeal", "support", "cases", "reset").contains(kind)) {
+      sender.sendMessage("Тесты: /lovewebadmin test <report|appeal|support|cases|reset>");
+      return;
+    }
+    if (!plugin.getConfig().getBoolean("preview.enabled", false)) {
+      sender.sendMessage(
+          "Сначала включите preview.enabled. Тестовые данные изолированы от сервера.");
+      return;
+    }
+    String base = plugin.getConfig().getString("web.public-url", "");
+    if (base.isBlank()) base = "http://localhost:" + plugin.getConfig().getInt("web.port", 8080);
+    String section =
+        kind.equals("report")
+            ? "reports"
+            : kind.equals("appeal")
+                ? "appeals"
+                : kind.equals("support") || kind.equals("cases") ? "support" : "dashboard";
+    String link = base.replaceAll("/+$", "") + "/preview/?test=" + kind + "#section=" + section;
+    sender.sendMessage(
+        net.kyori.adventure.text.Component.text(
+                "Открыть тест: " + kind, net.kyori.adventure.text.format.NamedTextColor.AQUA)
+            .clickEvent(net.kyori.adventure.text.event.ClickEvent.openUrl(link)));
+    sender.sendMessage("Локальные примеры без Discord и реальных наказаний: " + link);
+  }
+
     private void help(CommandSender sender) {
         sender.sendMessage("§8========== §bLoveWebAdmin §8==========");
         sender.sendMessage("§b/lovewebadmin reload §7- Перезагрузить конфигурацию плагина");
+    sender.sendMessage(
+        "§b/lovewebadmin test <report|appeal|support|cases|reset> §7- Примеры обращений без"
+            + " Discord");
         sender.sendMessage("§b/lovewebadmin info §7- Адрес панели и состояние входа");
-        sender.sendMessage("§b/lovewebadmin generatetoken §7- Новый токен первичной настройки (пока нет Управляющего)");
-        sender.sendMessage("§b/lovewebadmin resetowner §7- Сбросить Управляющего (только консоль, с подтверждением)");
-        sender.sendMessage("§b/lovewebadmin discord purge §7- Удалить все сообщения бота (только консоль, для тестов)");
+    sender.sendMessage(
+        "§b/lovewebadmin generatetoken §7- Новый токен первичной настройки (пока нет"
+            + " Управляющего)");
+    sender.sendMessage(
+        "§b/lovewebadmin resetowner §7- Сбросить Управляющего (только консоль, с подтверждением)");
+    sender.sendMessage(
+        "§b/lovewebadmin discord purge §7- Удалить все сообщения бота (только консоль, для"
+            + " тестов)");
         sender.sendMessage("§8=========================================");
     }
 
     private void info(CommandSender sender) {
         var config = plugin.getConfig();
         String publicUrl = config.getString("web.public-url", "");
-        sender.sendMessage("§8[§bLoveWebAdmin§8] §7Панель: §f" + (config.getBoolean("web.enabled", true) ? "включена" : "ВЫКЛЮЧЕНА")
-                + " §7адрес: §f" + (publicUrl.isBlank() ? "http://<IP сервера>:" + config.getInt("web.port", 8080) : publicUrl)
-                + " §7слушает: §f" + config.getString("web.host", "0.0.0.0"));
+    sender.sendMessage(
+        "§8[§bLoveWebAdmin§8] §7Панель: §f"
+            + (config.getBoolean("web.enabled", true) ? "включена" : "ВЫКЛЮЧЕНА")
+            + " §7адрес: §f"
+            + (publicUrl.isBlank()
+                ? "http://<IP сервера>:" + config.getInt("web.port", 8080)
+                : publicUrl)
+            + " §7слушает: §f"
+            + config.getString("web.host", "0.0.0.0"));
         boolean owner = plugin.getAdminManager().hasOwner();
         sender.sendMessage("§8[§bLoveWebAdmin§8] §7Управляющий: " + (owner
                 ? "§aсоздан §7(забыли данные входа - §f/lovewebadmin resetowner§7)"
                 : "§eне создан §7(токен настройки - §f/lovewebadmin generatetoken§7)"));
-        sender.sendMessage("§8[§bLoveWebAdmin§8] §7Preview: §f" + (plugin.isPreviewEnabled() ? "включён, /preview/" : "выключен (preview.enabled)"));
+    sender.sendMessage(
+        "§8[§bLoveWebAdmin§8] §7Preview: §f"
+            + (plugin.isPreviewEnabled() ? "включён, /preview/" : "выключен (preview.enabled)"));
     }
 
     private void generateToken(CommandSender sender) {
         if (!(sender instanceof org.bukkit.command.ConsoleCommandSender)) {
-            sender.sendMessage("§8[§bLoveWebAdmin§8] §cТокен можно получить только из консоли сервера.");
+      sender.sendMessage("§8[§bLoveWebAdmin§8] §cТокен можно получить только из консоли сервера.");
             return;
         }
         if (plugin.getAdminManager().hasOwner()) {
-            sender.sendMessage("§8[§bLoveWebAdmin§8] §eУправляющий уже создан. Забыли данные входа - §f/lovewebadmin resetowner§e.");
+      sender.sendMessage(
+          "§8[§bLoveWebAdmin§8] §eУправляющий уже создан. Забыли данные входа - §f/lovewebadmin"
+              + " resetowner§e.");
             return;
         }
-        sender.sendMessage("§8[§bLoveWebAdmin§8] §7Токен первичной настройки: §f" + plugin.getAdminManager().generateSetupToken());
+    sender.sendMessage(
+        "§8[§bLoveWebAdmin§8] §7Токен первичной настройки: §f"
+            + plugin.getAdminManager().generateSetupToken());
     }
 
     private void resetOwner(CommandSender sender, String[] args) {
         if (!(sender instanceof org.bukkit.command.ConsoleCommandSender)) {
-            sender.sendMessage("§8[§bLoveWebAdmin§8] §cСброс Управляющего доступен только из консоли сервера.");
+      sender.sendMessage(
+          "§8[§bLoveWebAdmin§8] §cСброс Управляющего доступен только из консоли сервера.");
             return;
         }
-        if (!confirmed(sender, "resetowner", args, 1,
-                "Будут удалены учётные записи Управляющих и их сессии. Остальной персонал, дела и наказания не меняются.")) return;
+    if (!confirmed(
+        sender,
+        "resetowner",
+        args,
+        1,
+        "Будут удалены учётные записи Управляющих и их сессии. Остальной персонал, дела и наказания"
+            + " не меняются."))
+      return;
         plugin.getAdminManager().resetOwners();
-        sender.sendMessage("§8[§bLoveWebAdmin§8] §aУправляющий сброшен. Токен первичной настройки: §f" + plugin.getAdminManager().generateSetupToken());
+    sender.sendMessage(
+        "§8[§bLoveWebAdmin§8] §aУправляющий сброшен. Токен первичной настройки: §f"
+            + plugin.getAdminManager().generateSetupToken());
     }
 
     private void discord(CommandSender sender, String[] args) {
         if (args.length < 2 || !"purge".equalsIgnoreCase(args[1])) {
-            sender.sendMessage("§8[§bLoveWebAdmin§8] §7Использование: §f/lovewebadmin discord purge");
+      sender.sendMessage("§8[§bLoveWebAdmin§8] §7Использование: §f/lovewebadmin discord purge");
             return;
         }
         if (!(sender instanceof org.bukkit.command.ConsoleCommandSender)) {
-            sender.sendMessage("§8[§bLoveWebAdmin§8] §cОчистка доступна только из консоли сервера.");
+      sender.sendMessage("§8[§bLoveWebAdmin§8] §cОчистка доступна только из консоли сервера.");
             return;
         }
-        if (!confirmed(sender, "discord-purge", args, 2,
-                "Бот удалит ВСЕ свои сообщения во всех текстовых каналах сервера и в известных ЛС: панели, карточки, вступления и ответы в каналах обращений. Только для тестового сервера.")) return;
-        sender.sendMessage("§8[§bLoveWebAdmin§8] §7Очистка запущена, это может занять несколько минут...");
-        plugin.io().run(() -> {
-            try {
-                int total = plugin.getDiscordBridge().ticketDesk().purgeBotMessages(
-                        line -> plugin.getLogger().info("Очистка Discord: " + line));
-                plugin.getLogger().info("Очистка Discord завершена, удалено сообщений: " + total
-                        + ". Панель и карточки опубликуются заново сами.");
-            } catch (Exception error) {
-                plugin.getLogger().warning("Очистка Discord не выполнена: " + error.getClass().getSimpleName()
-                        + (error.getMessage() == null ? "" : ": " + error.getMessage()));
-            }
-        });
+    if (!confirmed(
+        sender,
+        "discord-purge",
+        args,
+        2,
+        "Бот удалит ВСЕ свои сообщения во всех текстовых каналах сервера и в известных ЛС: панели,"
+            + " карточки, вступления и ответы в каналах обращений. Только для тестового сервера."))
+      return;
+    sender.sendMessage(
+        "§8[§bLoveWebAdmin§8] §7Очистка запущена, это может занять несколько минут...");
+    plugin
+        .io()
+        .run(
+            () -> {
+              try {
+                int total =
+                    plugin
+                        .getDiscordBridge()
+                        .ticketDesk()
+                        .purgeBotMessages(
+                            line -> plugin.getLogger().info("Очистка Discord: " + line));
+                plugin
+                    .getLogger()
+                    .info(
+                        "Очистка Discord завершена, удалено сообщений: "
+                            + total
+                            + ". Панель и карточки опубликуются заново сами.");
+              } catch (Exception error) {
+                plugin
+                    .getLogger()
+                    .warning(
+                        "Очистка Discord не выполнена: "
+                            + error.getClass().getSimpleName()
+                            + (error.getMessage() == null ? "" : ": " + error.getMessage()));
+              }
+            });
     }
 
     /**
@@ -148,9 +227,14 @@ public class LoveWebAdminCommand implements CommandExecutor, TabCompleter {
         String fresh = String.format("%04d", new java.security.SecureRandom().nextInt(10_000));
         confirmCodes.put(operation, fresh);
         confirmExpiry.put(operation, System.currentTimeMillis() + CONFIRM_WINDOW_MS);
-        String base = "/lovewebadmin " + (operation.equals("discord-purge") ? "discord purge" : operation);
+    String base =
+        "/lovewebadmin " + (operation.equals("discord-purge") ? "discord purge" : operation);
         sender.sendMessage("§8[§bLoveWebAdmin§8] §c" + warning);
-        sender.sendMessage("§8[§bLoveWebAdmin§8] §7Для подтверждения в течение минуты: §f" + base + " confirm " + fresh);
+    sender.sendMessage(
+        "§8[§bLoveWebAdmin§8] §7Для подтверждения в течение минуты: §f"
+            + base
+            + " confirm "
+            + fresh);
         return false;
     }
 
@@ -158,6 +242,10 @@ public class LoveWebAdminCommand implements CommandExecutor, TabCompleter {
     @Override
     public List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command, @NotNull String alias, @NotNull String[] args) {
         if (!sender.hasPermission("lovewebadmin.admin")) return Collections.emptyList();
+    if (args.length == 2 && args[0].equalsIgnoreCase("test"))
+      return List.of("report", "appeal", "support", "cases", "reset").stream()
+          .filter(v -> v.startsWith(args[1].toLowerCase(Locale.ROOT)))
+          .toList();
         if (args.length == 1) {
             return StringUtil.copyPartialMatches(args[0], SUBCOMMANDS, new ArrayList<>());
         }

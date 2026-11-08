@@ -92,6 +92,19 @@ class FreezeAuthInteropTest {
   }
 
   @Test
+  void authenticatedFrozenPlayerCannotMoveOrReceiveVelocity() {
+    var player = server.addPlayer();
+    auth.authenticated = true;
+    var movement =
+        new PlayerMoveEvent(player, player.getLocation(), player.getLocation().add(1, 0, 0));
+    listener.onMove(movement);
+    assertTrue(movement.isCancelled());
+    var velocity = new PlayerVelocityEvent(player, new org.bukkit.util.Vector(1, 1, 1));
+    listener.onVelocity(velocity);
+    assertTrue(velocity.isCancelled());
+  }
+
+  @Test
   void onlyTeleportIssuedInsideAuthLimboGuardBypassesFreeze() {
     var player = server.addPlayer();
     auth.authenticated = true;

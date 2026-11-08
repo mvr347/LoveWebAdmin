@@ -124,7 +124,10 @@ export function clearPollers() {
   for (const k in state.pollers) delete state.pollers[k];
 }
 export function setToken(newToken) {
-  if (state.token !== newToken) closeAllModals();
+  if (state.token !== newToken) {
+    closeAllModals();
+    delete state.punishmentWorkspace;
+  }
   state.token = newToken;
   if (state.token) {
     state.browserStorage.setItem("wa_token", state.token);
@@ -506,12 +509,12 @@ export function openGlobalSearchModal() {
             <div class="search-modal">
                 <div class="search-input-header">
                     <span style="display:inline-flex; align-items:center;">${renderSvgIcon("search", "violet", 18)}</span>
-                    <input type="text" id="global-search-input" placeholder="Поиск по игрокам, банам, логам журнала... (Esc для выхода)" autofocus>
+                    <input type="text" id="global-search-input" placeholder="Игроки, наказания и обращения… (Esc для выхода)" autofocus>
                     <span class="search-shortcut-badge">ESC</span>
                 </div>
                 <div class="search-results-list" id="global-search-results">
                     <div style="padding:16px; text-align:center; color:var(--text-dim); font-size:12.5px;">
-                        Введите ник игрока, причину бана или команду для мгновенного поиска...
+                        Введите ник, причину наказания или текст обращения…
                     </div>
                 </div>
             </div>
@@ -519,69 +522,72 @@ export function openGlobalSearchModal() {
     () => {
       const input = document.getElementById("global-search-input");
       const results = document.getElementById("global-search-results");
-      let debounceTimer = null;
+      let debounceTimer = null,
+        version = 0;
       input?.addEventListener("input", () => {
         clearTimeout(debounceTimer);
-        const q = input.value.trim();
+        const request = ++version,
+          q = input.value.trim();
         if (!q) {
-          results.innerHTML = `<div style="padding:16px; text-align:center; color:var(--text-dim); font-size:12.5px;">Введите ник игрока, причину бана или команду...</div>`;
+          results.textContent =
+            "Ищите игроков, жалобы, апелляции, поддержку и наказания.";
           return;
         }
         debounceTimer = setTimeout(async () => {
-          results.innerHTML = `<div style="padding:16px; text-align:center; color:var(--text-muted);">Поиск...</div>`;
           try {
-            const [players, bans] = await Promise.all([
-              api(
-                "GET",
-                `/api/players/search?q=${encodeURIComponent(q)}`,
-              ).catch(() => []),
-              api("GET", `/api/bans/all`).catch(() => []),
-            ]);
-            const matchingBans = bans
-              .filter(
-                (b) =>
-                  (b.targetName &&
-                    b.targetName.toLowerCase().includes(q.toLowerCase())) ||
-                  (b.ruleReason &&
-                    b.ruleReason.toLowerCase().includes(q.toLowerCase())),
-              )
-              .slice(0, 5);
-            let html = "";
-            if (players.length > 0) {
-              html += `<div style="padding:6px 12px; font-size:11px; font-weight:700; color:var(--text-dim); text-transform:uppercase;">Игроки (${players.length})</div>`;
-              players.slice(0, 6).forEach((p) => {
-                html += `
-                                    <div class="search-result-item" onclick="window.viewPlayerProfile('${esc(p.name)}');">
-                                        <img src="https://mc-heads.net/avatar/${encodeURIComponent(p.name)}/24" class="player-avatar-sm" alt="">
-                                        <div style="flex:1;">
-                                            <div style="font-weight:700; color:var(--text-main);">${esc(p.name)}</div>
-                                            <div style="font-size:11px; color:var(--text-muted);">${p.isOnline ? '<span style="color:var(--green)">● В сети</span>' : "Оффлайн"} • Наиграно: ${fmtDuration(p.totalPlaytimeSeconds || 0)}</div>
-                                        </div>
-                                        <button type="button" class="secondary btn-sm" onclick="event.stopPropagation(); window.viewPlayerProfile('${esc(p.name)}');">ДОСЬЕ</button>
-                                    </div>`;
-              });
+            const response = await api(
+              "GET",
+              `/api/search?q=${encodeURIComponent(q)}`,
+            );
+            if (request !== version || !results.isConnected) return;
+            results.replaceChildren();
+            const labels = {
+              player: "Игрок",
+              ban: "Блокировка",
+              report: "Жалоба",
+              appeal: "Апелляция",
+              support: "Поддержка",
+            };
+            for (const item of response.items || []) {
+              const row = document.createElement("article");
+              row.className = "search-result-card";
+              const title = document.createElement("strong");
+              title.textContent =
+                labels[item.kind] +
+                (item.id ? " №" + item.id : "") +
+                " · " +
+                item.name;
+              const description = document.createElement("p");
+              description.textContent = item.summary;
+              row.append(title, description);
+              if (["report", "appeal", "support"].includes(item.kind)) {
+                const link = document.createElement("a");
+                link.className = "secondary";
+                link.href = `/case.html?kind=${item.kind}&id=${Number(item.id)}`;
+                link.textContent = "Открыть дело";
+                row.append(link);
+              } else {
+                const button = document.createElement("button");
+                button.className = "secondary";
+                button.type = "button";
+                button.textContent =
+                  item.kind === "ban" ? "Открыть наказание" : "Открыть досье";
+                button.onclick = () =>
+                  item.kind === "ban"
+                    ? window.viewBanDetails(Number(item.id))
+                    : window.viewPlayerProfile(item.name);
+                row.append(button);
+              }
+              results.append(row);
             }
-            if (matchingBans.length > 0) {
-              html += `<div style="padding:10px 12px 6px; font-size:11px; font-weight:700; color:var(--text-dim); text-transform:uppercase;">Баны (${matchingBans.length})</div>`;
-              matchingBans.forEach((b) => {
-                html += `
-                                    <div class="search-result-item" onclick="window.closeCurrentModal(); window.navigateTo('punishments');">
-                                        <span style="display:inline-flex; align-items:center;">${renderSvgIcon("ban", "red", 16)}</span>
-                                        <div style="flex:1;">
-                                            <div style="font-weight:700; color:var(--text-main);">${esc(b.targetName)} <span class="badge red">${esc(b.ruleReason)}</span></div>
-                                            <div style="font-size:11px; color:var(--text-muted);">Администратор: ${esc(b.sourceDisplay || b.creatorName)} • ${fmtTime(b.createdAt)}</div>
-                                        </div>
-                                    </div>`;
-              });
-            }
-            if (players.length === 0 && matchingBans.length === 0) {
-              html = `<div style="padding:20px; text-align:center; color:var(--text-dim);">Ничего не найдено по запросу «${esc(q)}»</div>`;
-            }
-            results.innerHTML = html;
-          } catch (e) {
-            results.innerHTML = `<div style="padding:16px; text-align:center; color:var(--red);">Ошибка поиска</div>`;
+            if (!results.children.length)
+              results.textContent =
+                "Ничего не найдено. Попробуйте другой запрос.";
+          } catch (error) {
+            if (request === version && results.isConnected)
+              results.textContent = error.message;
           }
-        }, 200);
+        }, 220);
       });
     },
   );

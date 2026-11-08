@@ -1,10 +1,11 @@
 package me.lovelace.loveWebAdmin.config;
 
 import static org.junit.jupiter.api.Assertions.*;
+
 import java.util.*;
-import org.junit.jupiter.api.Test;
 import me.lovelace.loveWebAdmin.models.Permission;
 import me.lovelace.loveWebAdmin.utils.PasswordUtils;
+import org.junit.jupiter.api.Test;
 
 class PanelSettingsTest {
   @Test
@@ -74,22 +75,18 @@ class PanelSettingsTest {
   }
 
   @Test
-  void webhookIsMaskedRetainedWhenBlankAndOnlyExplicitlyCleared() {
+  void removedWebhooksAreAbsentAndCannotBeEnabled() {
     var current = PanelSettings.defaults();
-    String secret = "https://discord.com/api/webhooks/123456789/private-secret";
-    current.put("discordWebhookUrl", secret);
+    current.put("discordWebhookUrl", "private-secret");
     var view = PanelSettings.view(current, p -> true);
     assertFalse(view.toString().contains("private-secret"));
-    assertEquals(true, view.get("discordWebhookConfigured"));
-    assertTrue(PanelSettings.normalize(Map.of("discordWebhookUrl", ""), current).isEmpty());
-    var clear = PanelSettings.normalize(Map.of("clearDiscordWebhookUrl", true), current);
-    assertEquals("", clear.get("discordWebhookUrl"));
-    assertEquals(false, clear.get("webhooksEnabled"));
+    assertFalse(view.containsKey("discordWebhookConfigured"));
     assertThrows(
         IllegalArgumentException.class,
-        () ->
-            PanelSettings.normalize(
-                Map.of("discordWebhookUrl", secret, "clearDiscordWebhookUrl", true), current));
+        () -> PanelSettings.normalize(Map.of("webhooksEnabled", true), current));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> PanelSettings.normalize(Map.of("clearDiscordWebhookUrl", true), current));
   }
 
   @Test

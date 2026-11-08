@@ -1526,6 +1526,83 @@ public class DatabaseManager implements me.lovelace.loveWebAdmin.web.SessionRepo
         return Optional.empty();
     }
 
+  public record BanPage(List<WebBan> items, long total) {}
+
+  public synchronized BanPage searchBans(
+      String status, String search, String actor, long from, long to, int offset, int limit) {
+    String state =
+        switch (status) {
+          case "ALL" -> "1=1";
+          case "CLOSED" -> "status NOT IN ('ACTIVE','DRAFT')";
+          case "ACTIVE", "DRAFT", "UNBANNED", "EXPIRED" -> "status='" + status + "'";
+          default -> throw new IllegalArgumentException("Неизвестное состояние наказания");
+        };
+    String where =
+        " WHERE "
+            + state
+            + " AND (LOWER(target_name) LIKE LOWER(?) OR LOWER(rule_reason) LIKE LOWER(?)) AND"
+            + " LOWER(creator_name) LIKE LOWER(?) AND created_at>=? AND created_at<=?";
+    var params = List.of("%" + search + "%", "%" + search + "%", "%" + actor + "%", from, to);
+    try (var count = connection.prepareStatement("SELECT COUNT(*) FROM web_bans" + where);
+        var query =
+            connection.prepareStatement(
+                "SELECT * FROM web_bans"
+                    + where
+                    + " ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?")) {
+      for (int j = 0; j < params.size(); j++) {
+        count.setObject(j + 1, params.get(j));
+        query.setObject(j + 1, params.get(j));
+      }
+      long total;
+      try (var rows = count.executeQuery()) {
+        rows.next();
+        total = rows.getLong(1);
+      }
+      query.setInt(6, Math.clamp(limit, 1, 100));
+      query.setInt(7, Math.max(0, offset));
+      var items = new ArrayList<WebBan>();
+      try (var rows = query.executeQuery()) {
+        while (rows.next()) items.add(mapBan(rows));
+      }
+      return new BanPage(items, total);
+    } catch (SQLException error) {
+      throw new IllegalStateException("Список наказаний недоступен", error);
+    }
+  }
+
+  public synchronized long countAppeals(String status) {
+    boolean filtered = status != null && !status.isBlank() && !"ALL".equalsIgnoreCase(status);
+    try (var q =
+        connection.prepareStatement(
+            "SELECT COUNT(*) FROM ban_appeals" + (filtered ? " WHERE status=?" : ""))) {
+      if (filtered) q.setString(1, status.toUpperCase(java.util.Locale.ROOT));
+      try (var r = q.executeQuery()) {
+        r.next();
+        return r.getLong(1);
+      }
+    } catch (SQLException error) {
+      throw new IllegalStateException(error);
+    }
+  }
+
+  public synchronized List<WebBanAppeal> searchAppeals(String search, int limit) {
+    var items = new ArrayList<WebBanAppeal>();
+    try (var q =
+        connection.prepareStatement(
+            "SELECT * FROM ban_appeals WHERE LOWER(player_name) LIKE LOWER(?) OR LOWER(reason) LIKE"
+                + " LOWER(?) ORDER BY created_at DESC,id DESC LIMIT ?")) {
+      q.setString(1, "%" + search + "%");
+      q.setString(2, "%" + search + "%");
+      q.setInt(3, Math.clamp(limit, 1, 10));
+      try (var rows = q.executeQuery()) {
+        while (rows.next()) items.add(mapBanAppeal(rows));
+      }
+    } catch (SQLException error) {
+      throw new IllegalStateException(error);
+    }
+    return items;
+  }
+
     public synchronized List<WebBan> getAllBans(String statusFilter) {
         List<WebBan> list = new ArrayList<>();
         String sql = (statusFilter != null && !statusFilter.isBlank())

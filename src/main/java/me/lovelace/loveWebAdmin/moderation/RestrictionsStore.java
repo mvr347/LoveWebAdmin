@@ -304,6 +304,12 @@ public final class RestrictionsStore implements AutoCloseable {
 
   public synchronized Map<String, Object> history(Set<String> kinds, String search, int offset)
       throws SQLException {
+    return history(kinds, search, offset, "", 0, Long.MAX_VALUE);
+  }
+
+  public synchronized Map<String, Object> history(
+      Set<String> kinds, String search, int offset, String actor, long from, long to)
+      throws SQLException {
     var allowed =
         kinds.stream().filter(kind -> Set.of("MUTE", "FREEZE").contains(kind)).sorted().toList();
     if (allowed.isEmpty()) return Map.of("items", List.of(), "total", 0, "nextOffset", -1);
@@ -311,13 +317,16 @@ public final class RestrictionsStore implements AutoCloseable {
         " WHERE kind IN ("
             + String.join(",", Collections.nCopies(allowed.size(), "?"))
             + ") AND (LOWER(player_name) LIKE LOWER(?) OR LOWER(actor) LIKE LOWER(?) OR"
-            + " LOWER(reason) LIKE LOWER(?))";
+            + " LOWER(reason) LIKE LOWER(?)) AND LOWER(actor) LIKE LOWER(?) AND at>=? AND at<=?";
     long total;
     String query = "%" + search + "%";
     try (var count = db.prepareStatement("SELECT COUNT(*) FROM restriction_history" + where)) {
       int i = 1;
       for (String kind : allowed) count.setString(i++, kind);
       for (int j = 0; j < 3; j++) count.setString(i++, query);
+      count.setString(i++, "%" + actor + "%");
+      count.setLong(i++, from);
+      count.setLong(i++, to);
       try (var r = count.executeQuery()) {
         r.next();
         total = r.getLong(1);
@@ -332,6 +341,9 @@ public final class RestrictionsStore implements AutoCloseable {
       int i = 1;
       for (String kind : allowed) q.setString(i++, kind);
       for (int j = 0; j < 3; j++) q.setString(i++, query);
+      q.setString(i++, "%" + actor + "%");
+      q.setLong(i++, from);
+      q.setLong(i++, to);
       q.setInt(i, Math.max(0, offset));
       try (var r = q.executeQuery()) {
         while (r.next())

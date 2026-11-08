@@ -148,7 +148,7 @@ export async function renderPunishmentsView(
         const data = await api("GET", "/api/bans/archive");
         const files = data.files || [];
         openModal(`<div class="modal-header"><h3>Архив банов</h3><button type="button" class="close-btn" data-modal-close="true">×</button></div>
-                <div class="modal-body"><p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">Zip: plugins/LoveWebAdmin/archive/ (${data.retentionDays || 90} дн.)</p>
+                <div class="modal-body"><p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">Сохранённые материалы обращений</p>
                 ${files.length ? '<ul style="font-size:13px;">' + files.map((f) => "<li>" + esc(f) + "</li>").join("") + "</ul>" : '<div style="text-align:center;color:var(--text-dim);padding:16px;">Пусто</div>'}</div>
                 <div class="modal-footer"><button type="button" class="secondary" data-modal-close="true">ЗАКРЫТЬ</button></div>`);
       } catch (e) {
@@ -1007,7 +1007,7 @@ export function exposeRenderPunishmentsView() {
   window.renderPunishmentsView = renderPunishmentsView;
 }
 export function exposeRenderBansView() {
-  window.renderBansView = () => renderPunishmentsView("bans");
+  window.renderBansView = () => window.navigateTo("bans");
 }
 export function exposeRenderReportsView() {
   window.renderReportsView = () => renderPunishmentsView("reports");
@@ -1680,7 +1680,7 @@ export function exposeOpenScreenshotLightbox() {
 }
 export function exposeConfirmUnban() {
   window.confirmUnban = function (banId, playerName) {
-    if (isModeratorRole() && !state.me.isOwner) {
+    if (!hasPerm("MANAGE_BANS")) {
       showToast(
         "Недостаточно прав",
         "Разбан игроков разрешён только Администраторам сервера!",

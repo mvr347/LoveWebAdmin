@@ -37,10 +37,7 @@ class ConfigUpgradeTest {
     assertFalse(after.isSet("security.webhooks.telegram"));
     assertFalse(Files.readString(file).contains("old-secret"));
     assertEquals(9090, after.getInt("web.port"));
-    assertEquals(
-        "https://discord.com/api/webhooks/123456789/legacy-secret",
-        after.getString("security.webhooks.discord.webhook-url"));
-    assertTrue(after.getBoolean("security.webhooks.enabled"));
+    assertFalse(after.isSet("security.webhooks"));
   }
 
   @Test
@@ -144,9 +141,7 @@ class ConfigUpgradeTest {
     assertEquals(9090, after.getInt("web.port"));
     assertTrue(after.getBoolean("preview.enabled"));
     assertEquals("1548780207941615707", after.getString("preview.discord.channel-id"));
-    assertEquals(
-        "https://example.invalid/my-secret",
-        after.getString("security.webhooks.discord.webhook-url"));
+    assertFalse(after.isSet("security.webhooks"));
     assertEquals(
         java.util.List.of("stop", "custom-command"),
         after.getStringList("security.command-blacklist"));

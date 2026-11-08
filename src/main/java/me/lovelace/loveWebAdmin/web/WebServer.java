@@ -1,12 +1,13 @@
 package me.lovelace.loveWebAdmin.web;
 
 import jakarta.servlet.DispatcherType;
+import java.util.EnumSet;
 import me.lovelace.loveWebAdmin.LoveWebAdmin;
 import me.lovelace.loveWebAdmin.web.handlers.ApiAdminsHandler;
 import me.lovelace.loveWebAdmin.web.handlers.ApiAuthHandler;
-import me.lovelace.loveWebAdmin.web.handlers.ApiPreviewHandler;
 import me.lovelace.loveWebAdmin.web.handlers.ApiCommandHandler;
 import me.lovelace.loveWebAdmin.web.handlers.ApiLogsHandler;
+import me.lovelace.loveWebAdmin.web.handlers.ApiPreviewHandler;
 import me.lovelace.loveWebAdmin.web.handlers.ApiRolesHandler;
 import me.lovelace.loveWebAdmin.web.handlers.ApiStatsHandler;
 import me.lovelace.loveWebAdmin.web.handlers.ApiVesuvioHandler;
@@ -16,8 +17,6 @@ import org.eclipse.jetty.server.ServerConnector;
 import org.eclipse.jetty.servlet.FilterHolder;
 import org.eclipse.jetty.servlet.ServletContextHandler;
 import org.eclipse.jetty.servlet.ServletHolder;
-
-import java.util.EnumSet;
 
 /**
  * Встроенный Jetty HTTP сервер. Запускается асинхронно в onEnable(), останавливается в onDisable().
@@ -51,7 +50,8 @@ public class WebServer {
 
             context = new ServletContextHandler(ServletContextHandler.NO_SESSIONS);
             context.setContextPath("/");
-            context.addFilter(new FilterHolder(new CorsFilter(plugin)), "/*", EnumSet.of(DispatcherType.REQUEST));
+      context.addFilter(
+          new FilterHolder(new CorsFilter(plugin)), "/*", EnumSet.of(DispatcherType.REQUEST));
 
             ServletHolder authHolder = new ServletHolder(new ApiAuthHandler(plugin));
             context.addServlet(authHolder, "/api/auth");
@@ -59,7 +59,10 @@ public class WebServer {
             context.addServlet(authHolder, "/api/me");
             context.addServlet(authHolder, "/api/me/*");
 
-            context.addServlet(new ServletHolder(new me.lovelace.loveWebAdmin.web.handlers.ApiWorkSummaryHandler(plugin)), "/api/work-summary");
+      context.addServlet(
+          new ServletHolder(
+              new me.lovelace.loveWebAdmin.web.handlers.ApiWorkSummaryHandler(plugin)),
+          "/api/work-summary");
             ServletHolder statsHolder = new ServletHolder(new ApiStatsHandler(plugin));
             context.addServlet(statsHolder, "/api/stats");
             context.addServlet(statsHolder, "/api/stats/*");
@@ -68,7 +71,9 @@ public class WebServer {
             context.addServlet(analyticsHolder, "/api/analytics");
             context.addServlet(analyticsHolder, "/api/analytics/*");
 
-            context.addServlet(new ServletHolder(new me.lovelace.loveWebAdmin.web.handlers.ApiModerationHandler(plugin)), "/api/moderation/*");
+      context.addServlet(
+          new ServletHolder(new me.lovelace.loveWebAdmin.web.handlers.ApiModerationHandler(plugin)),
+          "/api/moderation/*");
             ServletHolder bansHolder = new ServletHolder(new me.lovelace.loveWebAdmin.web.handlers.ApiBansHandler(plugin));
             context.addServlet(bansHolder, "/api/bans");
             context.addServlet(bansHolder, "/api/bans/*");
@@ -77,6 +82,9 @@ public class WebServer {
             context.addServlet(appealsHolder, "/api/appeals");
             context.addServlet(appealsHolder, "/api/appeals/*");
 
+      context.addServlet(
+          new ServletHolder(new me.lovelace.loveWebAdmin.web.handlers.ApiSearchHandler(plugin)),
+          "/api/search");
             ServletHolder playersHolder = new ServletHolder(new me.lovelace.loveWebAdmin.web.handlers.ApiPlayersHandler(plugin));
             context.addServlet(playersHolder, "/api/players");
             context.addServlet(playersHolder, "/api/players/*");
@@ -148,7 +156,9 @@ public class WebServer {
       context.addServlet(previewApi, "/api/preview-sessions/*");
       context.addServlet(previewApi, "/preview/api/*");
 
-            context.addServlet(new ServletHolder(new me.lovelace.loveWebAdmin.web.handlers.ApiCasesHandler(plugin)), "/api/cases/*");
+      context.addServlet(
+          new ServletHolder(new me.lovelace.loveWebAdmin.web.handlers.ApiCasesHandler(plugin)),
+          "/api/cases/*");
             var preview=new ServletHolder(new me.lovelace.loveWebAdmin.web.handlers.PreviewHandler(plugin::isPreviewEnabled));
             context.addServlet(preview,"/preview");context.addServlet(preview,"/preview/*");
             context.addServlet(new ServletHolder(new StaticHandler()), "/*");
@@ -160,7 +170,13 @@ public class WebServer {
 
             plugin.getLogger().severe("Не удалось запустить веб-сервер: " + e.getMessage());
             if (e.getMessage() != null && e.getMessage().contains("Failed to bind")) {
-                plugin.getLogger().severe("[LoveWebAdmin] РЕШЕНИЕ: Укажите web.host: \"0.0.0.0\" в plugins/LoveWebAdmin/config.yml и проверьте, не занят ли порт " + port + ".");
+        plugin
+            .getLogger()
+            .severe(
+                "[LoveWebAdmin] РЕШЕНИЕ: Укажите web.host: \"0.0.0.0\" в"
+                    + " plugins/LoveWebAdmin/config.yml и проверьте, не занят ли порт "
+                    + port
+                    + ".");
             }
         }
     }

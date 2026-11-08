@@ -1,6 +1,7 @@
 package me.lovelace.loveWebAdmin.web;
 
 import static org.junit.jupiter.api.Assertions.*;
+
 import jakarta.servlet.http.*;
 import java.io.*;
 import java.lang.reflect.Proxy;
@@ -86,26 +87,20 @@ class PanelIsolationTest {
   }
 
   @Test
-  void settingsSecretIsRetainedByBlankAndClearedOnlyByExplicitAction() throws Exception {
+  void removedWebhooksCannotBeConfigured() throws Exception {
     var actor = account("WebhookSettings", Set.of(Permission.MANAGE_INTEGRATIONS));
     var headers = Map.of("Authorization", "Bearer " + actor.token());
     var handler = new ApiServerOpsHandler(plugin);
     requestMethod = "POST";
-    requestBody =
-        "{\"discordWebhookUrl\":\"https://discord.com/api/webhooks/123456789/test-secret\",\"webhooksEnabled\":true}";
-    var first = call(handler, "/api/server", "/config", headers);
-    assertEquals(200, first.status);
-    assertFalse(first.body.toString().contains("test-secret"));
-    requestBody = "{\"discordWebhookUrl\":\"\"}";
-    assertEquals(200, call(handler, "/api/server", "/config", headers).status);
-    assertTrue(
-        plugin
-            .getConfig()
-            .getString("security.webhooks.discord.webhook-url")
-            .endsWith("test-secret"));
-    requestBody = "{\"clearDiscordWebhookUrl\":true}";
-    assertEquals(200, call(handler, "/api/server", "/config", headers).status);
-    assertEquals("", plugin.getConfig().getString("security.webhooks.discord.webhook-url"));
+    for (String body :
+        List.of(
+            "{\"webhooksEnabled\":true}",
+            "{\"discordWebhookUrl\":\"https://discord.com/api/webhooks/123456789/test-secret\"}",
+            "{\"clearDiscordWebhookUrl\":true}")) {
+      requestBody = body;
+      assertTrue(
+          Set.of(400, 403).contains(call(handler, "/api/server", "/config", headers).status));
+    }
     assertFalse(plugin.getConfig().getBoolean("security.webhooks.enabled"));
   }
 
@@ -185,7 +180,7 @@ class PanelIsolationTest {
     assertEquals(200, response.status);
     assertFalse(response.body.toString().contains("top-secret-token"));
     assertFalse(response.body.toString().contains("secret-telegram-token"));
-    assertTrue(response.body.toString().contains("discordWebhookConfigured"));
+    assertFalse(response.body.toString().contains("discordWebhookConfigured"));
   }
 
   @Test
@@ -300,7 +295,8 @@ class PanelIsolationTest {
     var integrations = account("DeskRecovery", Set.of(Permission.MANAGE_INTEGRATIONS));
     requestMethod = "POST";
     requestBody =
-        "{\"slot\":\"panel:10000\",\"messageId\":\"20000\",\"explanation\":\"Сообщение найдено в канале\"}";
+        "{\"slot\":\"panel:10000\",\"messageId\":\"20000\",\"explanation\":\"Сообщение найдено в"
+            + " канале\"}";
     var handler = new ApiCasesHandler(plugin);
     assertEquals(
         403,
@@ -500,23 +496,52 @@ class PanelIsolationTest {
   void serverStatisticsKeepPermissionBoundariesEvenWithSavedSensitiveSnapshots() throws Exception {
     var actor=account("AnalyticsOnly",Set.of(Permission.VIEW_ANALYTICS));
     plugin.getDatabaseManager().recordPlayerLogin(UUID.randomUUID().toString(),"KnownPlayer",null);
-    plugin.getDatabaseManager().saveServerMetrics("security","LoveAuth",Map.of("SECRET_COUNT",12345),100);
-    plugin.getDatabaseManager().saveServerMetrics("economy","LoveCore",Map.of("PRIVATE_BALANCE",99999),100);
-    var response=call(new ApiAnalyticsHandler(plugin),"/api/analytics","/general",Map.of("Authorization","Bearer "+actor.token()));
+    plugin
+        .getDatabaseManager()
+        .saveServerMetrics("security", "LoveAuth", Map.of("SECRET_COUNT", 12345), 100);
+    plugin
+        .getDatabaseManager()
+        .saveServerMetrics("economy", "LoveCore", Map.of("PRIVATE_BALANCE", 99999), 100);
+    var response =
+        call(
+            new ApiAnalyticsHandler(plugin),
+            "/api/analytics",
+            "/general",
+            Map.of("Authorization", "Bearer " + actor.token()));
     assertEquals(200,response.status);String body=response.body.toString();
-    assertTrue(body.contains("Аккаунты и активность"));assertFalse(body.contains("SECRET_COUNT"));assertFalse(body.contains("PRIVATE_BALANCE"));
+    assertTrue(body.contains("Аккаунты и активность"));
+    assertFalse(body.contains("SECRET_COUNT"));
+    assertFalse(body.contains("PRIVATE_BALANCE"));
     assertFalse(body.contains("secret-token"));assertFalse(body.contains("password"));
     var denied=account("NoAnalytics",Set.of(Permission.VIEW_STATS));
-    assertEquals(403,call(new ApiAnalyticsHandler(plugin),"/api/analytics","/general",Map.of("Authorization","Bearer "+denied.token())).status);
+    assertEquals(
+        403,
+        call(
+                new ApiAnalyticsHandler(plugin),
+                "/api/analytics",
+                "/general",
+                Map.of("Authorization", "Bearer " + denied.token()))
+            .status);
   }
 
   @Test
   void dashboardWorkSummaryDoesNotExposeCasesWithoutTheirPermissions() throws Exception {
     report("PrivatePlayer");var actor=account("StatsOnly",Set.of(Permission.VIEW_STATS));
-    var response=call(new ApiWorkSummaryHandler(plugin),"/api/work-summary",null,Map.of("Authorization","Bearer "+actor.token()));
-    assertEquals(200,response.status);assertFalse(response.body.toString().contains("PrivatePlayer"));
+    var response =
+        call(
+            new ApiWorkSummaryHandler(plugin),
+            "/api/work-summary",
+            null,
+            Map.of("Authorization", "Bearer " + actor.token()));
+    assertEquals(200,response.status);
+    assertFalse(response.body.toString().contains("PrivatePlayer"));
     var reviewer=account("SummaryReviewer",Set.of(Permission.VIEW_STATS,Permission.VIEW_REPORTS));
-    var visible=call(new ApiWorkSummaryHandler(plugin),"/api/work-summary",null,Map.of("Authorization","Bearer "+reviewer.token()));
+    var visible =
+        call(
+            new ApiWorkSummaryHandler(plugin),
+            "/api/work-summary",
+            null,
+            Map.of("Authorization", "Bearer " + reviewer.token()));
     assertEquals(200,visible.status);assertTrue(visible.body.toString().contains("PrivatePlayer"));
   }
 
@@ -524,22 +549,43 @@ class PanelIsolationTest {
   void serverMetricSnapshotsAreMarkedStaleWhenThePluginIsUnavailable() throws Exception {
     var actor=account("StatsSnapshots",Set.of(Permission.VIEW_ANALYTICS));
     plugin.getDatabaseManager().saveServerMetrics("clans","LoveClans",Map.of("Кланов",7),100);
-    var response=call(new ApiAnalyticsHandler(plugin),"/api/analytics","/general",Map.of("Authorization","Bearer "+actor.token()));
+    var response =
+        call(
+            new ApiAnalyticsHandler(plugin),
+            "/api/analytics",
+            "/general",
+            Map.of("Authorization", "Bearer " + actor.token()));
     assertEquals(200,response.status);
     var data=(Map<?,?>)JsonUtils.parseObject(response.body.toString()).get("data");
     var sections=(List<Map<String,Object>>)data.get("sections");
-    var clans=sections.stream().filter(row->row.get("id").equals("clans")).findFirst().orElseThrow();
-    assertEquals(true,clans.get("stale"));assertEquals(100,((Number)clans.get("observedAt")).intValue());
+    var clans =
+        sections.stream().filter(row -> row.get("id").equals("clans")).findFirst().orElseThrow();
+    assertEquals(true, clans.get("stale"));
+    assertEquals(100, ((Number) clans.get("observedAt")).intValue());
     assertEquals(7,((Number)((Map<?,?>)clans.get("fields")).get("Кланов")).intValue());
   }
 
   private int report(String name) {
-    return plugin.getDatabaseManager().createPlayerReport(UUID.randomUUID().toString(), "Reporter", null,
-        UUID.randomUUID().toString(), name, List.of("Причина"), "Описание", false, 0);
+    return plugin
+        .getDatabaseManager()
+        .createPlayerReport(
+            UUID.randomUUID().toString(),
+            "Reporter",
+            null,
+            UUID.randomUUID().toString(),
+            name,
+            List.of("Причина"),
+            "Описание",
+            false,
+            0);
   }
 
   private WebBan ban(String name) {
-    return plugin.getDatabaseManager().saveBan(new WebBan(0, name, null, null, "Issuer", "Причина", "", "[]", true, "ACTIVE", -1, 100, -1));
+    return plugin
+        .getDatabaseManager()
+        .saveBan(
+            new WebBan(
+                0, name, null, null, "Issuer", "Причина", "", "[]", true, "ACTIVE", -1, 100, -1));
   }
 
   @Test
@@ -548,11 +594,18 @@ class PanelIsolationTest {
     var ban = ban("Ada123"); int report = report("Ada123");
     var headers = Map.of("Authorization", "Bearer " + actor.token());
     requestMethod = "POST"; requestBody = "{\"reportId\":" + report + "}";
-    assertEquals(403, call(new ApiBansHandler(plugin), "/api/bans", "/"+ban.id()+"/attach-report", headers).status);
-    requestBody = "{\"targetName\":\"Ada123\",\"ruleReason\":\"Причина\",\"description\":\"Доказательства\",\"linkedReportId\":"+report+"}";
+    assertEquals(
+        403,
+        call(new ApiBansHandler(plugin), "/api/bans", "/" + ban.id() + "/attach-report", headers)
+            .status);
+    requestBody =
+        "{\"targetName\":\"Ada123\",\"ruleReason\":\"Причина\",\"description\":\"Доказательства\",\"linkedReportId\":"
+            + report
+            + "}";
     assertEquals(403, call(new ApiBansHandler(plugin), "/api/bans", null, headers).status);
     assertNull(plugin.getDatabaseManager().getBanById(ban.id()).orElseThrow().linkedReportId());
-    assertEquals("PENDING", plugin.getDatabaseManager().getReportById(report).orElseThrow().status());
+    assertEquals(
+        "PENDING", plugin.getDatabaseManager().getReportById(report).orElseThrow().status());
   }
 
   @Test
@@ -561,7 +614,14 @@ class PanelIsolationTest {
     var actor = account("BanAndReport", Set.of(Permission.MANAGE_BANS,Permission.MANAGE_REPORTS));
     var ban = ban("Ada123"); int wrong = report("OtherPlayer"), correct = report("Ada123");
     requestMethod = "POST"; requestBody = "{\"reportId\":"+wrong+"}";
-    assertEquals(409,call(new ApiBansHandler(plugin),"/api/bans","/"+ban.id()+"/attach-report",Map.of("Authorization","Bearer "+actor.token())).status);
+    assertEquals(
+        409,
+        call(
+                new ApiBansHandler(plugin),
+                "/api/bans",
+                "/" + ban.id() + "/attach-report",
+                Map.of("Authorization", "Bearer " + actor.token()))
+            .status);
     assertNull(db.getBanById(ban.id()).orElseThrow().linkedReportId());
     assertEquals("PENDING",db.getReportById(wrong).orElseThrow().status());
     assertFalse(db.linkBanAndReport(ban.id(),999999,"Staff"));
@@ -579,7 +639,9 @@ class PanelIsolationTest {
     var field=db.getClass().getDeclaredField("connection");field.setAccessible(true);
     var connection=(java.sql.Connection)field.get(db);
     try(var statement=connection.createStatement()) {
-      statement.execute("CREATE TEMP TRIGGER fail_report_update BEFORE UPDATE ON player_reports BEGIN SELECT RAISE(ABORT, 'test write failure'); END");
+      statement.execute(
+          "CREATE TEMP TRIGGER fail_report_update BEFORE UPDATE ON player_reports BEGIN SELECT"
+              + " RAISE(ABORT, 'test write failure'); END");
     }
     assertFalse(db.linkBanAndReport(ban.id(),report,"Staff"));
     assertNull(db.getBanById(ban.id()).orElseThrow().linkedReportId());
@@ -590,10 +652,22 @@ class PanelIsolationTest {
   @Test
   void invalidReportCannotApplyAPunishmentThroughTheManager() {
     int wrong=report("OtherPlayer");
-    assertThrows(IllegalArgumentException.class,()->plugin.getBanManager().finalizeBan(0,"Staff","Ada123","Причина","Описание",List.of(),true,3600,wrong));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            plugin
+                .getBanManager()
+                .finalizeBan(
+                    0, "Staff", "Ada123", "Причина", "Описание", List.of(), true, 3600, wrong));
     assertTrue(plugin.getDatabaseManager().getAllBans(null).isEmpty());
     int closed=report("Ada123");plugin.getDatabaseManager().resolveReport(closed,"CLOSED","Staff");
-    assertThrows(IllegalArgumentException.class,()->plugin.getBanManager().finalizeBan(0,"Staff","Ada123","Причина","Описание",List.of(),true,3600,closed));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            plugin
+                .getBanManager()
+                .finalizeBan(
+                    0, "Staff", "Ada123", "Причина", "Описание", List.of(), true, 3600, closed));
     assertTrue(plugin.getDatabaseManager().getAllBans(null).isEmpty());
   }
 
@@ -601,8 +675,18 @@ class PanelIsolationTest {
   void fractionalOrMalformedIdsDoNotCreateAnotherBan() throws Exception {
     var actor=account("StrictIds",Set.of(Permission.MANAGE_BANS));requestMethod="POST";
     for(String bad:List.of("1.5","-1","2147483648","\"broken\"")) {
-      requestBody="{\"id\":"+bad+",\"targetName\":\"Ada123\",\"ruleReason\":\"Причина\",\"description\":\"Описание\"}";
-      assertEquals(400,call(new ApiBansHandler(plugin),"/api/bans",null,Map.of("Authorization","Bearer "+actor.token())).status);
+      requestBody =
+          "{\"id\":"
+              + bad
+              + ",\"targetName\":\"Ada123\",\"ruleReason\":\"Причина\",\"description\":\"Описание\"}";
+      assertEquals(
+          400,
+          call(
+                  new ApiBansHandler(plugin),
+                  "/api/bans",
+                  null,
+                  Map.of("Authorization", "Bearer " + actor.token()))
+              .status);
     }
     assertTrue(plugin.getDatabaseManager().getAllBans(null).isEmpty());
   }
@@ -611,7 +695,9 @@ class PanelIsolationTest {
   void contextAndCompactReportQueriesStayScopedAndBounded() {
     var db=plugin.getDatabaseManager();ban("Ada123");ban("OtherPlayer");
     db.saveBan(new WebBan(0,"Ada123",null,null,"Staff","Expired","","[]",true,"ACTIVE",60,100,160));
-    var summary=db.getBanContext("ada123");assertEquals(2L,summary.get("total"));assertEquals(1L,summary.get("active"));
+    var summary = db.getBanContext("ada123");
+    assertEquals(2L, summary.get("total"));
+    assertEquals(1L, summary.get("active"));
     for(int i=0;i<53;i++)report("Ada123");report("OtherPlayer");
     var first=db.getPendingReportsForPlayer("ada123",null,51,0);
     var last=db.getPendingReportsForPlayer("ADA123",null,51,50);
@@ -630,8 +716,16 @@ class PanelIsolationTest {
     assertEquals(200,response.status);assertTrue(response.body.toString().contains("restrictions"));
     assertEquals(200,call(handler,"/api/moderation","/history",headers).status);
     var stranger=account("NoRestrictions",Set.of(Permission.VIEW_STATS));
-    assertEquals(403,call(handler,"/api/moderation",null,Map.of("Authorization","Bearer "+stranger.token())).status);
-    requestMethod="POST";requestBody="{\"action\":\"freeze\",\"player\":\"Ada123\",\"reason\":\"Нет полномочий\"}";
+    assertEquals(
+        403,
+        call(
+                handler,
+                "/api/moderation",
+                null,
+                Map.of("Authorization", "Bearer " + stranger.token()))
+            .status);
+    requestMethod = "POST";
+    requestBody = "{\"action\":\"freeze\",\"player\":\"Ada123\",\"reason\":\"Нет полномочий\"}";
     assertEquals(403,call(handler,"/api/moderation",null,headers).status);
   }
 

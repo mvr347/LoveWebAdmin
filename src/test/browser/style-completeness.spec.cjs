@@ -3,8 +3,8 @@ for(const width of [1440,390])test(`shared form controls, tabs and empty lists f
  await page.setViewportSize({width,height:950});await page.goto('/preview/');
  if(await page.locator('body').evaluate(e=>e.classList.contains('theme-light')))await page.locator('#topbar-theme-btn').click();
  await page.evaluate(()=>window.navigateTo('restrictions'));
- await page.locator('[data-penalty="pending"]').click();
- await page.getByRole('button',{name:'Предварительный бан',exact:true}).click();
+ await page.locator('[data-stage="pending"]').click();
+ await page.getByRole('button',{name:'Выдать бан',exact:true}).click();
  const input=page.locator('#restriction-form input[name=player]');await expect(input).toBeVisible();
  expect(await input.getAttribute('type')).toBeNull();
  const style=await input.evaluate(e=>({bg:getComputedStyle(e).backgroundColor,border:getComputedStyle(e).borderTopWidth,color:getComputedStyle(e).color}));

@@ -32,11 +32,10 @@ public final class ConfigUpgrade {
     boolean hasRemovedSupportTopic =
         supportTopics.stream().anyMatch(ConfigUpgrade::isRemovedSupportTopic);
     boolean missing =
-        hasRemovedSupportTopic
-            || version < target
-            || source.isSet("security.webhooks.telegram")
-            || source.isSet("security.webhooks.discord.enabled")
-            || source.isSet("security.webhooks.discord-url");
+        !source.getString("discord.reports-transport", "bot").equals("bot")
+            || source.isSet("security.webhooks")
+            || hasRemovedSupportTopic
+            || version < target;
     for (String key : defaults.getKeys(true)) {
       if (defaults.isConfigurationSection(key)) {
         if (source.isSet(key) && !source.isConfigurationSection(key))
@@ -51,9 +50,7 @@ public final class ConfigUpgrade {
     }
     if (!missing) return new Result(false, null);
     for (String key : source.getKeys(true)) {
-      if (key.equals("security.webhooks.telegram")
-          || key.startsWith("security.webhooks.telegram.")
-          || key.equals("security.webhooks.discord.enabled")) continue;
+      if (key.equals("security.webhooks") || key.startsWith("security.webhooks.")) continue;
       if (source.isConfigurationSection(key)) continue;
       defaults.set(key, source.get(key));
       var comments = source.getComments(key);
@@ -65,17 +62,8 @@ public final class ConfigUpgrade {
       if (!source.getInlineComments(key).isEmpty())
         defaults.setInlineComments(key, source.getInlineComments(key));
     }
-    if (!source.isSet("security.webhooks.discord.webhook-url")
-        && source.isSet("security.webhooks.discord-url"))
-      defaults.set(
-          "security.webhooks.discord.webhook-url",
-          source.getString("security.webhooks.discord-url", ""));
-    if (source.isSet("security.webhooks.discord.enabled")
-        && !source.getBoolean("security.webhooks.discord.enabled"))
-      defaults.set("security.webhooks.enabled", false);
-    defaults.set("security.webhooks.telegram", null);
-    defaults.set("security.webhooks.discord.enabled", null);
-    defaults.set("security.webhooks.discord-url", null);
+    defaults.set("discord.reports-transport", "bot");
+    defaults.set("security.webhooks", null);
     if (hasRemovedSupportTopic)
       defaults.set(
           supportTopicsKey,
