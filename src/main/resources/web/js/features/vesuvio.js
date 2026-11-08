@@ -1,3 +1,4 @@
+import { mountAnticheatJournal } from "./anticheat-journal.js";
 import { renderWave } from "./waves.js";
 import { noticeDialog } from "../core/dialogs.js";
 import { confirmDialog } from "../core/dialogs.js";
@@ -11,13 +12,13 @@ export async function renderAnticheatView() {
   const area = document.getElementById("content-area");
   let currentCheckFilter = "";
   let isStreamPaused = false;
-  let activeTab = hasPerm("VIEW_VESUVIO_ADVANCED") ? "stream" : "suspects"; // stream, suspects, models
+  let activeTab = hasPerm("VIEW_VESUVIO_ADVANCED") ? "stream" : "suspects";
 
   area.innerHTML = `
             <div class="view-header">
                 <div class="view-title-block">
                     <h2>АНТИЧИТ</h2>
-                    <p>Прямая телеметрия, детекция запрещённых модификаций, поведенческие эвристики и ML-модели</p>
+                    <p>Срабатывания проверок, наблюдение за игроками и автоматические наказания.</p>
                 </div>
             </div>
 
@@ -29,33 +30,31 @@ export async function renderAnticheatView() {
                 </div>
                 <div style="display:flex; align-items:center; gap:10px;">
                     <button type="button" class="secondary btn-sm" id="vesuvio-pause-btn">⏸ ПАУЗА ПОТОКА</button>
-                    <div style="font-size:12px; color:var(--text-muted);">
-                        Эвристики: <span class="badge green">АКТИВНЫ</span>
-                    </div>
+
                 </div>
             </div>
 
-            <!-- Sub-Tabs: Stream / Suspects / Models -->
-            <div style="background:var(--card-bg); border:1px solid var(--border); border-radius:var(--radius-md); padding:12px 16px; margin-bottom:16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
-                <div class="panel-tabs" id="anticheat-tabs" aria-label="Разделы античита"><button type="button" class="filter-tag-btn" data-tab="wave">Волна банов</button>
+            <!-- Разделы античита -->
+            <div class="anticheat-nav">
+                <div class="workspace-primary-tabs" id="anticheat-tabs" aria-label="Разделы античита"><button type="button" class="filter-tag-btn" data-tab="wave">Волна наказаний</button>
                     <button type="button" class="filter-tag-btn active" data-tab="stream">Поток нарушений</button>
                     <button type="button" class="filter-tag-btn" data-tab="suspects">Наблюдение за игроками</button>
-                    <button type="button" class="filter-tag-btn" data-tab="punishments">Журнал наказаний</button>${state.me.isOwner?'<button type="button" class="filter-tag-btn" data-tab="models">Модели и типы проверок</button>':''}
+                    <button type="button" class="filter-tag-btn" data-tab="punishments">Журнал наказаний</button>
                 </div>
 
                 <div style="width:220px;">
                     <select id="anticheat-filter-category">
-                        <option value="">Все типы проверок</option>
-                        <option value="Movement">Movement (Fly, Speed, NoFall)</option>
-                        <option value="Combat">Combat (Killaura, Reach, HitBox)</option>
-                        <option value="World">World (Scaffold, FastBreak)</option>
-                        <option value="Timer">Timer / Tick</option>
+                        <option value="">Все категории</option>
+                        <option value="Movement">Передвижение</option>
+                        <option value="Combat">Бой</option>
+                        <option value="World">Взаимодействие с миром</option>
+                        <option value="Timer">Скорость действий</option>
                     </select>
                 </div>
             </div>
 
             <div id="anticheat-content-body">
-                <!-- Stream / Suspects / Models rendered here -->
+                <!-- Содержимое выбранного раздела -->
             </div>
         `;
   const pauseBtn = document.getElementById("vesuvio-pause-btn");
@@ -91,43 +90,36 @@ export async function renderAnticheatView() {
       currentCheckFilter = e.target.value;
       renderAnticheatTab();
     });
+  let activePanel;
   const renderAnticheatTab = async () => {
-    const body = document.getElementById("anticheat-content-body");
+    const body = area.querySelector("#anticheat-content-body");
     if (!body) return;
-    if (activeTab === "wave") {
-      await renderWave(body);
-    } else if (activeTab === "stream") {
-      await renderStream(body);
-    } else if (activeTab === "suspects") {
-      await renderSuspects(body);
-    } else if (activeTab === "punishments") {
-      try {
-        const entries = await api("GET", "/api/vesuvio/punishments?limit=100");
-        body.replaceChildren();
-        for (const entry of entries) {
-          const card = document.createElement("article");
-          card.className = "punishment-event";
-          card.textContent =
-            entry.name +
-            " · " +
-            entry.action +
-            " · " +
-            entry.reason +
-            " · " +
-            fmtTime(entry.timestamp);
-          body.append(card);
-        }
-        if (!entries.length) body.innerHTML = '<div class="reference-empty-state"><h3>Журнал наказаний пуст</h3><p>Решения автоматических проверок появятся здесь после применения.</p></div>';
-      } catch (e) {
-        body.textContent = e.message;
-      }
-    } else if (activeTab === "models") {
-      await renderCheckModels(body);
+    const selected = activeTab;
+    const panel = document.createElement("div");
+    panel.className = "anticheat-panel";
+    body.replaceChildren(panel);
+    activePanel = panel;
+    area.querySelector(".radar-stream-header").hidden = selected !== "stream";
+    area.querySelector("#anticheat-filter-category").parentElement.hidden =
+      selected !== "stream";
+    for (const button of area.querySelectorAll("#anticheat-tabs button")) {
+      button.classList.toggle("active", button.dataset.tab === selected);
+      button.setAttribute(
+        "aria-pressed",
+        String(button.dataset.tab === selected),
+      );
     }
+    if (selected === "wave") await renderWave(panel);
+    else if (selected === "stream") await renderStream(panel);
+    else if (selected === "suspects") await renderSuspects(panel);
+    else if (selected === "punishments") mountAnticheatJournal(panel);
   };
   const renderStream = async (container) => {
+    if (container.streamLoading) return;
+    container.streamLoading = true;
     try {
       const res = await api("GET", "/api/vesuvio/violations?limit=50");
+      if (!container.isConnected) return;
       const list = Array.isArray(res) ? res : res.violations || [];
       let filtered = list;
       if (currentCheckFilter) {
@@ -141,7 +133,7 @@ export async function renderAnticheatView() {
         container.innerHTML = `<div style="text-align:center; padding:36px; color:var(--text-dim); background:var(--card-bg); border-radius:var(--radius-md); border:1px solid var(--border);">Новых нарушений пока нет. Сервер под защитой античита.</div>`;
         return;
       }
-      container.innerHTML = filtered
+      const markup = filtered
         .map((v) => {
           const name = v.playerName || v.name || "Игрок";
           const check = v.checkName || v.check || v.type || "Movement";
@@ -165,7 +157,13 @@ export async function renderAnticheatView() {
                         </div>`;
         })
         .join("");
+      if (container.streamMarkup !== markup) {
+        container.streamMarkup = markup;
+        container.innerHTML = markup;
+      }
     } catch (e) {
+      if (!container.isConnected) return;
+      delete container.streamMarkup;
       console.warn("[Anticheat] live stream error:", e);
       const msg = e && e.message ? String(e.message) : "";
       const isMissing =
@@ -180,6 +178,8 @@ export async function renderAnticheatView() {
                         </div>
                         ${msg ? `<div style="margin-top:10px; font-size:11px; color:var(--text-dim); font-family:monospace;">${esc(msg).slice(0, 180)}</div>` : ""}
                     </div>`;
+    } finally {
+      container.streamLoading = false;
     }
   };
   const renderSuspects = async (container) => {
@@ -309,143 +309,24 @@ export async function renderAnticheatView() {
       container.innerHTML = `<div style="color:var(--red); padding:20px;">Ошибка загрузки списка нарушителей</div>`;
     }
   };
-  const renderCheckModels = async (container) => {
-    try {
-      const engine = await api("GET", "/api/vesuvio/engine");
-      container.replaceChildren();
-      const heading = document.createElement("h3");
-      heading.textContent = "Модели и обучение";
-      container.append(heading);
-      const facts = document.createElement("div");
-      facts.className = "workspace-grid";
-      for (const [label, value] of [
-        [
-          "Модель кликов",
-          engine.clickModelLoaded ? "Загружена" : "Не загружена",
-        ],
-        [
-          "Модель прицеливания",
-          engine.aimModelLoaded ? "Загружена" : "Не загружена",
-        ],
-        ["Образцов в датасете", engine.datasetSize],
-        ["Обучающих образцов классификатора", engine.classifierTrainedSamples],
-        ["Вычислений ONNX", engine.onnxTotalInferences],
-      ]) {
-        const card = document.createElement("section");
-        const name = document.createElement("h4");
-        name.textContent = label;
-        const field = document.createElement("p");
-        field.textContent = String(value ?? "Нет данных");
-        card.append(name, field);
-        facts.append(card);
-      }
-      container.append(facts);
-      if (hasPerm("MANAGE_VESUVIO_MODELS")) {
-        const reload = document.createElement("button");
-        reload.className = "primary";
-        reload.textContent = "Перезагрузить модели";
-        reload.onclick = async () => {
-          if (
-            !(await confirmDialog(
-              "Перезагрузка моделей",
-              "Загрузить файлы моделей с сервера? Повторная перезагрузка доступна через минуту.",
-            ))
-          )
-            return;
-          try {
-            await api("POST", "/api/vesuvio/models/reload", {});
-            await renderCheckModels(container);
-          } catch (error) {
-            showToast("Модели", error.message, "error");
-          }
-        };
-        container.append(reload);
-      }
-      const title = document.createElement("h3");
-      title.textContent = "Образцы для разбора";
-      container.append(title);
-      let samples;
-      try {
-        samples = await api("GET", "/api/vesuvio/reviews?limit=50");
-      } catch (error) {
-        const note = document.createElement("p");
-        note.textContent = error.message;
-        container.append(note);
-        return;
-      }
-      if (!samples.length) {
-        const empty = document.createElement("p");
-        empty.textContent = "Образцов для разбора сейчас нет";
-        container.append(empty);
-      }
-      for (const sample of samples) {
-        const card = document.createElement("section");
-        const label = document.createElement("h4");
-        label.textContent =
-          sample.name +
-          " · " +
-          (sample.domain === "aim" ? "Прицеливание" : "Клики");
-        const description = document.createElement("p");
-        description.textContent =
-          "Вероятность: " +
-          (sample.probability * 100).toFixed(1) +
-          "% · Образец " +
-          sample.id;
-        const vector = document.createElement("details");
-        const summary = document.createElement("summary");
-        summary.textContent = "Признаки образца";
-        const values = document.createElement("pre");
-        values.textContent = JSON.stringify(sample.features);
-        vector.append(summary, values);
-        card.append(label, description, vector);
-        for (const [verdict, text] of [
-          ["legit", "Чистая игра"],
-          ["cheat", "Использование читов"],
-        ]) {
-          const button = document.createElement("button");
-          button.textContent = text;
-          button.className = verdict === "cheat" ? "danger" : "secondary";
-          button.disabled = !hasPerm("REVIEW_VESUVIO_SAMPLES");
-          if (button.disabled)
-            button.title = "Нужно право разбора обучающих образцов";
-          button.onclick = async () => {
-            if (
-              !(await confirmDialog(
-                "Разбор образца",
-                sample.name + ": " + text + "? Вердикт влияет на обучение.",
-              ))
-            )
-              return;
-            try {
-              await api(
-                "POST",
-                "/api/vesuvio/review/" + encodeURIComponent(sample.id),
-                {
-                  verdict,
-                },
-              );
-              await renderCheckModels(container);
-            } catch (error) {
-              showToast("Образец", error.message, "error");
-            }
-          };
-          card.append(button);
-        }
-        container.append(card);
-      }
-    } catch (error) {
-      container.textContent =
-        "Не удалось получить состояние моделей: " + error.message;
-    }
-  };
   await renderAnticheatTab();
+  if (!activePanel?.isConnected) return;
 
-  // Stream poller: auto updates without manual refresh
+  // Every response keeps its own panel; switching tabs detaches the previous target.
   state.pollers["vesuvio_live_stream"] = setInterval(() => {
-    if (!isStreamPaused && activeTab === "stream") {
-      const body = document.getElementById("anticheat-content-body");
-      if (body) renderStream(body);
-    }
+    if (
+      !activePanel?.isConnected ||
+      document.hidden ||
+      activePanel.contains(document.activeElement) ||
+      document.querySelector(".modal-overlay,dialog[open]")
+    )
+      return;
+    if (!isStreamPaused && activeTab === "stream") renderStream(activePanel);
+    if (
+      activeTab === "wave" &&
+      !document.querySelector(".modal-overlay,dialog[open]")
+    )
+      renderWave(activePanel);
   }, 3000);
 }
 

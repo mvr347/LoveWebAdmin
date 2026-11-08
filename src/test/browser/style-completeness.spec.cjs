@@ -14,7 +14,7 @@ for(const width of [1440,390])test(`shared form controls, tabs and empty lists f
  await expect(page.locator('#auth-subtabs .active')).toHaveCSS('box-shadow','none');
  expect(await page.locator('#auth-subtabs').evaluate(e=>getComputedStyle(e).flexWrap)).toBe('wrap');
  await page.evaluate(()=>window.navigateTo('anticheat'));
- await expect(page.locator('#anticheat-tabs button')).toHaveCount(5);
+ await expect(page.locator('#anticheat-tabs button')).toHaveCount(4);
  for(const button of await page.locator('#anticheat-tabs button').all()){
   const box=await button.boundingBox();expect(box.x).toBeGreaterThanOrEqual(0);expect(box.x+box.width).toBeLessThanOrEqual(width);
  }

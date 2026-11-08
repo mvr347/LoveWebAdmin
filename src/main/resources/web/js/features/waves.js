@@ -3,14 +3,24 @@ import { confirmDialog, explanationDialog } from "../core/dialogs.js";
 import { parseDuration } from "./restrictions.js";
 
 export async function renderWave(container) {
+  if (container.waveLoading) return;
+  container.waveLoading = true;
   let entries;
   try {
     entries = await api("GET", "/api/vesuvio/wave");
   } catch (error) {
-    container.textContent = error.message;
+    if (container.isConnected) {
+      container.textContent = error.message;
+      delete container.waveSnapshot;
+    }
     return;
+  } finally {
+    container.waveLoading = false;
   }
   if (!container.isConnected) return;
+  const snapshot = JSON.stringify(entries);
+  if (container.waveSnapshot === snapshot) return;
+  container.waveSnapshot = snapshot;
   const canManage = hasPerm("MANAGE_VESUVIO") && hasPerm("MANAGE_BANS");
   const names = {
     QUEUED: "В очереди",
@@ -20,7 +30,7 @@ export async function renderWave(container) {
     REMOVED: "Исключён",
   };
   const queued = entries.filter((entry) => entry.state === "QUEUED").length;
-  container.innerHTML = `<header class="wave-hero"><div><span class="ui-eyebrow">Автоматические наказания</span><h3>Волна наказаний</h3><p>Проверьте причины и сроки перед запуском. Спорные записи направляются на ручную проверку.</p></div><div class="wave-counter"><strong>${queued}</strong><small>ожидают применения</small></div></header>${canManage ? `<button type="button" class="primary" id="wave-execute" ${queued ? "" : "disabled"} title="${queued ? "Применить наказания в очереди" : "Нет записей для запуска"}">Запустить волну</button>` : ""}<div id="wave-entries"></div>`;
+  container.innerHTML = `<header class="wave-hero"><div><span class="ui-eyebrow">Автоматические наказания</span><h3>Волна наказаний</h3><p>Проверьте причины и сроки перед запуском. Спорные записи направляются на ручную проверку.</p></div><div class="wave-counter"><strong>${queued}</strong><small>ожидают применения</small></div><div class="wave-launch">${canManage ? `<button type="button" class="primary" id="wave-execute" ${queued ? "" : "disabled"} title="${queued ? "Применить наказания в очереди" : "Нет записей для запуска"}">Запустить волну</button>` : ""}</div></header><div id="wave-entries"></div>`;
 
   const list = container.querySelector("#wave-entries");
   for (const entry of entries) {

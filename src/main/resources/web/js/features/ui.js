@@ -510,7 +510,7 @@ export function openGlobalSearchModal() {
                 <div class="search-input-header">
                     <span style="display:inline-flex; align-items:center;">${renderSvgIcon("search", "violet", 18)}</span>
                     <input type="text" id="global-search-input" placeholder="Игроки, наказания и обращения… (Esc для выхода)" autofocus>
-                    <span class="search-shortcut-badge">ESC</span>
+                    <button type="button" class="close-btn" data-modal-close aria-label="Закрыть поиск">×</button>
                 </div>
                 <div class="search-results-list" id="global-search-results">
                     <div style="padding:16px; text-align:center; color:var(--text-dim); font-size:12.5px;">
@@ -519,9 +519,13 @@ export function openGlobalSearchModal() {
                 </div>
             </div>
         `,
-    () => {
+    (overlay) => {
       const input = document.getElementById("global-search-input");
       const results = document.getElementById("global-search-results");
+      overlay.addEventListener("lwa:dispose", () => {
+        clearTimeout(debounceTimer);
+        version++;
+      }, { once: true });
       let debounceTimer = null,
         version = 0;
       input?.addEventListener("input", () => {
@@ -590,6 +594,7 @@ export function openGlobalSearchModal() {
         }, 220);
       });
     },
+    "global-search-drawer",
   );
 }
 
@@ -715,7 +720,7 @@ export function exposeOpenQuickKickModal() {
               if (e.message && e.message.includes("не в сети")) {
                 showToast(
                   "Игрок оффлайн",
-                  `Игрок LoveWebAdmin не в сети или не найден`,
+                  `Игрок ${name} не в сети или не найден`,
                   "warning",
                 );
               } else {
@@ -778,7 +783,7 @@ export function exposeOpenQuickTeleportModal() {
               if (e.message && e.message.includes("не в сети")) {
                 showToast(
                   "Игрок оффлайн",
-                  `Игрок LoveWebAdmin не в сети или не найден`,
+                  `Игрок ${name} не в сети или не найден`,
                   "warning",
                 );
               } else {
@@ -836,7 +841,7 @@ export function exposeOpenQuickVanishModal() {
               );
               showToast(
                 "Vanish",
-                `Режим скрытности переключен для LoveWebAdmin`,
+                `Режим скрытности переключён для ${name}`,
                 "info",
               );
               closeModal();
@@ -844,7 +849,7 @@ export function exposeOpenQuickVanishModal() {
               if (e.message && e.message.includes("не в сети")) {
                 showToast(
                   "Игрок оффлайн",
-                  `Игрок LoveWebAdmin не в сети или не найден`,
+                  `Игрок ${name} не в сети или не найден`,
                   "warning",
                 );
               } else {
@@ -930,7 +935,7 @@ export function exposeOpenQuickMuteModal() {
               if (e.message && e.message.includes("не в сети")) {
                 showToast(
                   "Игрок оффлайн",
-                  `Игрок LoveWebAdmin не в сети или не найден`,
+                  `Игрок ${name} не в сети или не найден`,
                   "warning",
                 );
               } else {
