@@ -4,15 +4,14 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import me.lovelace.loveWebAdmin.LoveWebAdmin;
-import me.lovelace.loveWebAdmin.models.Permission;
-import me.lovelace.loveWebAdmin.models.WebSession;
-import me.lovelace.loveWebAdmin.utils.JsonUtils;
-
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.Optional;
+import me.lovelace.loveWebAdmin.LoveWebAdmin;
+import me.lovelace.loveWebAdmin.models.Permission;
+import me.lovelace.loveWebAdmin.models.WebSession;
+import me.lovelace.loveWebAdmin.utils.JsonUtils;
 
 /**
  * Общие хелперы для всех API хендлеров: аутентификация, проверка прав, JSON I/O.
@@ -38,6 +37,45 @@ public abstract class ApiHandlerSupport extends HttpServlet {
       throws ServletException, IOException {
     boolean mutation = java.util.Set.of("POST", "PUT", "PATCH", "DELETE").contains(req.getMethod());
     String path = req.getRequestURI();
+    String actionPath =
+        req.getServletPath() == null
+            ? path
+            : req.getServletPath() + java.util.Objects.toString(req.getPathInfo(), "");
+    if (mutation
+        && me.lovelace.loveWebAdmin.web.SensitiveActions.requiresSecondFactor(actionPath)) {
+      var session = requireSession(req, resp);
+      if (session.isEmpty()) return;
+      if (session.get().adminId() <= 0) {
+        sendError(resp, 403, "Подтвердите это действие через личную учётную запись сотрудника");
+        return;
+      }
+      var current = plugin.getDatabaseManager().getAdminById(session.get().adminId());
+      if (current.isEmpty() || !"ACTIVE".equals(current.get().status())) {
+        sendError(resp, 403, "Аккаунт сотрудника недоступен");
+        return;
+      }
+      var admin = current.get();
+      if (!admin.totpEnabled() || admin.totpSecret() == null || admin.totpSecret().isBlank()) {
+        sendError(resp, 403, "Для изменения доступа требуется настроенная 2FA");
+        return;
+      }
+      String code = req.getHeader("X-LWA-2FA");
+      if (code == null || code.isBlank()) {
+        sendJson(
+            resp,
+            403,
+            JsonUtils.toJson(
+                Map.of(
+                    "success",
+                    false,
+                    "code",
+                    "SECOND_FACTOR_REQUIRED",
+                    "error",
+                    "Подтвердите действие кодом 2FA")));
+        return;
+      }
+      if (!verifySensitiveCode(req, resp, admin, code)) return;
+    }
     if (mutation
         && path.matches("/api/appeals/[0-9]+/(reply|review)")
         && plugin.operations() != null) {
@@ -92,6 +130,23 @@ public abstract class ApiHandlerSupport extends HttpServlet {
     invokeSafely(req, resp);
   }
 
+  protected boolean verifySensitiveCode(HttpServletRequest req, HttpServletResponse resp,
+      me.lovelace.loveWebAdmin.models.WebAdmin admin, String code) throws IOException {
+    var attempts = plugin.getLoginAttemptTracker();
+    String ipKey = "stepup-ip:" + req.getRemoteAddr(), userKey = "stepup-user:" + admin.id();
+    if (attempts.getLockedRemainingSeconds(ipKey, userKey) > 0) {
+      sendError(resp, 429, "Слишком много неверных кодов. Повторите позже");
+      return false;
+    }
+    if (!me.lovelace.loveWebAdmin.utils.TotpUtils.verifyCode(admin.totpSecret(), code)) {
+      attempts.recordFailureAndCheckNewlyLocked(ipKey, userKey);
+      sendError(resp, 403, "Неверный или уже использованный код 2FA. Дождитесь нового кода");
+      return false;
+    }
+    attempts.recordSuccess(ipKey, userKey);
+    return true;
+  }
+
   protected String operationActor(WebSession session) {
     return session.adminId() == -999 ? "key:" + session.token() : "staff:" + session.adminId();
   }
@@ -111,7 +166,9 @@ public abstract class ApiHandlerSupport extends HttpServlet {
                 sendError(resp, 400, "Некорректный запрос");
             }
         } catch (RuntimeException e) {
-            plugin.getLogger().warning("Необработанная ошибка при обработке запроса " + req.getRequestURI() + ": " + e);
+      plugin
+          .getLogger()
+          .warning("Необработанная ошибка при обработке запроса " + req.getRequestURI() + ": " + e);
             if (!resp.isCommitted()) {
                 sendError(resp, 500, "Внутренняя ошибка сервера");
             }

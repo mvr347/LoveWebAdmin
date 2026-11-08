@@ -43,22 +43,34 @@ class PanelIsolationTest {
         .createSession(plugin.getDatabaseManager().getAdminByUsername(name).orElseThrow(), role);
   }
 
+  private Map<String,String> confirmed(WebSession actor,int offset) throws Exception {
+    var db=plugin.getDatabaseManager();var admin=db.getAdminById(actor.adminId()).orElseThrow();
+    String secret=admin.totpSecret();
+    if(secret==null){secret=me.lovelace.loveWebAdmin.utils.TotpUtils.generateSecret();db.saveAdmin(new WebAdmin(admin.id(),admin.username(),admin.passwordHash(),admin.roleId(),admin.createdAt(),admin.lastLoginAt(),secret,true,1,"127.0.0.1",admin.status(),admin.uiPreferences(),admin.backupCodes()));}
+    var decode=me.lovelace.loveWebAdmin.utils.TotpUtils.class.getDeclaredMethod("decodeBase32",String.class);decode.setAccessible(true);
+    var generate=me.lovelace.loveWebAdmin.utils.TotpUtils.class.getDeclaredMethod("generateCodeForStep",byte[].class,long.class);generate.setAccessible(true);
+    String code=String.format("%06d",generate.invoke(null,decode.invoke(null,secret),System.currentTimeMillis()/30000+offset));
+    return Map.of("Authorization","Bearer "+actor.token(),"X-LWA-2FA",code);
+  }
+
   @Test
   void integrationOnlyRoleCanReadAndSaveChannelsButCannotChangePanelAddress() throws Exception {
     var actor = account("OnlyIntegrations", Set.of(Permission.MANAGE_INTEGRATIONS));
-    var headers = Map.of("Authorization", "Bearer " + actor.token());
+    Map<String,String> headers = Map.of("Authorization", "Bearer " + actor.token());
     var handler = new ApiServerOpsHandler(plugin);
     var get = call(handler, "/api/server", "/config", headers);
     assertEquals(200, get.status);
     assertTrue(get.body.toString().contains("discordPanelChannelId"));
     assertFalse(get.body.toString().contains("webPort"));
     requestMethod = "POST";
+    headers = confirmed(actor, -1);
     requestBody = "{\"discordPanelChannelId\":\"123456789012345678\"}";
     var saved = call(handler, "/api/server", "/config", headers);
     assertEquals(200, saved.status);
     assertEquals(
         "123456789012345678", plugin.getConfig().getString("discord.tickets.panel-channel-id"));
     assertTrue(saved.body.toString().contains("restartRequiredFields"));
+    headers = confirmed(actor, 0);
     requestBody = "{\"webPort\":9090}";
     assertEquals(403, call(handler, "/api/server", "/config", headers).status);
   }
@@ -80,7 +92,7 @@ class PanelIsolationTest {
                 new ApiServerOpsHandler(plugin),
                 "/api/server",
                 "/config",
-                Map.of("Authorization", "Bearer " + actor.token()))
+                confirmed(actor, 0))
             .status);
     assertEquals(before, java.nio.file.Files.readString(file));
     assertEquals(port, plugin.getConfig().getInt("web.port"));

@@ -97,7 +97,7 @@ export function explanationDialog(title, message) {
     const accept = document.createElement("button");
     accept.className = "primary";
     accept.textContent = "Подтвердить";
-    accept.disabled=true;
+    accept.disabled = true;
     let closed = false;
     function done(value) {
       if (closed) return;
@@ -117,13 +117,57 @@ export function explanationDialog(title, message) {
       }
       done(input.value.trim());
     };
-    input.oninput = () => {input.setCustomValidity("");accept.disabled=input.value.trim().length<5||input.value.length>2000;};
+    input.oninput = () => {
+      input.setCustomValidity("");
+      accept.disabled =
+        input.value.trim().length < 5 || input.value.length > 2000;
+    };
     dialog.addEventListener("cancel", (e) => {
       e.preventDefault();
       done(null);
     });
     row.append(cancel, accept);
     dialog.append(heading, text, input, row);
+    document.body.append(dialog);
+    dialog.showModal();
+    input.focus();
+  });
+}
+
+export function secondFactorDialog() {
+  return new Promise((resolve) => {
+    const dialog = document.createElement("dialog");
+    dialog.className = "workspace-dialog second-factor-dialog";
+    dialog.innerHTML =
+      '<h2>Подтверждение 2FA</h2><p>Введите новый шестизначный код из приложения-аутентификатора. Если код уже использовали, дождитесь следующего.</p><form><label>Код подтверждения<input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required placeholder="000000"></label><div class="row"><button type="button" class="secondary" data-cancel>Отмена</button><button type="submit" class="primary" disabled>Подтвердить</button></div></form>';
+    const input = dialog.querySelector("input"),
+      accept = dialog.querySelector("[type=submit]");
+    let settled = false;
+    function done(value) {
+      if (settled) return;
+      settled = true;
+      release();
+      document.removeEventListener("lwa:account-change", cancelForAccount);
+      dialog.close();
+      dialog.remove();
+      resolve(value);
+    }
+    const cancelForAccount = () => done(null);
+    document.addEventListener("lwa:account-change", cancelForAccount);
+    const release = bindLifetime(done);
+    input.oninput = () => {
+      input.value = input.value.replace(/\D/g, "").slice(0, 6);
+      accept.disabled = !/^\d{6}$/.test(input.value);
+    };
+    dialog.querySelector("form").onsubmit = (event) => {
+      event.preventDefault();
+      if (/^\d{6}$/.test(input.value)) done(input.value);
+    };
+    dialog.querySelector("[data-cancel]").onclick = () => done(null);
+    dialog.addEventListener("cancel", (event) => {
+      event.preventDefault();
+      done(null);
+    });
     document.body.append(dialog);
     dialog.showModal();
     input.focus();
