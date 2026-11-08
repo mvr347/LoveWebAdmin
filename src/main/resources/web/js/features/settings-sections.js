@@ -163,7 +163,7 @@ const scopes = {
   discord: {
     title: "Бот и обращения Discord",
     intro:
-      "Бот и его токен настраиваются в ядре сервера. Здесь задаются каналы и правила обращений. Вебхук безопасности находится в отдельном разделе и не создаёт кнопки или тикеты.",
+      "Бот подключается на сервере. Здесь задаются каналы, правила обращений и уведомления сотрудников.",
     permission: "MANAGE_INTEGRATIONS",
     groups: [
       [
@@ -227,19 +227,6 @@ const scopes = {
       [
         "Уведомления о делах",
         [
-          [
-            "discordReportsTransport",
-            "Способ отправки",
-            "select",
-            "Относится к уведомлениям. Панель с кнопками всегда требует бота.",
-            "auto",
-            [
-              ["auto", "Автоматически: бот, иначе вебхук"],
-              ["bot", "Только бот"],
-              ["webhook", "Только вебхук"],
-              ["both", "Бот и вебхук"],
-            ],
-          ],
           [
             "discordReportsChannelId",
             "Дополнительный канал жалоб",
@@ -341,87 +328,6 @@ const scopes = {
       ],
     ],
   },
-  webhooks: {
-    title: "Уведомления безопасности Discord",
-    intro:
-      "Отдельный вебхук для событий входа и безопасности. Он не управляет ботом, личными сообщениями или панелью жалоб. Старый секрет не показывается и не подставляется в форму.",
-    permission: "MANAGE_INTEGRATIONS",
-    groups: [
-      [
-        "Канал безопасности",
-        [
-          [
-            "webhooksEnabled",
-            "Отправлять уведомления безопасности",
-            "checkbox",
-            "Включайте после сохранения корректного webhook URL. Только Discord.",
-            false,
-          ],
-          [
-            "discordWebhookUrl",
-            "Новый адрес Discord webhook",
-            "password",
-            "Discord → настройки закрытого канала → интеграции → вебхуки. Пустое поле сохраняет действующий адрес.",
-            "",
-          ],
-          [
-            "clearDiscordWebhookUrl",
-            "Удалить сохранённый адрес",
-            "checkbox",
-            "Применится только после сохранения. Также выключит отправку; оставлять поле адреса пустым для удаления недостаточно.",
-            false,
-          ],
-        ],
-      ],
-      [
-        "Какие события отправлять",
-        [
-          [
-            "webhookNotifyNewIp",
-            "Вход сотрудника с нового IP",
-            "checkbox",
-            "Помогает обнаружить вход с неизвестного устройства или сети.",
-            true,
-          ],
-          [
-            "webhookNotifyAllLogins",
-            "Каждый успешный вход",
-            "checkbox",
-            "Увеличивает количество сообщений. По умолчанию достаточно уведомлять о новом IP.",
-            false,
-          ],
-          [
-            "webhookNotifyBruteForce",
-            "Блокировка перебора паролей",
-            "checkbox",
-            "Срабатывание ограничения неудачных попыток входа.",
-            true,
-          ],
-          [
-            "webhookNotifyRegistration",
-            "Новая заявка сотрудника",
-            "checkbox",
-            "Уведомление о регистрации, ожидающей рассмотрения.",
-            true,
-          ],
-          [
-            "webhookNotifyCommands",
-            "Команды из веб-консоли",
-            "checkbox",
-            "Сообщение содержит сотрудника и выполненную команду. Канал должен быть закрытым.",
-            true,
-          ],
-          [
-            "webhookNotifyDestructive",
-            "Опасные административные действия",
-            "checkbox",
-            "Например, удаление или массовый сброс данных.",
-            true,
-          ],
-        ],
-      ],
-    ],
-  },
 };
 export function renderSettingsSection(
   host,
@@ -460,12 +366,8 @@ export function renderSettingsSection(
         type === "list" ? "textarea" : type === "select" ? "select" : "input",
       );
       input.id = "setting-" + key;
-      const value =
-        key === "discordWebhookUrl"
-          ? ""
-          : (drafts[kind]?.[key] ?? config[key] ?? fallback);
-      original[key] =
-        key === "discordWebhookUrl" ? "" : (config[key] ?? fallback);
+      const value = drafts[kind]?.[key] ?? config[key] ?? fallback;
+      original[key] = config[key] ?? fallback;
       if (type === "select")
         for (const [v, text] of min) {
           const option = document.createElement("option");
@@ -489,12 +391,6 @@ export function renderSettingsSection(
         input.required = true;
       }
       if (type === "list") input.rows = 3;
-      if (type === "password") {
-        input.autocomplete = "new-password";
-        input.placeholder = config.discordWebhookConfigured
-          ? "Адрес сохранён. Для замены введите новый"
-          : "Адрес ещё не задан";
-      }
       const note = document.createElement("p");
       note.className = "settings-help";
       note.id = input.id + "-help";
@@ -532,19 +428,6 @@ export function renderSettingsSection(
               : input.value.trim();
     return data;
   }
-  if (kind === "webhooks") {
-    const clear = fields.get("clearDiscordWebhookUrl").input,
-      url = fields.get("discordWebhookUrl").input;
-    clear.addEventListener("change", () => {
-      url.disabled = clear.checked;
-      if (clear.checked) url.value = "";
-      drafts[kind] = read();
-    });
-    if (clear.checked) {
-      url.disabled = true;
-      url.value = "";
-    }
-  }
   const save = document.createElement("button");
   save.type = "submit";
   save.className = "primary";
@@ -577,11 +460,6 @@ export function renderSettingsSection(
     const data = read(),
       patch = {};
     for (const [key, value] of Object.entries(data)) {
-      if (
-        (key === "discordWebhookUrl" && !value) ||
-        (key === "clearDiscordWebhookUrl" && !value)
-      )
-        continue;
       if (JSON.stringify(value) !== JSON.stringify(original[key]))
         patch[key] = value;
     }
@@ -600,28 +478,13 @@ export function renderSettingsSection(
       delete drafts[kind];
       for (const [key, field] of fields) {
         original[key] = response[key] ?? data[key];
-        if (key !== "discordWebhookUrl" && key !== "clearDiscordWebhookUrl") {
-          if (field.type === "checkbox") field.input.checked = !!original[key];
-          else
-            field.input.value =
-              field.type === "list"
-                ? original[key].join("\n")
-                : String(original[key]);
-        }
-        if (key === "discordWebhookUrl") {
-          field.input.value = "";
-          original[key] = "";
-          field.input.placeholder = response.discordWebhookConfigured
-            ? "Адрес сохранён. Для замены введите новый"
-            : "Адрес не задан";
-        }
-        if (key === "clearDiscordWebhookUrl") {
-          field.input.checked = false;
-          original[key] = false;
-        }
+        if (field.type === "checkbox") field.input.checked = !!original[key];
+        else
+          field.input.value =
+            field.type === "list"
+              ? original[key].join("\n")
+              : String(original[key]);
       }
-      if (kind === "webhooks")
-        fields.get("discordWebhookUrl").input.disabled = false;
       status.textContent = response.restartRequiredFields?.length
         ? "Сохранено в config.yml. Для применения изменённых каналов, адреса сайта или правил требуется перезапуск плагина/сервера."
         : "Настройки сохранены.";
@@ -631,11 +494,7 @@ export function renderSettingsSection(
       saving = false;
       save.disabled = false;
       for (const [key, field] of fields)
-        field.input.disabled =
-          !!unavailable ||
-          !hasPerm(schema.permission) ||
-          (key === "discordWebhookUrl" &&
-            fields.get("clearDiscordWebhookUrl")?.input.checked);
+        field.input.disabled = !!unavailable || !hasPerm(schema.permission);
     }
   };
 }

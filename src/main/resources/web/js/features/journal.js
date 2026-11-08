@@ -1,3 +1,4 @@
+import {plainLogText} from "../core/log-text.js";
 import { state } from "../state.js";
 import { api, esc, fmtTime, hasPerm, openModal, renderSvgIcon } from "./ui.js";
 // ==========================================================================
@@ -292,7 +293,7 @@ export async function renderJournalView(mode = "server") {
             return true;
           })
           .map((l) => {
-            const cleanAction = sanitizeWebAction(l.action);
+            const cleanAction = sanitizeWebAction(plainLogText(l.action));
             const cat = categorizeWebAction(cleanAction);
             return {
               id: l.id,
@@ -301,7 +302,7 @@ export async function renderJournalView(mode = "server") {
               action: cleanAction,
               type: cat.type,
               typeClass: cat.typeClass,
-              raw: l,
+              raw: {...l,action:plainLogText(l.action)},
             };
           });
         nextWeb = applySort(nextWeb);
@@ -315,7 +316,7 @@ export async function renderJournalView(mode = "server") {
         let list = [];
         (Array.isArray(sLogs) ? sLogs : []).forEach((s) => {
           // API отдаёт { id, actor, action, timestamp }
-          const msg = String(s.message || s.action || "");
+          const msg = plainLogText(s.message || s.action || "");
           const msgLow = msg.toLowerCase();
           let type = "ИНФО";
           let typeClass = "gray";
@@ -360,7 +361,7 @@ export async function renderJournalView(mode = "server") {
             action: msg,
             type,
             typeClass,
-            raw: s,
+            raw: {...s,message:plainLogText(s.message),action:plainLogText(s.action)},
           });
         });
         const cmdArr = Array.isArray(cmdLogs)

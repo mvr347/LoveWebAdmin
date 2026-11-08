@@ -22,13 +22,9 @@ for (const mobile of [false, true]) {
     expect(box.width).toBeLessThanOrEqual(Math.min(620, size.width));
     expect(box.x).toBeGreaterThanOrEqual(0);
     expect(box.height).toBeLessThanOrEqual(size.height);
-    await dialog
-      .locator("summary")
-      .filter({ hasText: "Ответственный" })
-      .click();
     await dialog.locator("#claim").click();
     await expect(dialog.locator("#owner")).toContainText("PreviewOwner");
-    await dialog.locator("summary").filter({ hasText: "Решение" }).click();
+    await expect(dialog.locator("#verdict")).toBeVisible();
     await expect(dialog.locator("#reject")).toBeDisabled();
     await dialog.locator("#verdict").fill("Достаточное объяснение решения");
     await expect(dialog.locator("#reject")).toBeEnabled();

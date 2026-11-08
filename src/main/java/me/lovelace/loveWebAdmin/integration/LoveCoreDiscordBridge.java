@@ -996,10 +996,7 @@ public class LoveCoreDiscordBridge implements Listener {
                 "Модерация",
                 Instant.now()));
       if (ticketDesk.enabled()) return;
-      if (channel.isBlank()
-          || "webhook"
-              .equalsIgnoreCase(plugin.getConfig().getString("discord.reports-transport", "auto")))
-        return;
+      if (channel.isBlank()) return;
       var buttons = new ArrayList<Map<String, Object>>();
       if (current.status().equals("PENDING") && assigned.isBlank())
         buttons.add(

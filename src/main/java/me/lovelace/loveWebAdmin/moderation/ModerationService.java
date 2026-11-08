@@ -96,6 +96,15 @@ public final class ModerationService implements Listener, AutoCloseable {
     }
   }
 
+  public Map<String, Object> history(
+      Set<String> kinds, String query, int offset, String actor, long from, long to) {
+    try {
+      return store.history(kinds, query, offset, actor, from, to);
+    } catch (java.sql.SQLException error) {
+      throw new IllegalStateException("История ограничений недоступна", error);
+    }
+  }
+
   public boolean removeExpected(
       String kind, String actor, String name, String reason, String uuid, String revision) {
     if (!Bukkit.isPrimaryThread())
@@ -369,13 +378,44 @@ public final class ModerationService implements Listener, AutoCloseable {
           .getDiscordBridge()
           .notifyRestriction(
               new RestrictionsStore.Restriction(kind, uuid, name, actor, reason, at, expires));
-    if (target != null)
-      target.sendMessage(
-          Component.text(
-              kind.equals("MUTE")
-                  ? "Вас никто не слышит. Причина: " + reason
-                  : "Вы заморожены для проверки. Свяжитесь с сотрудником через Discord. "
-                      + plugin.getConfig().getString("moderation.discord-contact", "")));
+    if (target != null && kind.equals("FREEZE")) {
+      target.leaveVehicle();
+      target.setVelocity(new org.bukkit.util.Vector());
+    }
+    if (target != null) {
+      if (kind.equals("MUTE"))
+        target.sendMessage(Component.text("Вас никто не слышит. Причина: " + reason));
+      else {
+        var notice =
+            Component.text(
+                    "\nПРОВЕРКА СОТРУДНИКОМ\n", net.kyori.adventure.text.format.NamedTextColor.GOLD)
+                .append(
+                    Component.text(
+                        "Ваше перемещение и действия временно ограничены.\n",
+                        net.kyori.adventure.text.format.NamedTextColor.WHITE))
+                .append(
+                    Component.text(
+                        "Сотрудник: " + actor + "\nПричина: " + reason + "\n",
+                        net.kyori.adventure.text.format.NamedTextColor.GRAY));
+        String contact = plugin.getConfig().getString("moderation.discord-contact", "");
+        if (contact.startsWith("https://") || contact.startsWith("http://"))
+          notice =
+              notice.append(
+                  Component.text(
+                          "[Связаться в Discord]",
+                          net.kyori.adventure.text.format.NamedTextColor.AQUA)
+                      .clickEvent(net.kyori.adventure.text.event.ClickEvent.openUrl(contact)));
+        else
+          notice =
+              notice.append(
+                  Component.text(
+                      contact.isBlank()
+                          ? "Ожидайте сообщения сотрудника. Не выходите до завершения проверки."
+                          : contact,
+                      net.kyori.adventure.text.format.NamedTextColor.GRAY));
+        target.sendMessage(notice);
+      }
+    }
   }
 
   public boolean remove(String kind, String actor, String name, String reason) {
@@ -396,6 +436,17 @@ public final class ModerationService implements Listener, AutoCloseable {
       reload();
       if (plugin.getDiscordBridge() != null)
         ended.forEach(plugin.getDiscordBridge()::closeRestriction);
+      if (kind.equals("FREEZE"))
+        for (var restriction : ended) {
+          var player = Bukkit.getPlayerExact(restriction.name());
+          if (player != null && player.getUniqueId().toString().equals(restriction.uuid())) {
+            player.clearTitle();
+            player.sendMessage(
+                Component.text(
+                    "Проверка завершена. Ограничения передвижения сняты.",
+                    net.kyori.adventure.text.format.NamedTextColor.GREEN));
+          }
+        }
     } catch (java.sql.SQLException e) {
       throw new IllegalStateException(e);
     }

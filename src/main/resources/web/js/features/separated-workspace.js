@@ -63,7 +63,7 @@ export async function renderSeparatedCases(area, kind = "report") {
     preview = host.querySelector(".reference-case-preview");
   const alive = () =>
     host.isConnected && generation === state.requestGeneration;
-  let sourceSize = 0;
+  let sourceSize = 0, sourceHasMore=false;
   const batchSize = kind === "support" ? 20 : 50;
   let rows = [],
     loading = false,
@@ -124,8 +124,7 @@ export async function renderSeparatedCases(area, kind = "report") {
       memory.selected = visible[0]?.id || null;
     host.classList.toggle("reference-cases-empty", !visible.length);
     host.querySelector(".reference-case-preview").hidden = !visible.length;
-    host.querySelector(".reference-case-pager").hidden =
-      !sourceSize && !memory.offset;
+    host.querySelector(".reference-case-pager").hidden = filteredRows.length<=6 && sourceSize<batchSize && !memory.offset;
     list.innerHTML = visible.length
       ? visible
           .map(
@@ -135,7 +134,7 @@ export async function renderSeparatedCases(area, kind = "report") {
           .join("")
       : `<div class="reference-empty reference-empty-state"><span class="ui-eyebrow">${esc(definition.title)}</span><h3>${memory.query ? "Ничего не найдено" : memory.filter === "working" ? "Нет обращений в работе" : "Обращений пока нет"}</h3><p>${memory.query ? "Попробуйте другой ник или сократите поисковый запрос." : memory.filter === "working" ? "Здесь появятся обращения, которые сотрудник взял в работу." : kind === "appeal" ? "Когда игрок подаст апелляцию, она появится в этом списке." : kind === "support" ? "Здесь появятся вопросы, отправленные игроками через бота." : "Когда игрок отправит жалобу, она появится здесь."}</p></div>`;
     host.querySelector(".reference-case-pager").innerHTML =
-      `<span>${filteredRows.length ? memory.page * pageSize + 1 : 0}–${Math.min((memory.page + 1) * pageSize, filteredRows.length)} из ${filteredRows.length}</span><div><button type="button" class="secondary btn-sm" data-page="-1" ${memory.page === 0 ? "disabled" : ""}>Назад</button><button type="button" class="secondary btn-sm" data-page="1" ${(memory.page + 1) * pageSize >= filteredRows.length ? "disabled" : ""}>Вперёд</button></div><div class="reference-source-pages"><span>Поиск и фильтр в текущих ${sourceSize} записях</span><button type="button" class="secondary btn-sm" data-batch="-1" ${!memory.offset ? "disabled" : ""}>Более новые</button><button type="button" class="secondary btn-sm" data-batch="1" ${sourceSize < batchSize ? "disabled" : ""}>Более ранние</button></div>`;
+      `<span>${filteredRows.length ? memory.page * pageSize + 1 : 0}–${Math.min((memory.page + 1) * pageSize, filteredRows.length)} из ${filteredRows.length}</span><div><button type="button" class="secondary btn-sm" data-page="-1" ${memory.page === 0 ? "disabled" : ""}>Назад</button><button type="button" class="secondary btn-sm" data-page="1" ${(memory.page + 1) * pageSize >= filteredRows.length ? "disabled" : ""}>Вперёд</button></div><div class="reference-source-pages"><span>Поиск и фильтр в текущих ${sourceSize} записях</span><button type="button" class="secondary btn-sm" data-batch="-1" ${!memory.offset ? "disabled" : ""}>Более новые</button><button type="button" class="secondary btn-sm" data-batch="1" ${!sourceHasMore ? "disabled" : ""}>Более ранние</button></div>`;
   }
   async function showPreview(id) {
     const request = ++selectedGeneration;
@@ -209,7 +208,7 @@ export async function renderSeparatedCases(area, kind = "report") {
           ? data
           : data.items || data.reports || data.appeals || []
       ).map(normalise);
-      sourceSize = rows.length;
+      sourceSize = rows.length;const knownTotal=Number(data.total??data.stats?.total);sourceHasMore=Number.isFinite(knownTotal)?knownTotal>(memory.offset||0)+sourceSize:sourceSize>=batchSize;
       workSnapshot = rows.length
         ? await api(
             "GET",

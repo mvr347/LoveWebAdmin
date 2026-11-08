@@ -25,7 +25,7 @@ test("Discord settings explain fields and a double click saves only the changed 
   await capture(page);
   await open(page, "discord");
   await expect(page.locator("#settings-tab-content")).toContainText(
-    "Вебхук безопасности",
+    "Бот",
   );
   await page
     .locator("#setting-discordPanelChannelId")
@@ -92,52 +92,7 @@ test("Preview settings reject a category ID reused as a channel without saving p
   ).toEqual(["345678901234567890"]);
 });
 
-test("webhook field is hidden, blank preserves the secret and explicit removal clears it", async ({
-  page,
-}) => {
-  await page.goto("/preview/");
-  await open(page, "webhooks");
-  await expect(page.locator("#settings-tab-content")).not.toContainText(
-    /telegram|телеграм/i,
-  );
-  await page
-    .locator("#setting-discordWebhookUrl")
-    .fill("https://discord.com/api/webhooks/123456789/test-secret");
-  await page.locator("#setting-webhooksEnabled").check();
-  await page
-    .getByRole("button", { name: "Сохранить настройки", exact: true })
-    .click();
-  await expect(page.locator(".settings-save-status")).toContainText(
-    "сохранены",
-  );
-  await expect(page.locator("#setting-discordWebhookUrl")).toHaveValue("");
-  await page.locator("#setting-webhookNotifyCommands").uncheck();
-  await page
-    .getByRole("button", { name: "Сохранить настройки", exact: true })
-    .click();
-  await expect(page.locator(".settings-save-status")).toContainText(
-    "сохранены",
-  );
-  expect(
-    await page.evaluate(
-      () => LovePreview.model.snapshot().config.discordWebhookConfigured,
-    ),
-  ).toBe(true);
-  await page.locator("#setting-clearDiscordWebhookUrl").check();
-  await page
-    .getByRole("button", { name: "Сохранить настройки", exact: true })
-    .click();
-  await expect(
-    page.locator("#setting-clearDiscordWebhookUrl"),
-  ).not.toBeChecked();
-  expect(
-    await page.evaluate(
-      () => LovePreview.model.snapshot().config.discordWebhookConfigured,
-    ),
-  ).toBe(false);
-  await expect(page.locator("#setting-webhooksEnabled")).not.toBeChecked();
-  await expect(page.locator("#setting-discordWebhookUrl")).toBeEnabled();
-});
+test("webhooks have no UI and cannot be enabled in Preview",async({page})=>{await page.goto('/preview/');await page.locator('[data-nav=settings]').click();await expect(page.locator('[data-tab=webhooks]')).toHaveCount(0);expect(await page.evaluate(()=>LovePreview.model.request('POST','/api/server/config',{webhooksEnabled:true}).status)).toBe(400);});
 
 test("personal notifications do not show or submit global configuration", async ({
   page,

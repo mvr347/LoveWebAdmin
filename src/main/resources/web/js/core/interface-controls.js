@@ -1,4 +1,4 @@
-import {enhancePermissionEditors} from "./permission-editor.js";
+import { enhancePermissionEditors } from "./permission-editor.js";
 import { enhanceSelects, installSelectControls } from "./select-controls.js";
 import { installFormValidation } from "./form-validation.js";
 const icons = {
@@ -12,9 +12,35 @@ const icons = {
 let installed = false;
 export function enhanceButtons(root = document) {
   enhancePermissionEditors();
-  for(const link of root.querySelectorAll('a[href*="case.html"]'))link.classList.add("secondary");
+  for (const field of root.querySelectorAll(
+    ".settings-section input[type=checkbox],.modal-settings input[type=checkbox]",
+  ))
+    field.setAttribute("role", "switch");
+  for (const pager of root.querySelectorAll(
+    ".pagination,.pagination-controls,.reference-case-pager,.restriction-pagination,.punishment-pagination",
+  )) {
+    const controls = [...pager.querySelectorAll("button")].filter(
+      (button) =>
+        button.hasAttribute("data-batch") ||
+        button.hasAttribute("data-page") ||
+        button.hasAttribute("data-prev") ||
+        button.hasAttribute("data-next") ||
+        /^(предыдущая|следующая|назад|впер[её]д)$/i.test(
+          button.textContent.trim(),
+        ),
+    );
+    if (controls.length >= 2)
+      pager.hidden = controls.every((button) => button.disabled);
+  }
+  for (const button of root.querySelectorAll(
+    "button[data-refresh],button[data-refresh-cases]",
+  ))
+    button.hidden = true;
+
+  for (const link of root.querySelectorAll('a[href*="case.html"]'))
+    link.classList.add("secondary");
   for (const button of root.querySelectorAll("button,a.secondary,a.primary")) {
-    if(button.matches(".reference-list-item,.settings-home-card")) continue;
+    if (button.matches(".reference-list-item,.settings-home-card")) continue;
     button.classList.add("ui-button");
     if (
       button.classList.contains("close-btn") ||
@@ -79,8 +105,15 @@ export function installInterfaceControls() {
   installSelectControls();
   enhanceButtons();
   let scheduled = false;
-  new MutationObserver(records => {
-    if (!records.some(record => record.type === "childList" || record.target.matches?.("select,option"))) return;
+  new MutationObserver((records) => {
+    if (
+      !records.some(
+        (record) =>
+          record.type === "childList" ||
+          record.target.matches?.("select,option"),
+      )
+    )
+      return;
     if (scheduled) return;
     scheduled = true;
     requestAnimationFrame(() => {
@@ -88,5 +121,15 @@ export function installInterfaceControls() {
       enhanceButtons();
       enhanceSelects();
     });
-  }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["disabled", "selected", "aria-invalid", "aria-describedby"] });
+  }).observe(document.body, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: [
+      "disabled",
+      "selected",
+      "aria-invalid",
+      "aria-describedby",
+    ],
+  });
 }

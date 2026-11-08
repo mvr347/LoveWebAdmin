@@ -24,6 +24,7 @@ import org.bukkit.event.player.PlayerQuitEvent;
 public class PlayerFreezeListener implements Listener {
 
   private final LoveWebAdmin plugin;
+  private final java.util.Map<java.util.UUID, Long> notices = new java.util.HashMap<>();
 
   public PlayerFreezeListener(LoveWebAdmin plugin) {
     this.plugin = plugin;
@@ -65,18 +66,36 @@ public class PlayerFreezeListener implements Listener {
   @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
   public void onMove(PlayerMoveEvent event) {
     Player player = event.getPlayer();
-    if (!frozen(player)) return;
+    if (!frozen(player)) {
+      notices.remove(player.getUniqueId());
+      return;
+    }
 
     Location from = event.getFrom();
     Location to = event.getTo();
     if (to == null) return;
 
     if (from.getX() != to.getX() || from.getY() != to.getY() || from.getZ() != to.getZ()) {
-      event.setTo(
-          new Location(
-              from.getWorld(), from.getX(), from.getY(), from.getZ(), to.getYaw(), to.getPitch()));
-      player.sendActionBar(Component.text("§c§lВЫ ЗАМОРОЖЕНЫ ДЛЯ ПРОВЕРКИ АДМИНИСТРАТОРОМ!"));
+      event.setCancelled(true);
+      long now = System.currentTimeMillis();
+      if (now - notices.getOrDefault(player.getUniqueId(), 0L) >= 1000) {
+        notices.put(player.getUniqueId(), now);
+        player.sendActionBar(
+            Component.text(
+                "Проверка сотрудником · движение ограничено",
+                net.kyori.adventure.text.format.NamedTextColor.RED));
+      }
     }
+  }
+
+  @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+  public void onVehicleEnter(org.bukkit.event.vehicle.VehicleEnterEvent event) {
+    if (event.getEntered() instanceof Player p && frozen(p)) event.setCancelled(true);
+  }
+
+  @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+  public void onVelocity(org.bukkit.event.player.PlayerVelocityEvent event) {
+    if (frozen(event.getPlayer())) event.setCancelled(true);
   }
 
   @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -124,6 +143,7 @@ public class PlayerFreezeListener implements Listener {
   @EventHandler(priority = EventPriority.MONITOR)
   public void onQuit(PlayerQuitEvent event) {
     Player player = event.getPlayer();
+    notices.remove(player.getUniqueId());
     if (plugin.getFreezeManager().isFrozen(player)) {
       plugin
           .getLogManager()

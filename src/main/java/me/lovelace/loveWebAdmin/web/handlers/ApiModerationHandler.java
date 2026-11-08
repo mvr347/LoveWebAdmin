@@ -32,6 +32,8 @@ public final class ApiModerationHandler extends ApiHandlerSupport {
       var kinds = new HashSet<String>();
       if (rights.contains(Permission.MANAGE_MUTES)) kinds.add("MUTE");
       if (rights.contains(Permission.FREEZE_PLAYERS)) kinds.add("FREEZE");
+      String selectedKind = req.getParameter("kind");
+      if (selectedKind != null) kinds.retainAll(Set.of(selectedKind));
       String query = Objects.toString(req.getParameter("search"), "").trim();
       if (query.length() > 100) {
         sendError(resp, 400, "Слишком длинный поиск");
@@ -44,7 +46,12 @@ public final class ApiModerationHandler extends ApiHandlerSupport {
               .history(
                   kinds,
                   query,
-                  Math.clamp(parseIntOrDefault(req.getParameter("offset"), 0), 0, 1000000)));
+                  Math.clamp(parseIntOrDefault(req.getParameter("offset"), 0), 0, 1000000),
+                  Objects.toString(req.getParameter("actor"), ""),
+                  req.getParameter("from") == null ? 0 : Long.parseLong(req.getParameter("from")),
+                  req.getParameter("to") == null
+                      ? Long.MAX_VALUE
+                      : Long.parseLong(req.getParameter("to"))));
       return;
     }
     var m = plugin.getModerationService();

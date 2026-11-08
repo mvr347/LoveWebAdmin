@@ -219,7 +219,7 @@ test("late dashboard responses cannot replace a newer section", async ({
   await expect(page.locator("#content-area")).not.toContainText(
     "Открыт другой раздел",
   );
-  await expect(page.locator("#content-area")).toContainText("ПЕРСОНАЛ");
+  await expect(page.locator("#content-area")).toContainText("Сотрудники");
 });
 test("delivery reconciliation and panel recovery send the required JSON explanation", async ({
   page,

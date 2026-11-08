@@ -23,6 +23,11 @@
   const nativeFetch = window.fetch.bind(window);
   let context = JSON.parse(backing.getItem(prefix + "server") || "null");
   let ready = Promise.resolve();
+  const testScenario=new URLSearchParams(location.search).get('test');
+  if(!context&&['report','appeal','support','cases','reset'].includes(testScenario)){
+    model.scenario(testScenario);syncIdentity();const clean=new URL(location.href);clean.searchParams.delete('test');history.replaceState(history.state,'',clean);
+  }
+
   function loadSnapshot(value) {
     backing.setItem(prefix + "state", JSON.stringify(value));
     model = LovePreviewModel.create({
@@ -200,7 +205,7 @@
     const banner = document.createElement("aside");
     banner.id = "love-preview-banner";
     banner.innerHTML =
-      '<strong>ПРЕВЬЮ · тестовые данные</strong><span id="preview-mode-label">Локально: сервер и Discord не изменяются</span><button id="preview-server">Серверный Preview</button><select id="preview-role" aria-label="Тестовый аккаунт"><option value="1">Управляющий</option><option value="2">Модератор</option><option value="3">Наблюдатель</option></select><button id="preview-scenarios">Сценарии</button><button id="preview-reset">Сбросить</button><a data-preview-exit href="/">В настоящую панель</a>';
+      '<strong>ПРЕВЬЮ · тестовые данные</strong><span id="preview-mode-label">Локально: сервер и Discord не изменяются</span><button id="preview-server">Серверный Preview</button><select id="preview-role" aria-label="Тестовый аккаунт"><option value="1">Управляющий</option><option value="2">Модератор</option><option value="3">Наблюдатель</option></select><button id="preview-scenarios">Сценарии</button><button id="preview-cases">Примеры обращений</button><button id="preview-reset">Сбросить</button><a data-preview-exit href="/">В настоящую панель</a>';
     const tools = document.createElement("section");
     tools.id = "love-preview-tools";
     tools.hidden = true;
@@ -237,6 +242,7 @@
     resize();
     new ResizeObserver(resize).observe(banner);
 
+    document.getElementById('preview-cases').onclick=()=>{if(context){document.getElementById('preview-feedback').textContent='Выберите локальный режим для примеров без Discord';tools.hidden=false;return;}model.scenario('cases');location.hash='section=support';location.reload();};
     const role = document.getElementById("preview-role");
     role.value = String(model.snapshot().viewer || 1);
     role.onchange = async () => {

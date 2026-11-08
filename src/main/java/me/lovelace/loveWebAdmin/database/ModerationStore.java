@@ -16,7 +16,8 @@ public final class ModerationStore implements AutoCloseable {
   }
 
   private static Connection openWithBackup(Path file) throws SQLException {
-    var connection = org.sqlite.JDBC.createConnection("jdbc:sqlite:" + file, new java.util.Properties());
+    var connection =
+        org.sqlite.JDBC.createConnection("jdbc:sqlite:" + file, new java.util.Properties());
     Path backup = file.resolveSibling(file.getFileName() + ".before-panel-v3.db");
     try {
       if (java.nio.file.Files.size(file) > 0 && !java.nio.file.Files.exists(backup))
@@ -73,29 +74,45 @@ public final class ModerationStore implements AutoCloseable {
           "CREATE TABLE IF NOT EXISTS confiscation_returns(id TEXT PRIMARY KEY,actor TEXT NOT"
               + " NULL,at INTEGER NOT NULL)");
       s.execute(
-          "CREATE TABLE IF NOT EXISTS portal_links(token_hash TEXT PRIMARY KEY,discord_id TEXT NOT NULL,player_uuid TEXT,expires_at INTEGER NOT NULL,used INTEGER NOT NULL DEFAULT 0)");
+          "CREATE TABLE IF NOT EXISTS portal_links(token_hash TEXT PRIMARY KEY,discord_id TEXT NOT"
+              + " NULL,player_uuid TEXT,expires_at INTEGER NOT NULL,used INTEGER NOT NULL DEFAULT"
+              + " 0)");
       s.execute(
-          "CREATE TABLE IF NOT EXISTS portal_sessions(token_hash TEXT PRIMARY KEY,discord_id TEXT NOT NULL,player_uuid TEXT,expires_at INTEGER NOT NULL)");
+          "CREATE TABLE IF NOT EXISTS portal_sessions(token_hash TEXT PRIMARY KEY,discord_id TEXT"
+              + " NOT NULL,player_uuid TEXT,expires_at INTEGER NOT NULL)");
       s.execute(
-          "CREATE TABLE IF NOT EXISTS case_tickets(kind TEXT NOT NULL,case_id INTEGER NOT NULL,discord_id TEXT NOT NULL,channel TEXT,PRIMARY KEY(kind,case_id))");
+          "CREATE TABLE IF NOT EXISTS case_tickets(kind TEXT NOT NULL,case_id INTEGER NOT"
+              + " NULL,discord_id TEXT NOT NULL,channel TEXT,PRIMARY KEY(kind,case_id))");
       s.execute(
-          "CREATE TABLE IF NOT EXISTS entity_versions(kind TEXT NOT NULL,id INTEGER NOT NULL,version INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(kind,id))");
+          "CREATE TABLE IF NOT EXISTS entity_versions(kind TEXT NOT NULL,id INTEGER NOT"
+              + " NULL,version INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(kind,id))");
       s.execute(
-          "CREATE TABLE IF NOT EXISTS ban_history(id INTEGER PRIMARY KEY,ban_id INTEGER NOT NULL,actor TEXT NOT NULL,explanation TEXT NOT NULL,before_json TEXT NOT NULL,after_json TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'PREPARED',created_at INTEGER NOT NULL)");
+          "CREATE TABLE IF NOT EXISTS ban_history(id INTEGER PRIMARY KEY,ban_id INTEGER NOT"
+              + " NULL,actor TEXT NOT NULL,explanation TEXT NOT NULL,before_json TEXT NOT"
+              + " NULL,after_json TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'PREPARED',created_at"
+              + " INTEGER NOT NULL)");
       s.execute(
-          "CREATE TABLE IF NOT EXISTS case_evidence(id INTEGER PRIMARY KEY,kind TEXT NOT NULL,case_id INTEGER NOT NULL,author TEXT NOT NULL,type TEXT NOT NULL,value TEXT NOT NULL,visibility TEXT NOT NULL,mime TEXT,data BLOB,created_at INTEGER NOT NULL)");
+          "CREATE TABLE IF NOT EXISTS case_evidence(id INTEGER PRIMARY KEY,kind TEXT NOT"
+              + " NULL,case_id INTEGER NOT NULL,author TEXT NOT NULL,type TEXT NOT NULL,value TEXT"
+              + " NOT NULL,visibility TEXT NOT NULL,mime TEXT,data BLOB,created_at INTEGER NOT"
+              + " NULL)");
       s.execute(
-          "CREATE TABLE IF NOT EXISTS appeal_access_parent(appeal_id INTEGER PRIMARY KEY,parent_id INTEGER NOT NULL)");
+          "CREATE TABLE IF NOT EXISTS appeal_access_parent(appeal_id INTEGER PRIMARY KEY,parent_id"
+              + " INTEGER NOT NULL)");
       s.execute(
-          "CREATE TABLE IF NOT EXISTS staff_identity(admin_id INTEGER PRIMARY KEY,uuid TEXT NOT NULL)");
+          "CREATE TABLE IF NOT EXISTS staff_identity(admin_id INTEGER PRIMARY KEY,uuid TEXT NOT"
+              + " NULL)");
       // Support requests have no punishment behind them, so they are not reports or appeals.
       s.execute(
-          "CREATE TABLE IF NOT EXISTS support_cases(id INTEGER PRIMARY KEY AUTOINCREMENT,discord_id TEXT NOT NULL,nick TEXT NOT NULL,topic TEXT NOT NULL,body TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'OPEN',created_at INTEGER NOT NULL)");
+          "CREATE TABLE IF NOT EXISTS support_cases(id INTEGER PRIMARY KEY AUTOINCREMENT,discord_id"
+              + " TEXT NOT NULL,nick TEXT NOT NULL,topic TEXT NOT NULL,body TEXT NOT NULL,status"
+              + " TEXT NOT NULL DEFAULT 'OPEN',created_at INTEGER NOT NULL)");
       s.execute("CREATE INDEX IF NOT EXISTS idx_delivery_due ON delivery_outbox(state,next_at,id)");
       s.execute(
           "CREATE INDEX IF NOT EXISTS idx_delivery_ticket ON delivery_outbox(recipient,id,state)");
       s.execute(
-          "UPDATE delivery_outbox SET state='UNCERTAIN',error='Остановка до подтверждения доставки: проверьте Discord перед повтором' WHERE state='SENDING'");
+          "UPDATE delivery_outbox SET state='UNCERTAIN',error='Остановка до подтверждения доставки:"
+              + " проверьте Discord перед повтором' WHERE state='SENDING'");
     } catch (SQLException | RuntimeException error) {
       try {
         db.close();
@@ -150,6 +167,31 @@ public final class ModerationStore implements AutoCloseable {
   }
 
   /** Newest first. {@code status} is OPEN, CLOSED or ALL (anything else counts as ALL). */
+  public synchronized List<Map<String, Object>> searchSupport(String search) throws SQLException {
+    var items = new ArrayList<Map<String, Object>>();
+    try (var q =
+        db.prepareStatement(
+            "SELECT id,nick,topic,body FROM support_cases WHERE LOWER(nick) LIKE LOWER(?) OR"
+                + " LOWER(body) LIKE LOWER(?) OR LOWER(topic) LIKE LOWER(?) ORDER BY created_at"
+                + " DESC,id DESC LIMIT 5")) {
+      for (int i = 1; i <= 3; i++) q.setString(i, "%" + search + "%");
+      try (var rows = q.executeQuery()) {
+        while (rows.next())
+          items.add(
+              Map.of(
+                  "id",
+                  rows.getInt(1),
+                  "nick",
+                  rows.getString(2),
+                  "topic",
+                  rows.getString(3),
+                  "body",
+                  rows.getString(4)));
+      }
+    }
+    return items;
+  }
+
   public synchronized List<Map<String, Object>> supportList(String status, int offset, int limit)
       throws SQLException {
     boolean filtered = status.equals("OPEN") || status.equals("CLOSED");
@@ -204,11 +246,16 @@ public final class ModerationStore implements AutoCloseable {
     if (ids.isEmpty()) return Map.of();
     var result = new LinkedHashMap<String, Object>();
     String placeholders = String.join(",", Collections.nCopies(ids.size(), "?"));
-    try (var query = db.prepareStatement("SELECT id,assignee FROM case_work WHERE kind=? AND id IN (" + placeholders + ")")) {
+    try (var query =
+        db.prepareStatement(
+            "SELECT id,assignee FROM case_work WHERE kind=? AND id IN (" + placeholders + ")")) {
       query.setString(1, kind(kind));
       for (int i=0;i<ids.size();i++) query.setInt(i+2,ids.get(i));
       try (var rows=query.executeQuery()) {
-        while(rows.next()) result.put(kind+":"+rows.getInt("id"), Map.of("assignee",Objects.toString(rows.getString("assignee"),"")));
+        while (rows.next())
+          result.put(
+              kind + ":" + rows.getInt("id"),
+              Map.of("assignee", Objects.toString(rows.getString("assignee"), "")));
       }
     }
     return result;
@@ -339,7 +386,8 @@ public final class ModerationStore implements AutoCloseable {
       new SecureRandom().nextBytes(random);
       try (var q =
           db.prepareStatement(
-              "INSERT INTO appeal_access(appeal_id,token_hash,discord_id,verified) SELECT ?,?,discord_id,verified FROM appeal_access WHERE appeal_id=?")) {
+              "INSERT INTO appeal_access(appeal_id,token_hash,discord_id,verified) SELECT"
+                  + " ?,?,discord_id,verified FROM appeal_access WHERE appeal_id=?")) {
         q.setInt(1, to);
         q.setString(2, hash(HexFormat.of().formatHex(random)));
         q.setInt(3, from);
@@ -366,7 +414,9 @@ public final class ModerationStore implements AutoCloseable {
     if (raw == null || raw.length() != 64) return false;
     try (var q =
         db.prepareStatement(
-            "WITH RECURSIVE lineage(id) AS (SELECT ? UNION SELECT p.parent_id FROM appeal_access_parent p JOIN lineage l ON p.appeal_id=l.id) SELECT 1 FROM appeal_access a JOIN lineage l ON a.appeal_id=l.id WHERE a.token_hash=?")) {
+            "WITH RECURSIVE lineage(id) AS (SELECT ? UNION SELECT p.parent_id FROM"
+                + " appeal_access_parent p JOIN lineage l ON p.appeal_id=l.id) SELECT 1 FROM"
+                + " appeal_access a JOIN lineage l ON a.appeal_id=l.id WHERE a.token_hash=?")) {
       q.setInt(1, appeal);
       q.setString(2, hash(raw));
       try (var r = q.executeQuery()) {
@@ -511,9 +561,10 @@ public final class ModerationStore implements AutoCloseable {
     try (var q =
         db.prepareStatement(
             "SELECT o.* FROM delivery_outbox o WHERE o.state='PENDING' AND o.next_at<=? AND"
-                + " ((o.recipient NOT LIKE 'ticket:%' AND o.recipient NOT LIKE 'report-ticket:%') OR NOT EXISTS(SELECT 1 FROM delivery_outbox"
-                + " earlier WHERE earlier.recipient=o.recipient AND earlier.id<o.id AND"
-                + " earlier.state IN ('PENDING','SENDING','UNCERTAIN'))) ORDER BY o.id LIMIT 8")) {
+                + " ((o.recipient NOT LIKE 'ticket:%' AND o.recipient NOT LIKE 'report-ticket:%')"
+                + " OR NOT EXISTS(SELECT 1 FROM delivery_outbox earlier WHERE"
+                + " earlier.recipient=o.recipient AND earlier.id<o.id AND earlier.state IN"
+                + " ('PENDING','SENDING','UNCERTAIN'))) ORDER BY o.id LIMIT 8")) {
       q.setLong(1, System.currentTimeMillis() / 1000);
       try (var r = q.executeQuery()) {
         while (r.next())
@@ -544,7 +595,8 @@ public final class ModerationStore implements AutoCloseable {
   public synchronized void uncertainDelivery(int id, String reason) throws SQLException {
     try (var q =
         db.prepareStatement(
-            "UPDATE delivery_outbox SET state='UNCERTAIN',error=? WHERE id=? AND state='SENDING'")) {
+            "UPDATE delivery_outbox SET state='UNCERTAIN',error=? WHERE id=? AND"
+                + " state='SENDING'")) {
       q.setString(1, reason);
       q.setInt(2, id);
       q.executeUpdate();
@@ -604,7 +656,10 @@ public final class ModerationStore implements AutoCloseable {
 
   /** Only an explicit staff reconciliation can unlock a previously ambiguous channel creation. */
   public synchronized Optional<Map<String,Object>> verifiedRejectedCreation(int id) throws SQLException {
-    try(var q=db.prepareStatement("SELECT payload FROM delivery_outbox WHERE id=? AND state='FAILED' AND error LIKE 'Проверил %'")) {
+    try (var q =
+        db.prepareStatement(
+            "SELECT payload FROM delivery_outbox WHERE id=? AND state='FAILED' AND error LIKE"
+                + " 'Проверил %'")) {
       q.setInt(1,id);try(var r=q.executeQuery()) {
         if(!r.next()) return Optional.empty();
         var payload=me.lovelace.loveWebAdmin.utils.JsonUtils.parseObject(r.getString(1));
@@ -843,7 +898,8 @@ public final class ModerationStore implements AutoCloseable {
     }
     try (var q =
         db.prepareStatement(
-            "INSERT INTO portal_links(token_hash,discord_id,player_uuid,expires_at) VALUES(?,?,?,?)")) {
+            "INSERT INTO portal_links(token_hash,discord_id,player_uuid,expires_at)"
+                + " VALUES(?,?,?,?)")) {
       q.setString(1, hash(token));
       q.setString(2, discord);
       q.setString(3, uuid);
@@ -861,7 +917,8 @@ public final class ModerationStore implements AutoCloseable {
     String discord, uuid;
     try (var q =
         db.prepareStatement(
-            "SELECT discord_id,player_uuid FROM portal_links WHERE token_hash=? AND used=0 AND expires_at>?")) {
+            "SELECT discord_id,player_uuid FROM portal_links WHERE token_hash=? AND used=0 AND"
+                + " expires_at>?")) {
       q.setString(1, hashed);
       q.setLong(2, now);
       try (var rs = q.executeQuery()) {
@@ -885,7 +942,8 @@ public final class ModerationStore implements AutoCloseable {
       }
       try (var q =
           db.prepareStatement(
-              "INSERT INTO portal_sessions(token_hash,discord_id,player_uuid,expires_at) VALUES(?,?,?,?)")) {
+              "INSERT INTO portal_sessions(token_hash,discord_id,player_uuid,expires_at)"
+                  + " VALUES(?,?,?,?)")) {
         q.setString(1, hash(session));
         q.setString(2, discord);
         q.setString(3, uuid);
@@ -908,7 +966,8 @@ public final class ModerationStore implements AutoCloseable {
     if (token == null || token.length() > 100) return Optional.empty();
     try (var q =
         db.prepareStatement(
-            "SELECT discord_id,player_uuid FROM portal_sessions WHERE token_hash=? AND expires_at>?")) {
+            "SELECT discord_id,player_uuid FROM portal_sessions WHERE token_hash=? AND"
+                + " expires_at>?")) {
       q.setString(1, hash(token));
       q.setLong(2, System.currentTimeMillis() / 1000);
       try (var rs = q.executeQuery()) {
@@ -935,7 +994,8 @@ public final class ModerationStore implements AutoCloseable {
   public synchronized void ticketOwner(String kind, int id, String discord) throws SQLException {
     try (var q =
         db.prepareStatement(
-            "INSERT INTO case_tickets(kind,case_id,discord_id) VALUES(?,?,?) ON CONFLICT(kind,case_id) DO NOTHING")) {
+            "INSERT INTO case_tickets(kind,case_id,discord_id) VALUES(?,?,?) ON"
+                + " CONFLICT(kind,case_id) DO NOTHING")) {
       q.setString(1, kind(kind));
       q.setInt(2, id);
       q.setString(3, discord);
@@ -1024,7 +1084,8 @@ public final class ModerationStore implements AutoCloseable {
       throw new IllegalArgumentException("Укажите объяснение изменения");
     try (var q =
         db.prepareStatement(
-            "INSERT INTO ban_history(ban_id,actor,explanation,before_json,after_json,created_at) VALUES(?,?,?,?,?,?)",
+            "INSERT INTO ban_history(ban_id,actor,explanation,before_json,after_json,created_at)"
+                + " VALUES(?,?,?,?,?,?)",
             Statement.RETURN_GENERATED_KEYS)) {
       q.setInt(1, id);
       q.setString(2, actor);
@@ -1116,7 +1177,9 @@ public final class ModerationStore implements AutoCloseable {
     }
     try (var q =
         db.prepareStatement(
-            "INSERT INTO case_evidence(kind,case_id,author,type,value,visibility,mime,data,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO"
+                + " case_evidence(kind,case_id,author,type,value,visibility,mime,data,created_at)"
+                + " VALUES(?,?,?,?,?,?,?,?,?)",
             Statement.RETURN_GENERATED_KEYS)) {
       q.setString(1, kind);
       q.setInt(2, id);
@@ -1140,7 +1203,8 @@ public final class ModerationStore implements AutoCloseable {
     var result = new ArrayList<Map<String, Object>>();
     try (var q =
         db.prepareStatement(
-            "SELECT id,author,type,value,visibility,mime,created_at FROM case_evidence WHERE kind=? AND case_id=?"
+            "SELECT id,author,type,value,visibility,mime,created_at FROM case_evidence WHERE kind=?"
+                + " AND case_id=?"
                 + (author ? " AND visibility='AUTHOR'" : "")
                 + " ORDER BY id")) {
       q.setString(1, kind(kind));

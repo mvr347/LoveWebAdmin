@@ -3,7 +3,6 @@ package me.lovelace.loveWebAdmin.web.handlers;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -27,6 +26,7 @@ import java.util.Set;
  *     отклоняются независимо от того, прошла ли проверка traversal выше.
  */
 public class StaticHandler extends HttpServlet {
+  private final String resourceVersion = java.util.UUID.randomUUID().toString();
 
     private static final Set<String> ALLOWED_EXTENSIONS = Set.of(
             ".html", ".css", ".js", ".json", ".svg", ".png", ".ico", ".woff", ".woff2"
@@ -79,6 +79,14 @@ public class StaticHandler extends HttpServlet {
             servedPath = "/index.html";
         }
 
+    String tag = "\"" + resourceVersion + "-" + Integer.toHexString(servedPath.hashCode()) + "\"";
+    resp.setHeader("Cache-Control", "no-cache");
+    resp.setHeader("ETag", tag);
+    if (tag.equals(req.getHeader("If-None-Match"))) {
+      stream.close();
+      resp.setStatus(HttpServletResponse.SC_NOT_MODIFIED);
+      return;
+    }
         resp.setContentType(contentTypeFor(servedPath));
         try (InputStream in = stream; OutputStream out = resp.getOutputStream()) {
             in.transferTo(out);

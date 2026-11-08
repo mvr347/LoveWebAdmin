@@ -212,7 +212,8 @@ public class ApiAppealsHandler extends ApiHandlerSupport {
       mapped.add(toAppealSummaryMap(appeal));
     }
 
-    sendSuccess(resp, Map.of("appeals", mapped, "total", mapped.size()));
+    sendSuccess(
+        resp, Map.of("appeals", mapped, "total", plugin.getDatabaseManager().countAppeals(status)));
   }
 
   private void handleGetPlayerAppeal(String playerName, HttpServletResponse resp)

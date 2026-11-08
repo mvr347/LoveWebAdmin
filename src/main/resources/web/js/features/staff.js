@@ -32,7 +32,7 @@ export async function renderStaffView() {
                     <button type="button" class="primary" id="btn-add-staff">+ ДОБАВИТЬ СОТРУДНИКА</button>
                 </div>
             </div>
-            <div class="filter-tags" id="staff-sub-tabs" style="margin-bottom:18px;">
+            <div class="workspace-primary-tabs" id="staff-sub-tabs" style="margin-bottom:18px;">
                 <button type="button" class="filter-tag-btn active" data-sub="personnel">Персонал</button>
                 <button type="button" class="filter-tag-btn" data-sub="roles">Роли</button>
             </div>
@@ -42,6 +42,7 @@ export async function renderStaffView() {
   let adminsCache = [];
   let invitesCache = [];
   const mount = () => {
+    area.querySelector("h2").textContent=sub==="roles"?"Роли и права":"Сотрудники";
     const headerActions = document.getElementById("staff-header-actions");
     if (headerActions) {
       if (sub === "personnel") {

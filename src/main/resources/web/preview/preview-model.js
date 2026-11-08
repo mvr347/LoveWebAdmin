@@ -561,7 +561,7 @@
           (kind === "report" && body.action === "reduce")
         )
           fail(400, "Неизвестное решение");
-        if (c.status !== "PENDING") fail(409, "Дело закрыто");
+        if (!["PENDING","OPEN"].includes(c.status)) fail(409, "Дело закрыто");
         if (kind === "appeal" && body.action !== "reject")
           requirePermission("MANAGE_BANS");
         const why = reason(body.reason);
@@ -825,19 +825,16 @@
       const result = {};
       for (const [key, value] of Object.entries(state.config))
         if (
-          settingsPermission(key) &&
+          !key.toLowerCase().includes('webhook') && settingsPermission(key) &&
           (has("VIEW_SERVER_SETTINGS") || has(settingsPermission(key))) &&
           key !== "discordWebhookUrl" &&
           key !== "clearDiscordWebhookUrl"
         )
           result[key] = clone(value);
-      if (has("MANAGE_INTEGRATIONS"))
-        result.discordWebhookConfigured =
-          !!state.config.discordWebhookUrl ||
-          state.config.discordWebhookConfigured === true;
       return result;
     }
     function configPatch(body) {
+      if(Object.keys(body).some(key=>key.toLowerCase().includes("webhook")))fail(400,"Вебхуки удалены. Используйте бота.");
       const patch = {},
         ints = {
           webPort: [1, 65535],
@@ -1467,6 +1464,13 @@
       }
       if (parts[1] === "bans") {
         requirePermission(method === "GET" ? "VIEW_BANS" : "MANAGE_BANS");
+        if(n==='list'&&method==='GET'){
+          const status=url.searchParams.get('status')||'ACTIVE',q=(url.searchParams.get('search')||'').toLowerCase(),actor=(url.searchParams.get('actor')||'').toLowerCase();
+          const offset=Math.max(0,Number(url.searchParams.get('offset'))||0),from=Number(url.searchParams.get('from'))||0,to=Number(url.searchParams.get('to'))||Infinity;
+          const list=state.bans.filter(row=>(status==='ALL'||row.status===status)&&[row.targetName,row.ruleReason].some(v=>String(v||'').toLowerCase().includes(q))&&String(row.creatorName||'').toLowerCase().includes(actor)&&row.createdAt>=from&&row.createdAt<=to);
+          return {items:clone(list.slice(offset,offset+25)),total:list.length,pageSize:25,offset};
+        }
+        if(n==='archive'&&method==='GET')return {files:[],retentionDays:90};
         if (n === "reasons")
           return [
             {
@@ -1569,6 +1573,14 @@
             .map(publicAppeal),
           total: state.appeals.length,
         };
+      }
+      if(p==='/api/search'){
+        const q=(url.searchParams.get('q')||'').toLowerCase(),items=[];
+        const match=(...values)=>values.some(v=>String(v||'').toLowerCase().includes(q));
+        if(has('VIEW_PLAYERS'))for(const v of state.players.filter(v=>match(v.name)).slice(0,6))items.push({kind:'player',id:0,name:v.name,summary:'Досье игрока'});
+        if(has('VIEW_BANS'))for(const v of state.bans.filter(v=>match(v.targetName,v.ruleReason)).slice(0,5))items.push({kind:'ban',id:v.id,name:v.targetName,summary:v.ruleReason});
+        for(const[kind,list,permission]of [['report',state.reports,'VIEW_REPORTS'],['appeal',state.appeals,'VIEW_APPEALS'],['support',state.support||[],'VIEW_REPORTS']])if(has(permission))for(const v of list.filter(v=>match(v.targetName,v.playerName,v.nick,v.reason,v.body,v.description)).slice(0,5))items.push({kind,id:v.id,name:v.targetName||v.playerName||v.nick,summary:v.reason||v.body||v.description||''});
+        return {items};
       }
       if (parts[1] === "reports") {
         requirePermission(method === "GET" ? "VIEW_REPORTS" : "MANAGE_REPORTS");
@@ -1676,14 +1688,15 @@
         const kind = n,
           caseId = Number(action),
           act = parts[4];
-        if (!["report", "appeal"].includes(kind))
+        if (!["report", "appeal", "support"].includes(kind))
           fail(404, "Тип дела не найден");
         requirePermission(
           (method === "GET" ? "VIEW_" : "MANAGE_") +
-            (kind === "report" ? "REPORTS" : "APPEALS"),
+            (kind === "appeal" ? "APPEALS" : "REPORTS"),
         );
-        const c = kind === "report" ? getReport(caseId) : getAppeal(caseId),
+        const c = kind === "support" ? (state.support||[]).find(item=>item.id===caseId) : kind === "report" ? getReport(caseId) : getAppeal(caseId),
           key = kind + ":" + caseId;
+        if(!c)fail(404,"Обращение не найдено");
         state.caseEvidence ||= {};
         state.caseVersions ||= {};
         if (
@@ -1728,13 +1741,15 @@
             discussion: clone(state.discussion[key] || []),
             related: clone(c.related || []),
           };
-        if (c.status !== "PENDING") fail(409, "Дело закрыто");
+        if (!["PENDING","OPEN"].includes(c.status)) fail(409, "Дело закрыто");
         if (body.revision !== undefined) {
           if (Number(body.revision) !== (state.caseVersions[key] || 0))
             fail(409, "Дело изменилось; черновик сохранён");
           state.caseVersions[key] = (state.caseVersions[key] || 0) + 1;
         }
         const w = currentWork(kind, caseId);
+        if(kind==='support'&&act==='reply'){(state.discussion[key]||=[]).push({author:viewer().username,body:reason(body.text),createdAt:clock()});return {};}
+        if(kind==='support'&&act==='close'){reason(body.reason);c.status='CLOSED';w.state='CLOSED';return {};}
         if (act === "evidence") {
           if (
             !["TEXT", "CHAT", "LINK", "IMAGE"].includes(body.type) ||
@@ -2079,6 +2094,7 @@
           history: [],
         };
       }
+      if(parts[1]==="webhooks")fail(410,"Вебхуки удалены");
       if (["api-keys", "webhooks"].includes(parts[1])) {
         requirePermission("MANAGE_API");
         const list = parts[1] === "api-keys" ? state.keys : state.webhooks;
@@ -2136,7 +2152,10 @@
       } else if (name === "onboarding") {
         state.viewer = null;
         state.scenario = "onboarding";
-      } else if (name === "report") createReport();
+      } else if(name==='support'){
+        (state.support||=[]).push({id:id(),nick:'Ada123',topic:'question',topicLabel:'Вопрос по игре',body:'Тестовое обращение: как открыть торговую точку?',status:'OPEN',createdAt:clock(),hasChannel:false,assignee:''});
+      } else if(name==='cases'){scenario('report');scenario('appeal');scenario('support');}
+      else if (name === "report") createReport();
       else if (name === "ban") createBan({ targetName: "Ada123" });
       else if (name === "appeal") {
         const b =

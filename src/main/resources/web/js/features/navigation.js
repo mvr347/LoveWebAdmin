@@ -1,3 +1,4 @@
+import {renderPunishments} from "./punishments.js";
 import { renderSeparatedCases, renderSeparatedPenalties } from "./separated-workspace.js";
 import { captureView, restoreView } from "../core/view-state.js";
 import { state } from "../state.js";
@@ -108,9 +109,9 @@ export function renderAppLayout() {
                         </div>
 
                         <div class="topbar-center">
-                            <div class="global-search-trigger" id="topbar-search-trigger" data-tooltip="Глобальный поиск по никам, банам и логам (Ctrl+K)">
+                            <div class="global-search-trigger" id="topbar-search-trigger" data-tooltip="Игроки, наказания и обращения (Ctrl+K)">
                                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                                <span>Поиск игрока, бана или события...</span>
+                                <span>Поиск игроков, наказаний и обращений…</span>
                                 <span class="search-shortcut-badge">Ctrl + K</span>
                             </div>
                         </div>
@@ -132,7 +133,7 @@ export function renderAppLayout() {
                                 <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
                             </button>
 
-                            <div class="status-pill" id="topbar-status-pill" data-tooltip="Статус ядра Minecraft сервера">
+                            <div class="status-pill" id="topbar-status-pill">
                                 <span class="status-dot" id="server-status-dot"></span>
                                 <span id="server-status-text">Онлайн: ...</span>
                             </div>
@@ -331,8 +332,8 @@ export function startTopbarStatusPoller() {
   }, 5000);
 }
 export async function navigateTo(sectionId, recordHistory = true) {
-  if(sectionId === "punishments") sectionId="reports";
-  if(sectionId === "bans"){state.separatedPenaltyView="bans";sectionId="restrictions";}
+  if(sectionId === "punishments") sectionId="restrictions";
+  if(sectionId === "bans"){state.punishmentWorkspace={...(state.punishmentWorkspace||{}),kind:"ban",stage:"active",page:0,query:"",actor:"",from:"",to:""};sectionId="restrictions";}
   const target = state.SECTIONS.find((s) => s.id === sectionId);
   if(!target)return;
   if (target && !isSectionVisible(target)) return;
@@ -407,7 +408,7 @@ export async function navigateTo(sectionId, recordHistory = true) {
       await renderSeparatedCases(area,"support");
       break;
     case "penalty-history":
-      await renderSeparatedPenalties(area,true);
+      await renderPunishments(area,true);
       break;
     case "anticheat":
       await renderAnticheatView();
@@ -427,7 +428,7 @@ export async function navigateTo(sectionId, recordHistory = true) {
       await renderStaffView();
       break;
     case "restrictions":
-      await renderSeparatedPenalties(area);
+      await renderPunishments(area);
       break;
     case "settings":
       renderSettingsHome();

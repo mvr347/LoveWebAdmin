@@ -37,6 +37,38 @@ public class ApiBansHandler extends ApiHandlerSupport {
         if (sessionOpt.isEmpty()) return;
 
         String pathInfo = req.getPathInfo();
+    if ("/list".equals(pathInfo)) {
+      String
+          status =
+              java.util.Objects.toString(req.getParameter("status"), "ACTIVE")
+                  .toUpperCase(java.util.Locale.ROOT),
+          search = java.util.Objects.toString(req.getParameter("search"), ""),
+          actor = java.util.Objects.toString(req.getParameter("actor"), "");
+      if (search.length() > 128 || actor.length() > 128) {
+        sendError(resp, 400, "Слишком длинный фильтр");
+        return;
+      }
+      long from = req.getParameter("from") == null ? 0 : Long.parseLong(req.getParameter("from")),
+          to =
+              req.getParameter("to") == null
+                  ? Long.MAX_VALUE
+                  : Long.parseLong(req.getParameter("to"));
+      int offset = Math.clamp(parseIntOrDefault(req.getParameter("offset"), 0), 0, 1000000);
+      var page =
+          plugin.getDatabaseManager().searchBans(status, search, actor, from, to, offset, 25);
+      sendSuccess(
+          resp,
+          Map.of(
+              "items",
+              page.items().stream().map(this::toListMap).toList(),
+              "total",
+              page.total(),
+              "pageSize",
+              25,
+              "offset",
+              offset));
+      return;
+    }
         if (pathInfo == null || pathInfo.isEmpty() || "/all".equals(pathInfo) || "/".equals(pathInfo)) {
             String filter = req.getParameter("status");
             List<WebBan> bans = plugin.getDatabaseManager().getAllBans(filter);
@@ -458,6 +490,26 @@ public class ApiBansHandler extends ApiHandlerSupport {
 
         return result;
     }
+
+  private Map<String, Object> toListMap(WebBan ban) {
+    return Map.of(
+        "id",
+        ban.id(),
+        "targetName",
+        ban.targetName(),
+        "creatorName",
+        ban.creatorName(),
+        "ruleReason",
+        ban.ruleReason(),
+        "status",
+        ban.status(),
+        "createdAt",
+        ban.createdAt(),
+        "expiresAt",
+        ban.expiresAt(),
+        "durationSeconds",
+        ban.durationSeconds());
+  }
 
     private Map<String, Object> toBanMap(WebBan ban) {
         Map<String, Object> map = new LinkedHashMap<>();

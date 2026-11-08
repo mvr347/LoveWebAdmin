@@ -6,10 +6,11 @@ async function moderation(page, body) {
     body,
   );
 }
-async function openRestrictions(page, kind="limits") {
+async function openRestrictions(page, kind="mute") {
   await page.locator('[data-nav="restrictions"]').click();
-  if(await page.locator(`[data-penalty="${kind}"]`).count())await page.locator(`[data-penalty="${kind}"]`).click();
-  await expect(page.locator(".restrictions-workspace")).toBeVisible();
+  await expect(page.locator(".punishments-workspace")).toBeVisible();
+  await page.locator(`[data-punishment-kind="${kind === 'pending' ? 'ban' : kind}"]`).click();
+  if(kind==='pending') await page.locator('[data-stage="pending"]').click();
 }
 
 test("navigation separates work, moderation and settings; personal security excludes global rules", async ({
@@ -67,9 +68,8 @@ test("restrictions paginate, filter, validate and retain a replaced mute when an
     reason: "Нарушение правил чата",
   });
   await openRestrictions(page);
-  await page.getByRole("tab", { name: /Муты/ }).click();
-  await expect(page.locator("#active-restrictions")).toContainText("Ada123");
-  await page.getByRole("button", { name: "Снять мут", exact: true }).click();
+  await expect(page.locator("[data-punishment-results]")).toContainText("Ada123");
+  await page.getByRole("button", { name: "Снять", exact: true }).click();
   const form = page.locator("#restriction-form");
   await expect(form.locator("[type=submit]")).toBeDisabled();
   await form.locator("[name=reason]").fill("Проверка завершена");
@@ -87,20 +87,20 @@ test("restrictions paginate, filter, validate and retain a replaced mute when an
   await expect(form.locator("[role=alert]")).toContainText("изменилось");
   await expect(form).toBeVisible();
   await form.getByRole("button", { name: "Отмена", exact: true }).click();
-  await page.locator("[data-refresh]").click();
-  await expect(page.locator("#active-restrictions")).toContainText(
+  await page.locator('[data-stage="active"]').click();
+  await expect(page.locator("[data-punishment-results]")).toContainText(
     "Новая версия",
   );
-  await page.locator('[data-penalty="history"]').click();
-  await expect(page.locator("#restriction-history")).toContainText(
+  await page.locator('[data-stage="history"]').click();
+  await expect(page.locator("[data-punishment-results]")).toContainText(
     "Нарушение правил",
   );
-  await page.locator("[data-search]").fill("Несуществующий");
-  await expect(page.locator("#restriction-history")).toContainText(
-    "Ничего не найдено",
+  await page.locator("[data-query]").fill("Несуществующий");
+  await expect(page.locator("[data-punishment-results]")).toContainText(
+    "Записей по выбранным фильтрам нет",
   );
-  await page.locator("[data-search]").fill("");
-  await expect(page.locator("#restriction-history")).toContainText(
+  await page.locator("[data-query]").fill("");
+  await expect(page.locator("[data-punishment-results]")).toContainText(
     "Новая версия",
   );
   await page.screenshot({
@@ -116,7 +116,7 @@ test("cancelling pending ban is distinct from unban and requires a reason", asyn
   const created = await moderation(page, { action: "ban", player: "Ada123" });
   await openRestrictions(page,"pending");
   await page
-    .getByRole("button", { name: "Отменить предварительный бан", exact: true })
+    .getByRole("button", { name: "Отменить", exact: true })
     .click();
   await expect(page.locator("#restriction-form [type=submit]")).toBeDisabled();
   await page
@@ -127,7 +127,7 @@ test("cancelling pending ban is distinct from unban and requires a reason", asyn
     .locator("dialog")
     .getByRole("button", { name: "Снять ограничение", exact: true })
     .click();
-  await expect(page.locator("#pending-bans")).toContainText("Список пуст");
+  await expect(page.locator("[data-punishment-results]")).toContainText("Банов на оформлении нет");
   expect(
     await page.evaluate(
       (id) => LovePreview.model.snapshot().bans.find((b) => b.id === id).status,
@@ -165,7 +165,7 @@ for (const viewport of [
     await page.setViewportSize(viewport);
     await page.goto("/preview/");
     await page.evaluate(() => window.navigateTo("restrictions"));
-    await expect(page.locator("#bans-search-input")).toBeVisible();
+    await expect(page.locator("[data-query]")).toBeVisible();
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth,
@@ -223,8 +223,8 @@ test("mute-only staff can open restrictions without seeing bans or settings", as
   await expect(page.locator('[data-nav="punishments"]')).toHaveCount(0);
   await expect(page.locator('[data-nav="settings"]')).toHaveCount(0);
   await openRestrictions(page);
-  await expect(page.getByRole("tab", { name: /Муты/ })).toBeVisible();
-  await expect(page.getByRole("tab", { name: /Оформление банов/ })).toHaveCount(
+  await expect(page.locator("[data-punishment-kind=mute]")).toBeVisible();
+  await expect(page.locator("[data-punishment-kind=ban]")).toHaveCount(
     0,
   );
   await expect(
@@ -268,13 +268,12 @@ test("restriction pages and search keep a bounded working list", async ({
     };
   });
   await openRestrictions(page);
-  await page.getByRole("tab", { name: /Муты/ }).click();
-  await expect(page.locator(".restriction-card")).toHaveCount(25);
-  await page.locator("[data-next]").click();
-  await expect(page.locator(".restriction-card")).toHaveCount(6);
-  await page.locator("[data-search]").fill("Player00");
-  await expect(page.locator(".restriction-card")).toHaveCount(1);
-  await expect(page.locator("[data-page]")).toHaveText("1–1 из 1");
+  await expect(page.locator("[data-punishment-results] tbody tr")).toHaveCount(25);
+  await page.locator('[data-page="1"]').click();
+  await expect(page.locator("[data-punishment-results] tbody tr")).toHaveCount(6);
+  await page.locator("[data-query]").fill("Player00");
+  await expect(page.locator("[data-punishment-results] tbody tr")).toHaveCount(1);
+  await expect(page.locator("[data-pager]")).toBeHidden();
 });
 
 test("console restrictions use the shared validated form and preserve a tab draft", async ({
@@ -302,9 +301,9 @@ test("console restrictions use the shared validated form and preserve a tab draf
 test("kick remains outside the punishment workspace", async ({ page }) => {
   await page.goto("/preview/");
   await openRestrictions(page);
-  await expect(page.locator("#restrictions-actions").getByRole("button", { name: "Кик", exact: true })).toHaveCount(0);
-  await page.locator('[data-penalty="limits"]').click();
-  await expect(page.locator("#restrictions-actions").getByRole("button", { name: "Мут", exact: true })).toBeVisible();
+  await expect(page.locator(".punishments-workspace").getByRole("button", { name: "Кик", exact: true })).toHaveCount(0);
+  await page.locator('[data-punishment-kind="mute"]').click();
+  await expect(page.locator(".punishments-workspace").getByRole("button", { name: "Выдать мут", exact: true })).toBeVisible();
   await page.evaluate(() => LovePreview.model.request("PUT", "/api/roles/2", { permissions: ["KICK_PLAYERS"] }));
   await page.locator("#preview-role").selectOption("2");
   await expect(page.locator('[data-nav="restrictions"]')).toHaveCount(0);

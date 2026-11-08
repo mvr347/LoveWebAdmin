@@ -4,8 +4,8 @@ import java.net.URI;
 import java.time.ZoneId;
 import java.util.*;
 import java.util.function.Predicate;
-import org.bukkit.configuration.ConfigurationSection;
 import me.lovelace.loveWebAdmin.models.Permission;
+import org.bukkit.configuration.ConfigurationSection;
 
 /** One allowlist and validation contract for live settings and the server sandbox. */
 public final class PanelSettings {
@@ -113,7 +113,7 @@ public final class PanelSettings {
         "discord.reports-transport",
         i,
         Type.TRANSPORT,
-        "auto",
+        "bot",
         0,
         0,
         false);
@@ -155,40 +155,6 @@ public final class PanelSettings {
         0,
         100,
         true);
-    add("webhooksEnabled", "security.webhooks.enabled", i, Type.BOOL, false, 0, 0, false);
-    add(
-        "discordWebhookUrl",
-        "security.webhooks.discord.webhook-url",
-        i,
-        Type.WEBHOOK,
-        "",
-        0,
-        500,
-        false);
-    for (var entry :
-        Map.of(
-                "webhookNotifyAllLogins",
-                "all-logins",
-                "webhookNotifyNewIp",
-                "new-ip",
-                "webhookNotifyCommands",
-                "commands",
-                "webhookNotifyBruteForce",
-                "brute-force",
-                "webhookNotifyRegistration",
-                "registration",
-                "webhookNotifyDestructive",
-                "destructive-actions")
-            .entrySet())
-      add(
-          entry.getKey(),
-          "security.webhooks.notify-on." + entry.getValue(),
-          i,
-          Type.BOOL,
-          !entry.getValue().equals("all-logins"),
-          0,
-          0,
-          false);
     add(
         "maintenanceEnabled",
         "security.maintenance.enabled",
@@ -282,15 +248,14 @@ public final class PanelSettings {
               && (can.test(Permission.VIEW_SERVER_SETTINGS) || can.test(f.permission())))
             result.put(name, raw.getOrDefault(name, f.fallback()));
         });
-    if (can.test(Permission.MANAGE_INTEGRATIONS))
-      result.put(
-          "discordWebhookConfigured",
-          !Objects.toString(raw.get("discordWebhookUrl"), "").isBlank());
     return result;
   }
 
   public static Map<String, Object> normalize(
       Map<String, Object> body, Map<String, Object> current) {
+    if (body.keySet().stream()
+        .anyMatch(k -> k.toLowerCase(java.util.Locale.ROOT).contains("webhook")))
+      throw new IllegalArgumentException("Вебхуки удалены. Используйте Discord-бота.");
     var patch = new LinkedHashMap<String, Object>();
     for (var e : body.entrySet()) {
       if (e.getKey().equals("clearDiscordWebhookUrl")) {
@@ -401,7 +366,7 @@ public final class PanelSettings {
                 && !text.contains("\r")) return text;
             break;
           case TRANSPORT:
-            if (Set.of("auto", "bot", "webhook", "both").contains(text)) return text;
+            if (Set.of("auto", "bot").contains(text)) return "bot";
             break;
           case ZONE:
             try {

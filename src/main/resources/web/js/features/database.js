@@ -1,3 +1,4 @@
+import {trustScoreCard} from "../core/trust-score.js";
 import { renderServerStatistics } from "../core/server-statistics.js";
 import { noticeDialog } from "../core/dialogs.js";
 import { state } from "../state.js";
@@ -19,7 +20,7 @@ export async function renderDatabaseView() {
                 </div>
             </div>
 
-            <div class="filter-tags" id="db-statistics-mode" role="tablist" aria-label="Режим статистики">
+            <div class="workspace-primary-tabs" id="db-statistics-mode" role="tablist" aria-label="Режим статистики">
                 <button type="button" class="filter-tag-btn active" role="tab" aria-selected="true" data-db-view="unique">Уникальные игроки</button>
                 <button type="button" class="filter-tag-btn" role="tab" aria-selected="false" data-db-view="general">Общая статистика сервера</button>
             </div>
@@ -350,7 +351,7 @@ export async function renderDatabaseView() {
                             </div>
                             <div style="display:flex; justify-content:space-between;">
                                 <span style="color:var(--text-dim);">Рейтинг доверия:</span>
-                                <b style="color:${p.trustColor || "#10b981"};">${p.trustGrade || "A"} (${p.trustScore || 85}/100)</b>
+                                ${trustScoreCard(p)}
                             </div>
                         </div>
 
