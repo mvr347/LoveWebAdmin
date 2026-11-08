@@ -40,15 +40,15 @@ export async function renderSeparatedCases(area, kind = "report") {
   state.separatedViews ||= {};
   const memory = (state.separatedViews[kind] ||= {
     query: "",
-    filter: "new",
+    filter: "all",
     page: 0,
     selected: null,
     offset: 0,
   });
   area.innerHTML = `<section class="reference-cases"><div class="view-header"><div class="view-title-block"><h2>${definition.title.toUpperCase()}</h2><p>${definition.intro}</p></div><div class="view-actions">${kind === "report" && hasPerm("MANAGE_BANS") ? '<button type="button" class="primary" data-new-ban>Выдать бан</button>' : '<button type="button" class="secondary" data-refresh-cases>Обновить список</button>'}</div></div><div class="reference-case-layout"><section class="reference-panel reference-list-panel"><div class="reference-panel-head"><h3>${kind === "report" ? "Жалобы игроков" : definition.title}</h3><div class="filter-tags">${[
+    ["all", "Все"],
     ["new", "Новые"],
     ["working", "В работе"],
-    ["all", "Все"],
   ]
     .map(
       ([id, label]) =>

@@ -268,11 +268,11 @@ test("restriction pages and search keep a bounded working list", async ({
     };
   });
   await openRestrictions(page);
-  await expect(page.locator("[data-punishment-results] tbody tr")).toHaveCount(25);
+  await expect(page.locator("[data-punishment-row]")).toHaveCount(25);
   await page.locator('[data-page="1"]').click();
-  await expect(page.locator("[data-punishment-results] tbody tr")).toHaveCount(6);
+  await expect(page.locator("[data-punishment-row]")).toHaveCount(6);
   await page.locator("[data-query]").fill("Player00");
-  await expect(page.locator("[data-punishment-results] tbody tr")).toHaveCount(1);
+  await expect(page.locator("[data-punishment-row]")).toHaveCount(1);
   await expect(page.locator("[data-pager]")).toBeHidden();
 });
 

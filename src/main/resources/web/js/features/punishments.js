@@ -6,6 +6,7 @@ import {
   openPendingBanForm,
 } from "./restriction-forms.js";
 const names = { ban: "Баны", mute: "Муты", freeze: "Заморозки" };
+const singular = { ban: "Бан", mute: "Мут", freeze: "Заморозка" };
 const stages = {
   active: "Действующие",
   pending: "На оформлении",
@@ -41,10 +42,11 @@ export async function renderPunishments(area, historyOnly = false) {
   if (!kinds.includes(memory.kind)) memory.kind = kinds[0];
   if (historyOnly) memory.stage = "history";
   const lifetime = state.requestGeneration;
-  area.innerHTML = `<section class="punishments-workspace"><header class="view-header"><div class="view-title-block"><h2>${historyOnly ? "История наказаний" : "Наказания"}</h2><p>Ограничения игроков, причины и решения сотрудников.</p></div><button type="button" class="primary" data-create-punishment></button></header><nav class="workspace-primary-tabs" aria-label="Тип наказания">${kinds.map((kind) => `<button type="button" data-punishment-kind="${kind}">${names[kind]}</button>`).join("")}</nav><nav class="panel-tabs" data-stages aria-label="Раздел наказаний"></nav><div class="punishment-filters"><label>Игрок или причина<input type="search" data-query maxlength="128" value="${esc(memory.query)}" placeholder="Ник или текст причины"></label><label>Сотрудник<input type="search" data-actor maxlength="128" value="${esc(memory.actor)}" placeholder="Кто выдал"></label><label>С даты<input type="date" data-from value="${esc(memory.from)}"></label><label>По дату<input type="date" data-to value="${esc(memory.to)}"></label></div><p data-description class="muted"></p><p data-error role="alert" class="form-error"></p><div data-punishment-results aria-live="polite"></div><div class="punishment-pagination" data-pager hidden><button type="button" class="secondary" data-page="-1">Предыдущая</button><span data-count></span><button type="button" class="secondary" data-page="1">Следующая</button></div></section>`;
+  area.innerHTML = `<section class="punishments-workspace reference-penalties"><header class="view-header"><div class="view-title-block"><h2>${historyOnly ? "История наказаний" : "Наказания"}</h2><p>Ограничения игроков, причины и решения сотрудников.</p></div><button type="button" class="primary" data-create-punishment></button></header><nav class="workspace-primary-tabs" aria-label="Тип наказания">${kinds.map((kind) => `<button type="button" data-punishment-kind="${kind}">${names[kind]}</button>`).join("")}</nav><div class="reference-case-layout punishment-layout"><section class="reference-panel punishment-list-panel"><div class="reference-panel-head"><h3 data-list-title>Список наказаний</h3><nav class="filter-tags" data-stages aria-label="Раздел наказаний"></nav></div><div class="reference-search punishment-filters"><label>Игрок или причина<input type="search" data-query maxlength="128" value="${esc(memory.query)}" placeholder="Ник или текст причины"></label><label>Сотрудник<input type="search" data-actor maxlength="128" value="${esc(memory.actor)}" placeholder="Кто выдал"></label><label>С даты<input type="date" data-from value="${esc(memory.from)}"></label><label>По дату<input type="date" data-to value="${esc(memory.to)}"></label></div><p data-description class="muted"></p><p data-error role="alert" class="form-error"></p><div data-punishment-results class="punishment-records" aria-live="polite"></div><div class="reference-case-pager punishment-pagination" data-pager hidden><button type="button" class="secondary" data-page="-1">Предыдущая</button><span data-count></span><button type="button" class="secondary" data-page="1">Следующая</button></div></section><aside class="reference-panel reference-case-preview punishment-preview" data-punishment-preview aria-label="Карточка наказания" hidden></aside></div><p class="reference-help">Выберите запись слева. Причина, срок и доступные действия появятся в карточке наказания.</p></section>`;
   const host = area.firstElementChild,
     results = host.querySelector("[data-punishment-results]"),
-    pager = host.querySelector("[data-pager]");
+    pager = host.querySelector("[data-pager]"),
+    preview = host.querySelector("[data-punishment-preview]");
   const alive = () => host.isConnected && state.requestGeneration === lifetime;
   let loading = false,
     queued = false,
@@ -52,7 +54,9 @@ export async function renderPunishments(area, historyOnly = false) {
     rows = [],
     total = 0,
     version = 0,
-    lastMarkup = null;
+    lastMarkup = null,
+    lastPreview = null,
+    selectedKey = null;
   function options() {
     return memory.kind === "ban"
       ? Object.keys(stages).filter((stage) =>
@@ -80,6 +84,7 @@ export async function renderPunishments(area, historyOnly = false) {
           `<button type="button" class="secondary ${stage === memory.stage ? "active" : ""}" data-stage="${stage}">${stages[stage]}</button>`,
       )
       .join("");
+    host.querySelector("[data-list-title]").textContent = memory.stage === "archive" ? "Архив материалов" : names[memory.kind] + " · " + stages[memory.stage];
     const create = host.querySelector("[data-create-punishment]");
     create.hidden = !hasPerm(
       memory.kind === "ban"
@@ -144,6 +149,85 @@ export async function renderPunishments(area, historyOnly = false) {
       (!memory.to || at <= Number(query().get("to")))
     );
   }
+  function rowKey(row) {
+    return [
+      memory.kind,
+      memory.stage,
+      row.file || row.id || row.uuid || row.name,
+      row.at || row.createdAt || row.created || "",
+      row.action || "",
+    ].join(":");
+  }
+  function rowInfo(row) {
+    const pending = memory.stage === "pending",
+      historic = memory.stage === "history",
+      file = memory.stage === "archive";
+    const status = file
+      ? "Сохранено"
+      : pending
+        ? "Ожидает оформления"
+        : historic
+          ? {
+              APPLIED: "Выдано",
+              REMOVED: "Снято",
+              ACTIVE: "Действует",
+              UNBANNED: "Снят",
+              EXPIRED: "Срок истёк",
+              CANCELLED: "Отменён",
+              DRAFT: "Черновик",
+            }[row.action || row.status] || "Завершено"
+          : "Действует";
+    const expiry = row.expiresAt ?? row.expires;
+    return {
+      pending,
+      historic,
+      file,
+      status,
+      name: row.file || row.name || row.targetName || "Игрок",
+      reason: row.reason || row.ruleReason || "Причина не указана",
+      actor: row.actor || row.creatorName || "Система",
+      at: fmtTime(row.at || row.createdAt || row.created),
+      term:
+        expiry == null
+          ? "Не указан"
+          : expiry < 0
+            ? "Бессрочно"
+            : "До " + fmtTime(expiry),
+    };
+  }
+  function drawPreview() {
+    const index = rows.findIndex((row) => rowKey(row) === selectedKey),
+      row = rows[index];
+    preview.hidden = !row;
+    if (!row) {
+      preview.replaceChildren();
+      lastPreview = null;
+      return;
+    }
+    const info = rowInfo(row);
+    const canManage = hasPerm(
+      memory.kind === "ban"
+        ? "MANAGE_BANS"
+        : memory.kind === "mute"
+          ? "MANAGE_MUTES"
+          : "FREEZE_PLAYERS",
+    );
+    const remaining = Math.max(
+      0,
+      (row.deadline || 0) - Math.floor(Date.now() / 1000),
+    );
+    const actions =
+      info.pending && canManage
+        ? `<button type="button" class="primary" data-finalize="${index}">Оформить</button><button type="button" class="secondary" data-remove="${index}">Отменить</button>`
+        : !info.historic && !info.file && canManage
+          ? `<button type="button" class="secondary" data-remove="${index}">Снять</button>`
+          : "";
+    const html = `<div class="reference-preview-player"><div class="sidebar-user-avatar">${esc(info.file ? "АР" : info.name.slice(0, 2).toUpperCase())}</div><div><h3>${esc(info.name)}</h3><p>${info.file ? "Материал архива" : `${singular[memory.kind]}${row.id ? " · №" + Number(row.id) : ""}`}</p></div></div><div class="reference-badges"><span class="badge ${info.pending ? "yellow" : "gray"}">${esc(info.status)}</span></div>${info.file ? '<div class="reference-detail-section"><h4>Архив</h4><p>Сохранённый материал завершённого обращения.</p></div>' : `<div class="reference-detail-section"><h4>Причина</h4><p>${esc(info.reason)}</p></div><div class="punishment-facts"><div class="reference-detail-section"><h4>Сотрудник</h4><p>${esc(info.actor)}</p></div><div class="reference-detail-section"><h4>Дата</h4><p>${esc(info.at)}</p></div><div class="reference-detail-section"><h4>${info.pending ? "На оформление" : "Срок"}</h4><p>${info.pending ? `${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}` : esc(info.term)}</p></div></div><div class="reference-preview-actions">${!info.file ? `<button type="button" class="${actions ? "secondary" : "primary"}" data-detail="${index}">Подробнее</button>` : ""}${actions}</div>`}`;
+    if (html !== lastPreview) {
+      preview.innerHTML = html;
+      lastPreview = html;
+    }
+  }
   function draw() {
     const empty =
       memory.stage === "pending"
@@ -153,37 +237,27 @@ export async function renderPunishments(area, historyOnly = false) {
           : memory.stage === "history"
             ? "Записей по выбранным фильтрам нет"
             : "Действующих ограничений не найдено";
-    let html = rows.length
-      ? `<div class="punishment-table table-wrap"><table><thead><tr><th>${memory.stage === "archive" ? "Материал" : "Игрок"}</th><th>Причина / состояние</th><th>Сотрудник</th><th>Дата / срок</th><th>Действия</th></tr></thead><tbody>${rows
-          .map((row, i) => {
-            const pending = memory.stage === "pending",
-              historic = memory.stage === "history",
-              file = memory.stage === "archive";
-            const name = file ? row.file : row.name || row.targetName;
-            const status = historic
-              ? {
-                  APPLIED: "Выдано",
-                  REMOVED: "Снято",
-                  ACTIVE: "Действует",
-                  UNBANNED: "Снят",
-                  EXPIRED: "Срок истёк",
-                  CANCELLED: "Отменён",
-                  DRAFT: "Черновик",
-                }[row.action || row.status] || "Завершено"
-              : pending
-                ? "Ожидает оформления"
-                : "Действует";
-            const remaining = pending
-              ? Math.max(0, (row.deadline || 0) - Math.floor(Date.now() / 1000))
-              : 0;
-            return `<tr><td><strong>${esc(name)}</strong>${row.id ? `<small>№${Number(row.id)}</small>` : ""}</td><td>${esc(row.reason || row.ruleReason || "")}<span class="badge ${pending ? "yellow" : "gray"}">${file ? "Сохранено" : esc(status)}</span></td><td>${file ? "—" : esc(row.actor || row.creatorName || "Система")}</td><td>${file ? "—" : esc(fmtTime(row.at || row.createdAt || row.created))}<small>${pending ? `${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")} на оформление` : row.expiresAt || row.expires ? ((row.expiresAt ?? row.expires) < 0 ? "Бессрочно" : "До " + esc(fmtTime(row.expiresAt ?? row.expires))) : ""}</small></td><td><div class="punishment-row-actions">${!file ? `<button type="button" class="secondary" data-detail="${i}">Подробнее</button>` : ""}${pending && hasPerm("MANAGE_BANS") ? `<button type="button" class="primary" data-finalize="${i}">Оформить</button><button type="button" class="secondary" data-remove="${i}">Отменить</button>` : !historic && !file && hasPerm(memory.kind === "ban" ? "MANAGE_BANS" : memory.kind === "mute" ? "MANAGE_MUTES" : "FREEZE_PLAYERS") ? `<button type="button" class="secondary" data-remove="${i}">Снять</button>` : ""}</div></td></tr>`;
+    if (!rows.some((row) => rowKey(row) === selectedKey))
+      selectedKey = rows[0] ? rowKey(rows[0]) : null;
+    host
+      .querySelector(".punishment-layout")
+      .classList.toggle("punishment-layout-empty", !rows.length);
+    const html = rows.length
+      ? rows
+          .map((row, index) => {
+            const info = rowInfo(row),
+              selected = rowKey(row) === selectedKey;
+            return `<button type="button" class="reference-list-item ${selected ? "selected" : ""}" data-punishment-row="${index}" data-punishment-key="${esc(rowKey(row))}" data-select-punishment="${index}" aria-pressed="${selected}"><span class="reference-type-dot ${info.historic || info.file ? "closed" : ""}"></span><span class="reference-item-content"><strong>${esc(info.name)}</strong><span class="punishment-record-reason">${esc(info.file ? "Материал архива" : info.reason)}</span><small>${esc(info.status)}${info.file ? "" : " · " + esc(info.actor)}</small></span><span class="reference-item-time">${row.id ? "№" + Number(row.id) : info.file ? "Архив" : names[memory.kind]}</span></button>`;
           })
-          .join("")}</tbody></table></div>`
+          .join("")
       : `<div class="reference-empty-state"><h3>${empty}</h3><p>${memory.query || memory.actor || memory.from || memory.to ? "Попробуйте изменить фильтры." : "Новые записи появятся здесь автоматически."}</p></div>`;
     if (lastMarkup !== html) {
+      const focusedKey = results.contains(document.activeElement) ? document.activeElement.dataset.punishmentKey : null;
       results.innerHTML = html;
       lastMarkup = html;
+      if (focusedKey) [...results.querySelectorAll("[data-punishment-key]")].find(button => button.dataset.punishmentKey === focusedKey)?.focus({preventScroll:true});
     }
+    drawPreview();
     pager.hidden = total <= 25;
     pager.querySelector("[data-count]").textContent =
       `${total ? memory.page * 25 + 1 : 0}–${Math.min(total, (memory.page + 1) * 25)} из ${total}`;
@@ -264,6 +338,14 @@ export async function renderPunishments(area, historyOnly = false) {
   host.addEventListener("click", async (event) => {
     const b = event.target.closest("button");
     if (!b || b.disabled) return;
+    if (b.hasAttribute("data-select-punishment")) {
+      const row = rows[Number(b.dataset.selectPunishment)];
+      if (row) {
+        selectedKey = rowKey(row);
+        draw();
+      }
+      return;
+    }
     if (b.dataset.punishmentKind) {
       memory.kind = b.dataset.punishmentKind;
       memory.stage = "active";
@@ -361,7 +443,7 @@ export async function renderPunishments(area, historyOnly = false) {
       alive() &&
       !document.hidden &&
       !document.querySelector(".modal-overlay") &&
-      !results.contains(document.activeElement)
+      !preview.contains(document.activeElement)
     )
       load();
   }, 8000);

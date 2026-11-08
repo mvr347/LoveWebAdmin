@@ -68,7 +68,7 @@ test("punishment switches retain the workspace and only show real pagination", a
     "Ada123",
   );
   await expect(page.locator("[data-pager]")).toBeHidden();
-  const row = page.locator("[data-punishment-results] tbody tr");
+  const row = page.locator("[data-punishment-row]");
   await row.evaluate((el) => (el.dataset.marker = "preserved"));
   await page.locator(".view-header h2").click();
   await page.clock.fastForward(8100);
