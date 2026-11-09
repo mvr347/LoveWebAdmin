@@ -10,12 +10,12 @@ export function drawViolations(container, rows, refresh) {
         check = row.checkName || row.check || row.type || "Проверка";
       const decision =
         row.verdict === "legit"
-          ? "Не чит · ложное срабатывание"
+          ? "Чистый · ложное срабатывание"
           : row.verdict === "cheat"
             ? "Чит · подтверждено сотрудником"
             : "Не разобрано";
       const reviewed = row.verdict === "legit" || row.verdict === "cheat";
-      return `<article class="violation-card ${row.verdict === "legit" ? "violation-legit" : ""}" data-violation-card="${index}"><div class="violation-info"><img src="https://mc-heads.net/avatar/${encodeURIComponent(name)}/32" class="player-avatar-sm" width="32" height="32" alt=""><div class="violation-meta"><h4>${esc(name)} <span class="badge gray">${esc(check)}</span></h4><div class="violation-details">Срабатывание · VL: <b>${formatViolationLevel(row.vl ?? row.vlScore)}</b> · ${fmtTime(row.timestamp)}</div><p class="violation-verdict ${row.verdict === "legit" ? "legit" : ""}">${esc(decision)}</p>${reviewed ? `<small>${esc(row.reviewer || "Сотрудник")} · ${fmtTime(row.reviewedAt)}</small>` : ""}${row.explanation ? `<details><summary>Причина срабатывания</summary><p>${esc(row.explanation)}</p></details>` : ""}${row.reviewReason ? `<p class="violation-review-reason">${esc(row.reviewReason)}</p>` : ""}</div></div><div class="violation-actions"><div class="violation-review-buttons">${manage ? `<button class="secondary" type="button" data-review="legit" ${row.id ? "" : "disabled"} title="${row.id ? "Отметить это срабатывание как ложное" : "Обновите античит для разбора исторических срабатываний"}">Не чит</button><button class="secondary" type="button" data-review="cheat" ${row.id ? "" : "disabled"}>Чит</button>` : ""}</div><div class="violation-other-actions"><button class="secondary" type="button" data-event-action="observe">Наблюдение</button>${hasPerm("MANAGE_BANS") ? '<button class="secondary" type="button" data-event-action="ban">Выдать бан</button>' : ""}${hasPerm("VIEW_PLAYERS") ? '<button class="secondary" type="button" data-event-action="profile">Досье</button>' : ""}</div></div></article>`;
+      return `<article class="violation-card ${row.verdict === "legit" ? "violation-legit" : ""}" data-violation-card="${index}"><div class="violation-info"><img src="https://mc-heads.net/avatar/${encodeURIComponent(name)}/32" class="player-avatar-sm" width="32" height="32" alt=""><div class="violation-meta"><h4>${esc(name)} <span class="badge gray">${esc(check)}</span></h4><div class="violation-details">Срабатывание · VL: <b>${formatViolationLevel(row.vl ?? row.vlScore)}</b> · ${fmtTime(row.timestamp)}</div><p class="violation-verdict ${row.verdict === "legit" ? "legit" : ""}">${esc(decision)}</p>${reviewed ? `<small>${esc(row.reviewer || "Сотрудник")} · ${fmtTime(row.reviewedAt)}</small>` : ""}${row.explanation ? `<details><summary>Причина срабатывания</summary><p>${esc(row.explanation)}</p></details>` : ""}${row.reviewReason ? `<p class="violation-review-reason">${esc(row.reviewReason)}</p>` : ""}</div></div><div class="violation-actions"><div class="violation-review-buttons">${manage ? `<button class="secondary" type="button" data-review="legit" ${row.id ? "" : "disabled"} title="${row.id ? "Отметить это срабатывание как ложное" : "Обновите античит для разбора исторических срабатываний"}">Чистый</button><button class="secondary" type="button" data-review="cheat" ${row.id ? "" : "disabled"}>Чит</button>` : ""}</div><div class="violation-other-actions"><button class="secondary" type="button" data-event-action="observe">Наблюдение</button>${hasPerm("MANAGE_BANS") ? '<button class="secondary" type="button" data-event-action="ban">Выдать бан</button>' : ""}${hasPerm("VIEW_PLAYERS") ? '<button class="secondary" type="button" data-event-action="profile">Досье</button>' : ""}</div></div></article>`;
     })
     .join("");
   if (container.streamMarkup !== markup) {
@@ -38,7 +38,7 @@ export function drawViolations(container, rows, refresh) {
     const verdict = button.dataset.review;
     const reason = await explanationDialog(
       verdict === "legit"
-        ? "Не чит: ложное срабатывание"
+        ? "Чистый: ложное срабатывание"
         : "Подтвердить использование чита",
       `Игрок: ${name}. Проверка: ${row.checkName || row.check}. Укажите обоснование разбора этой записи. Решение сохраняется в журнале; оно не выдаёт наказание автоматически.`,
     );
@@ -87,7 +87,7 @@ export function openLearningReviews() {
           ? rows
               .map(
                 (row, index) =>
-                  `<article class="learning-review"><h4>${esc(row.name)} · ${row.domain === "aim" ? "Прицеливание" : "Клики"}</h4><p>${fmtTime(row.timestamp)}</p><div class="row"><button class="secondary" data-sample="${index}" data-verdict="legit">Не чит</button><button class="secondary" data-sample="${index}" data-verdict="cheat">Чит</button></div></article>`,
+                  `<article class="learning-review"><h4>${esc(row.name)} · ${row.domain === "aim" ? "Прицеливание" : "Клики"}</h4><p>${fmtTime(row.timestamp)}</p><div class="row"><button class="secondary" data-sample="${index}" data-verdict="legit">Чистый</button><button class="secondary" data-sample="${index}" data-verdict="cheat">Чит</button></div></article>`,
               )
               .join("")
           : '<div class="reference-empty-state"><h3>Образцов для обучения пока нет</h3><p>Старые записи без исходных признаков не используются для обучения модели.</p></div>');
@@ -99,7 +99,7 @@ export function openLearningReviews() {
         if (
           !(await confirmDialog(
             "Разбор образца",
-            `${row.name}: ${verdict === "legit" ? "не чит" : "чит"}. Передать эту отметку в обучение?`,
+            `${row.name}: ${verdict === "legit" ? "чистый" : "чит"}. Передать эту отметку в обучение?`,
           ))
         )
           return;

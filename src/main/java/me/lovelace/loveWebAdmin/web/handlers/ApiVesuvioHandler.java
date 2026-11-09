@@ -60,6 +60,12 @@ public class ApiVesuvioHandler extends ApiHandlerSupport {
             || pathInfo.startsWith("/review/")
             || pathInfo.startsWith("/models"))
         && !ownerOnly(req, resp)) return;
+        if ("/ban-reviews".equals(pathInfo)) {
+          if(requirePermission(req,resp,Permission.VIEW_BANS).isEmpty()||requirePermission(req,resp,Permission.VIEW_VESUVIO_ADVANCED).isEmpty())return;
+          try{sendSuccess(resp,plugin.getDatabaseManager().banReviews().list(cheatReasons(),Math.clamp(parseIntOrDefault(req.getParameter("offset"),0),0,1000000)));}
+          catch(java.sql.SQLException error){throw new IllegalStateException("Очередь банов недоступна",error);}
+          return;
+        }
         String playerFilter = req.getParameter("player");
         final String filterLower = (playerFilter != null && !playerFilter.isBlank()) ? playerFilter.trim().toLowerCase() : null;
 
@@ -139,6 +145,16 @@ public class ApiVesuvioHandler extends ApiHandlerSupport {
         sendError(resp, 404, "Не найдено");
     }
 
+    private java.util.Set<String> cheatReasons() {
+      var names=new java.util.LinkedHashSet<String>();
+      var base=new java.util.ArrayList<>(java.util.List.of("чит","читы","cheat","cheats"));
+      var file=new java.io.File(plugin.getDataFolder(),"bans_reasons.yml");
+      if(file.isFile())for(var row:org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(file).getMapList("reasons"))
+        if("cheats".equals(row.get("id"))&&row.get("name") instanceof String name&&!name.isBlank()&&name.length()<=200)base.add(name.trim());
+      for(var name:base){names.add(name);names.add(name.toLowerCase(java.util.Locale.ROOT));names.add(name.toUpperCase(java.util.Locale.ROOT));names.add(name.substring(0,1).toUpperCase(java.util.Locale.ROOT)+name.substring(1).toLowerCase(java.util.Locale.ROOT));}
+      return names;
+    }
+
     private Object violationEvents(int limit) {
       try {
         Object capabilities=bridge.call("getCapabilities");
@@ -188,12 +204,25 @@ public class ApiVesuvioHandler extends ApiHandlerSupport {
     @Override
     protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws IOException {
         String pathInfo = req.getPathInfo();
+        if(pathInfo!=null&&pathInfo.matches("/ban-review/[0-9]+")){
+          var session=requirePermission(req,resp,Permission.MANAGE_VESUVIO);if(session.isEmpty())return;
+          if(!hasPermission(session.get(),Permission.VIEW_BANS)||!hasPermission(session.get(),Permission.VIEW_VESUVIO_ADVANCED)){sendError(resp,403,"Нужны права просмотра банов и срабатываний");return;}
+          req.setAttribute("lwa.permission","MANAGE_VESUVIO,VIEW_BANS,VIEW_VESUVIO_ADVANCED");
+          var body=readJsonBody(req);String verdict=java.util.Objects.toString(body.get("verdict"),""),reason=java.util.Objects.toString(body.get("reason"),"").trim();Object revision=body.get("revision");
+          if(!java.util.Set.of("cheat","legit").contains(verdict)||reason.length()<5||reason.length()>2000||!(revision instanceof Number n)||!Double.isFinite(n.doubleValue())||n.doubleValue()!=n.longValue()||n.longValue()<0){sendError(resp,400,"Укажите вердикт, обоснование и версию записи");return;}
+          try{
+            int id=Integer.parseInt(pathInfo.substring("/ban-review/".length()));
+            if(!plugin.getDatabaseManager().banReviews().review(id,((Number)revision).longValue(),verdict,session.get().adminUsername(),reason,cheatReasons())){sendError(resp,409,"Бан или решение уже изменились. Обновите очередь");return;}
+            plugin.getLogManager().logWebAction(session.get().adminUsername(),"Разбор бана №"+id+": "+verdict+" · "+reason);sendSuccess(resp,Map.of("saved",true));
+          }catch(java.sql.SQLException error){throw new IllegalStateException("Не удалось сохранить разбор бана",error);}
+          return;
+        }
         if (pathInfo != null && (pathInfo.matches("/violation/[0-9]+/review") || pathInfo.matches("/sample/[A-Za-z0-9_-]{1,80}/review"))) {
           var session=requirePermission(req,resp,Permission.MANAGE_VESUVIO);
           if(session.isEmpty())return;
           if(!hasPermission(session.get(),Permission.VIEW_VESUVIO_ADVANCED)){sendError(resp,403,"Нужно право просмотра срабатываний");return;}
           var body=readJsonBody(req);String verdict=java.util.Objects.toString(body.get("verdict"),"");
-          if(!java.util.Set.of("cheat","legit").contains(verdict)){sendError(resp,400,"Выберите Чит или Не чит");return;}
+          if(!java.util.Set.of("cheat","legit").contains(verdict)){sendError(resp,400,"Выберите Чит или Чистый");return;}
           String key=pathInfo.split("/")[2];
           try {
             Object result;

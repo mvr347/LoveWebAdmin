@@ -1523,8 +1523,8 @@ export function exposeOpenQuickBanModal() {
   // Modal: Ban Details
 }
 export function exposeViewBanDetails() {
-  window.viewBanDetails = async function (banId) {
-    openModal(
+  window.viewBanDetails = async function (banId, nested = false) {
+    (nested ? openChildModal : openModal)(
       `
             <div class="modal-header">
                 <h3>ДЕТАЛИ БЛОКИРОВКИ #${banId}</h3>
@@ -1538,15 +1538,15 @@ export function exposeViewBanDetails() {
             </div>
         `,
       async (overlay) => {
-        const body = document.getElementById("ban-details-body");
-        const footer = document.getElementById("ban-details-footer");
+        const body = overlay.querySelector("#ban-details-body");
+        const footer = overlay.querySelector("#ban-details-footer");
         if (!body) return;
         try {
           const b = await api("GET", `/api/bans/${banId}`);
           if (!overlay.isConnected) return;
           const isActive = b.status === "ACTIVE";
           const isMod = isModeratorRole();
-          const canUnban = !isMod || state.me.isOwner;
+          const canUnban = hasPerm("MANAGE_BANS");
           const proofUrl =
             b.screenshotUrl ||
             (b.proofUrls && b.proofUrls.length ? b.proofUrls[0] : null);
@@ -1618,7 +1618,7 @@ export function exposeViewBanDetails() {
                   await api("POST", `/api/bans/${banId}/attach-report`, { reportId: report.id });
                   if (!overlay.isConnected) return;
                   showToast("Жалоба прикреплена", `Жалоба №${report.id} · бан №${banId}`, "success");
-                  if (closeModal(overlay)) window.viewBanDetails(banId);
+                  if (closeModal(overlay)) window.viewBanDetails(banId, nested);
                 } catch (error) {
                   if (overlay.isConnected) showToast("Жалоба не прикреплена", error.message, "error");
                 }

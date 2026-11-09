@@ -1,3 +1,4 @@
+import { openBanReviews } from "./ban-reviews.js";
 import { drawViolations, openLearningReviews } from "./violation-reviews.js";
 import { mountAnticheatJournal } from "./anticheat-journal.js";
 import { renderWave } from "./waves.js";
@@ -52,6 +53,7 @@ export async function renderAnticheatView() {
                         <option value="Timer">Скорость действий</option>
                     </select>
                     ${hasPerm("MANAGE_VESUVIO") && hasPerm("VIEW_VESUVIO_ADVANCED") ? '<button type="button" class="secondary" id="open-learning-reviews">Образцы для разбора</button>' : ""}
+                    ${hasPerm("VIEW_BANS") && hasPerm("VIEW_VESUVIO_ADVANCED") ? '<button type="button" class="secondary" id="open-ban-reviews">Баны для разбора</button>' : ""}
                 </div>
             </div>
 
@@ -60,6 +62,7 @@ export async function renderAnticheatView() {
             </div>
         `;
   area.querySelector("#open-learning-reviews")?.addEventListener("click", openLearningReviews);
+  area.querySelector("#open-ban-reviews")?.addEventListener("click", openBanReviews);
   const pauseBtn = document.getElementById("vesuvio-pause-btn");
   pauseBtn?.addEventListener("click", () => {
     isStreamPaused = !isStreamPaused;
