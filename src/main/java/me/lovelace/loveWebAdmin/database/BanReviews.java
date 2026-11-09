@@ -12,6 +12,10 @@ public final class BanReviews {
     this.connection = connection;
     this.lock = lock;
     try (var s = connection.createStatement()) {
+      s.execute("CREATE TABLE IF NOT EXISTS training_revocations(ban_id INTEGER PRIMARY KEY,created_at INTEGER NOT NULL,delivered INTEGER NOT NULL DEFAULT 0)");
+      s.execute("CREATE TRIGGER IF NOT EXISTS training_unban_review AFTER UPDATE OF status ON web_bans WHEN NEW.status='UNBANNED' AND OLD.status!='UNBANNED' BEGIN INSERT OR REPLACE INTO training_revocations(ban_id,created_at,delivered) VALUES(NEW.id,strftime('%s','now'),0); END");
+      // Replay historical successful appeals as well; delivered markers prevent replay storms.
+      s.execute("INSERT OR IGNORE INTO training_revocations(ban_id,created_at) SELECT id,strftime('%s','now') FROM web_bans WHERE status='UNBANNED'");
       s.execute("CREATE INDEX IF NOT EXISTS idx_web_bans_review_reason ON web_bans(TRIM(rule_reason),status,created_at,id)");
       s.execute(
           "CREATE TABLE IF NOT EXISTS anticheat_ban_reviews(ban_id INTEGER PRIMARY KEY,verdict TEXT"
@@ -22,6 +26,18 @@ public final class BanReviews {
               + " INTEGER NOT NULL,verdict TEXT NOT NULL,reviewer TEXT NOT NULL,reason TEXT NOT"
               + " NULL,reviewed_at INTEGER NOT NULL,PRIMARY KEY(ban_id,revision))");
     }
+  }
+
+  public List<Integer> pendingTrainingRevocations() throws SQLException {
+    synchronized(lock) {
+      var ids=new ArrayList<Integer>();
+      try(var q=connection.createStatement();var rows=q.executeQuery("SELECT ban_id FROM training_revocations WHERE delivered=0 ORDER BY created_at,ban_id LIMIT 5")) {
+        while(rows.next())ids.add(rows.getInt(1));
+      }return List.copyOf(ids);
+    }
+  }
+  public void acknowledgeTrainingRevocation(int id) throws SQLException {
+    synchronized(lock) {try(var q=connection.prepareStatement("UPDATE training_revocations SET delivered=1 WHERE ban_id=?")) {q.setInt(1,id);q.executeUpdate();}}
   }
 
   public Map<String, Object> list(Set<String> reasons, int offset) throws SQLException {
@@ -149,6 +165,9 @@ public final class BanReviews {
           q.setString(5, reason.trim());
           q.setLong(6, at);
           q.executeUpdate();
+        }
+        if("legit".equals(verdict))try(var q=connection.prepareStatement("INSERT OR REPLACE INTO training_revocations(ban_id,created_at,delivered) VALUES(?,?,0)")){
+          q.setInt(1,id);q.setLong(2,at);q.executeUpdate();
         }
         connection.commit();
         return true;

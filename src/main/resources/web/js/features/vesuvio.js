@@ -1,3 +1,4 @@
+import { openTrainingWindows } from "./training-windows.js";
 import { openBanReviews } from "./ban-reviews.js";
 import { drawViolations, openLearningReviews } from "./violation-reviews.js";
 import { mountAnticheatJournal } from "./anticheat-journal.js";
@@ -52,7 +53,7 @@ export async function renderAnticheatView() {
                         <option value="World">Взаимодействие с миром</option>
                         <option value="Timer">Скорость действий</option>
                     </select>
-                    ${hasPerm("MANAGE_VESUVIO") && hasPerm("VIEW_VESUVIO_ADVANCED") ? '<button type="button" class="secondary" id="open-learning-reviews">Образцы для разбора</button>' : ""}
+                    ${hasPerm("MANAGE_VESUVIO") && hasPerm("VIEW_VESUVIO_ADVANCED") ? '<button type="button" class="secondary" id="open-training-windows">Обучающие данные</button><button type="button" class="secondary" id="open-learning-reviews">Пограничные образцы</button>' : ""}
                     ${hasPerm("VIEW_BANS") && hasPerm("VIEW_VESUVIO_ADVANCED") ? '<button type="button" class="secondary" id="open-ban-reviews">Баны для разбора</button>' : ""}
                 </div>
             </div>
@@ -62,6 +63,7 @@ export async function renderAnticheatView() {
             </div>
         `;
   area.querySelector("#open-learning-reviews")?.addEventListener("click", openLearningReviews);
+  area.querySelector("#open-training-windows")?.addEventListener("click", openTrainingWindows);
   area.querySelector("#open-ban-reviews")?.addEventListener("click", openBanReviews);
   const pauseBtn = document.getElementById("vesuvio-pause-btn");
   pauseBtn?.addEventListener("click", () => {

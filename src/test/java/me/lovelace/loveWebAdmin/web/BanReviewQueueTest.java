@@ -96,6 +96,28 @@ class BanReviewQueueTest {
   }
 
   @Test
+  void unbanAndCleanReviewQueueDurableTrainingRevocations() throws Exception {
+    var first=ban("Читы","ACTIVE");var second=ban("Читы","ACTIVE");
+    var database=f.plugin.getDatabaseManager();var store=database.banReviews();
+    assertTrue(database.unban(first.id()));
+    assertTrue(store.review(second.id(),0,"legit","Reviewer","Проверена запись игры",Set.of("Читы")));
+    assertEquals(List.of(first.id(),second.id()),store.pendingTrainingRevocations());
+    store.acknowledgeTrainingRevocation(first.id());assertEquals(List.of(second.id()),store.pendingTrainingRevocations());
+    assertFalse(database.unban(first.id())); // replay must not manufacture a new delivery
+    assertEquals(List.of(second.id()),store.pendingTrainingRevocations());
+  }
+
+  @Test
+  void trainingManagementRequiresPermissionsAndValidEvidence() throws Exception {
+    var viewer=f.session("ReadOnly",Set.of(Permission.VIEW_VESUVIO_ADVANCED));
+    assertEquals(403,f.call(handler,"POST","/training/verify",Map.of(),"{}",viewer).status);
+    String body="{\"ids\":[1],\"reason\":\"Проверена запись игры\",\"banId\":1}";
+    ban("Читы","UNBANNED");
+    assertEquals(409,f.call(handler,"POST","/training/verify",Map.of(),body,staff).status);
+    assertEquals(400,f.call(handler,"POST","/training/verify",Map.of(),"{\"ids\":[1],\"reason\":\"x\"}",staff).status);
+  }
+
+  @Test
   void auditFailureRollsBackAndQueueIsPaged() throws Exception {
     for (int i = 0; i < 31; i++) ban("Читы", "ACTIVE");
     var store = f.plugin.getDatabaseManager().banReviews();

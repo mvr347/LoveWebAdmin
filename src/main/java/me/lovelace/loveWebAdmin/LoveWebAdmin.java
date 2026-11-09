@@ -114,6 +114,7 @@ public class LoveWebAdmin extends JavaPlugin {
   private SecurityWebhookService securityWebhookService;
   private WebServer webServer;
   private VesuvioBridge vesuvioBridge;
+  private me.lovelace.loveWebAdmin.integration.TrainingReviewSync trainingReviewSync;
   private me.lovelace.loveWebAdmin.managers.LockdownManager lockdownManager;
   private me.lovelace.loveWebAdmin.managers.StaffAuditManager staffAuditManager;
   private me.lovelace.loveWebAdmin.integration.LoveEconomyBridge loveEconomyBridge;
@@ -243,6 +244,7 @@ public class LoveWebAdmin extends JavaPlugin {
 
     // Reflection-only bridges to external plugins (Vesuvio & LoveEconomy & LoveCore)
     this.vesuvioBridge = new VesuvioBridge(this);
+    this.trainingReviewSync = new me.lovelace.loveWebAdmin.integration.TrainingReviewSync(this);
     this.loveEconomyBridge = new me.lovelace.loveWebAdmin.integration.LoveEconomyBridge(this);
     try {
       this.workflows = me.lovelace.loveWebAdmin.workflow.CaseWorkflowEngine.live(this);
@@ -397,6 +399,7 @@ public class LoveWebAdmin extends JavaPlugin {
     if (main != null) main.close();
     if (preview != null) safely("Preview admission", preview::stop);
     onlineIds.clear();
+    if (trainingReviewSync != null) safely("метки обучения", trainingReviewSync::close);
     if (vesuvioBridge != null) safely("Vesuvio", vesuvioBridge::close);
     if (discordBridge != null) safely("Discord", discordBridge::close);
     if (webServer != null) safely("HTTP", webServer::stop);

@@ -66,6 +66,9 @@ public class ApiVesuvioHandler extends ApiHandlerSupport {
           catch(java.sql.SQLException error){throw new IllegalStateException("Очередь банов недоступна",error);}
           return;
         }
+        if("/training/windows".equals(pathInfo)) {
+          handleAdvanced(req,resp,()->bridge.call("getTrainingWindows",new Class<?>[]{int.class},200));return;
+        }
         String playerFilter = req.getParameter("player");
         final String filterLower = (playerFilter != null && !playerFilter.isBlank()) ? playerFilter.trim().toLowerCase() : null;
 
@@ -217,6 +220,7 @@ public class ApiVesuvioHandler extends ApiHandlerSupport {
           }catch(java.sql.SQLException error){throw new IllegalStateException("Не удалось сохранить разбор бана",error);}
           return;
         }
+        if(pathInfo!=null && pathInfo.startsWith("/training/")) { handleTraining(req,resp,pathInfo);return; }
         if (pathInfo != null && (pathInfo.matches("/violation/[0-9]+/review") || pathInfo.matches("/sample/[A-Za-z0-9_-]{1,80}/review"))) {
           var session=requirePermission(req,resp,Permission.MANAGE_VESUVIO);
           if(session.isEmpty())return;
@@ -390,6 +394,61 @@ public class ApiVesuvioHandler extends ApiHandlerSupport {
         Optional<WebSession> sessionOpt = requirePermission(req, resp, Permission.VIEW_VESUVIO);
         if (sessionOpt.isEmpty()) return;
         respondWithBridge(resp, call);
+    }
+
+    private void handleTraining(HttpServletRequest req,HttpServletResponse resp,String path) throws IOException {
+      var session=requirePermission(req,resp,Permission.MANAGE_VESUVIO);if(session.isEmpty())return;
+      if(!hasPermission(session.get(),Permission.VIEW_VESUVIO_ADVANCED)){sendError(resp,403,"Нужно право просмотра срабатываний");return;}
+      var body=readJsonBody(req);
+      String reason=java.util.Objects.toString(body.get("reason"),"").trim();
+      if(reason.length()<5||reason.length()>1000){sendError(resp,400,"Укажите обоснование: от 5 до 1000 символов");return;}
+      String actor=session.get().adminUsername(),reference="";
+      Object banValue=body.get("banId");
+      me.lovelace.loveWebAdmin.models.WebBan linked=null;
+      if(banValue!=null) {
+        if(!hasPermission(session.get(),Permission.VIEW_BANS)){sendError(resp,403,"Нужно право просмотра банов");return;}
+        long id=positiveInteger(banValue);
+        if(id>Integer.MAX_VALUE){sendError(resp,400,"Неверный номер бана");return;}
+        linked=plugin.getDatabaseManager().getBanById((int)id).orElseThrow(()->new IllegalArgumentException("Бан не найден"));
+        if(!java.util.Set.of("ACTIVE","EXPIRED").contains(linked.status())){sendError(resp,409,"Этот бан снят или ещё не оформлен");return;}
+        reference="lovewebadmin:ban:"+id;
+      }
+      try {
+        Object result;
+        if("/training/verify".equals(path)) {
+          if(!(body.get("ids") instanceof List<?> raw)||raw.isEmpty()||raw.size()>100)throw new IllegalArgumentException("Выберите фрагменты сессии");
+          var ids=raw.stream().map(ApiVesuvioHandler::positiveInteger).toList();
+          if(linked!=null)checkTrainingBan(ids,linked);
+          result=bridge.call("verifyTrainingFragment",new Class<?>[]{List.class,String.class,String.class,String.class},ids,actor,reason,reference);
+        } else if(path.matches("/training/[0-9]+/review")) {
+          long id=Long.parseLong(path.split("/")[2]);
+          if(linked!=null)checkTrainingBan(List.of(id),linked);
+          String verdict=java.util.Objects.toString(body.get("verdict"),"");
+          if(!java.util.Set.of("cheat","legit","pending").contains(verdict))throw new IllegalArgumentException("Выберите вердикт");
+          long revision=positiveInteger(body.get("revision"),true);
+          result=bridge.call("reviewTrainingWindow",new Class<?>[]{long.class,long.class,String.class,String.class,String.class,String.class},id,revision,verdict,actor,reason,reference);
+          if(!Boolean.TRUE.equals(result)){sendError(resp,409,"Образец уже изменён. Откройте список снова");return;}
+        } else {sendError(resp,404,"Действие обучения не найдено");return;}
+        plugin.getLogManager().logWebAction(actor,"Разбор обучающих данных: "+path+" · "+reason);
+        sendSuccess(resp,Map.of("saved",true,"result",result));
+      } catch(VesuvioBridge.VesuvioUnavailableException error){sendError(resp,503,error.getMessage());}
+    }
+    private static long positiveInteger(Object value){return positiveInteger(value,false);}
+    private static long positiveInteger(Object value,boolean zero){
+      if(!(value instanceof Number n)||!Double.isFinite(n.doubleValue())||n.doubleValue()!=n.longValue()||n.longValue()<(zero?0:1)||n.longValue()==Long.MAX_VALUE)
+        throw new IllegalArgumentException("Неверный номер или версия записи");
+      return ((Number)value).longValue();
+    }
+    private void checkTrainingBan(List<Long> ids,me.lovelace.loveWebAdmin.models.WebBan ban){
+      Object result=bridge.call("getTrainingWindows",new Class<?>[]{int.class},200);
+      if(!(result instanceof List<?> rows))throw new IllegalStateException("Список фрагментов недоступен");
+      for(long id:ids){
+        Map<?,?> row=rows.stream().filter(item->item instanceof Map<?,?> m && m.get("id") instanceof Number n && n.longValue()==id)
+          .map(item->(Map<?,?>)item).findFirst().orElseThrow(()->new IllegalArgumentException("Откройте актуальный список фрагментов"));
+        if(ban.targetUuid()!=null&&!ban.targetUuid().isBlank()){
+          if(!ban.targetUuid().equalsIgnoreCase(java.util.Objects.toString(row.get("uuid"),"")))throw new IllegalArgumentException("Бан принадлежит другому игроку");
+        }else if(!ban.targetName().equalsIgnoreCase(java.util.Objects.toString(row.get("name"),"")))throw new IllegalArgumentException("Бан принадлежит другому игроку");
+      }
     }
 
     private void handleAdvanced(HttpServletRequest req, HttpServletResponse resp, BridgeCall call) throws IOException {
