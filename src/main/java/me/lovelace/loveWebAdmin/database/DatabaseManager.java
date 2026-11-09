@@ -647,6 +647,8 @@ public class DatabaseManager implements me.lovelace.loveWebAdmin.web.SessionRepo
             Permission.VIEW_STAFF_AUDIT,
             Permission.VIEW_ECONOMY,
             Permission.MANAGE_ECONOMY,
+            Permission.VIEW_CHATFILTER,
+            Permission.MANAGE_CHATFILTER,
             Permission.VIEW_REPORTS,
             Permission.MANAGE_REPORTS,
             Permission.VIEW_APPEALS,
@@ -673,6 +675,7 @@ public class DatabaseManager implements me.lovelace.loveWebAdmin.web.SessionRepo
             Permission.KICK_PLAYERS,
             Permission.VIEW_VESUVIO,
             Permission.VIEW_ECONOMY,
+            Permission.VIEW_CHATFILTER,
             Permission.VIEW_REPORTS,
             Permission.MANAGE_REPORTS
         );

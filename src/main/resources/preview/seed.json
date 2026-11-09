@@ -41,6 +41,8 @@
         "VIEW_STAFF_AUDIT",
         "VIEW_ECONOMY",
         "MANAGE_ECONOMY",
+        "VIEW_CHATFILTER",
+        "MANAGE_CHATFILTER",
         "VIEW_REPORTS",
         "MANAGE_REPORTS",
         "MANAGE_API",

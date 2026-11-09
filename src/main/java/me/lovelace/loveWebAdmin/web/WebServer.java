@@ -121,6 +121,9 @@ public class WebServer {
             context.addServlet(staffAuditHolder, "/api/staff-audit");
             context.addServlet(staffAuditHolder, "/api/staff-audit/*");
 
+            ServletHolder chatFilterHolder = new ServletHolder(new me.lovelace.loveWebAdmin.web.handlers.ApiChatFilterHandler(plugin));
+            context.addServlet(chatFilterHolder, "/api/chatfilter");
+            context.addServlet(chatFilterHolder, "/api/chatfilter/*");
             ServletHolder economyHolder = new ServletHolder(new me.lovelace.loveWebAdmin.web.handlers.ApiEconomyHandler(plugin));
             context.addServlet(economyHolder, "/api/economy");
             context.addServlet(economyHolder, "/api/economy/*");
