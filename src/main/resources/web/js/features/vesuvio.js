@@ -1,3 +1,4 @@
+import { drawViolations, openLearningReviews } from "./violation-reviews.js";
 import { mountAnticheatJournal } from "./anticheat-journal.js";
 import { renderWave } from "./waves.js";
 import { noticeDialog } from "../core/dialogs.js";
@@ -18,7 +19,7 @@ export async function renderAnticheatView() {
             <div class="view-header">
                 <div class="view-title-block">
                     <h2>АНТИЧИТ</h2>
-                    <p>Срабатывания проверок, наблюдение за игроками и автоматические наказания.</p>
+                    <p>Срабатывание — повод для проверки, а не доказательство чита. Разбирайте записи перед решением.</p>
                 </div>
             </div>
 
@@ -42,7 +43,7 @@ export async function renderAnticheatView() {
                     <button type="button" class="filter-tag-btn" data-tab="punishments">Журнал наказаний</button>
                 </div>
 
-                <div style="width:220px;">
+                <div class="anticheat-stream-tools" style="width:220px;">
                     <select id="anticheat-filter-category">
                         <option value="">Все категории</option>
                         <option value="Movement">Передвижение</option>
@@ -50,6 +51,7 @@ export async function renderAnticheatView() {
                         <option value="World">Взаимодействие с миром</option>
                         <option value="Timer">Скорость действий</option>
                     </select>
+                    ${hasPerm("MANAGE_VESUVIO") && hasPerm("VIEW_VESUVIO_ADVANCED") ? '<button type="button" class="secondary" id="open-learning-reviews">Образцы для разбора</button>' : ""}
                 </div>
             </div>
 
@@ -57,6 +59,7 @@ export async function renderAnticheatView() {
                 <!-- Содержимое выбранного раздела -->
             </div>
         `;
+  area.querySelector("#open-learning-reviews")?.addEventListener("click", openLearningReviews);
   const pauseBtn = document.getElementById("vesuvio-pause-btn");
   pauseBtn?.addEventListener("click", () => {
     isStreamPaused = !isStreamPaused;
@@ -100,7 +103,7 @@ export async function renderAnticheatView() {
     body.replaceChildren(panel);
     activePanel = panel;
     area.querySelector(".radar-stream-header").hidden = selected !== "stream";
-    area.querySelector("#anticheat-filter-category").parentElement.hidden =
+    area.querySelector(".anticheat-stream-tools").hidden =
       selected !== "stream";
     for (const button of area.querySelectorAll("#anticheat-tabs button")) {
       button.classList.toggle("active", button.dataset.tab === selected);
@@ -130,37 +133,11 @@ export async function renderAnticheatView() {
         );
       }
       if (!filtered.length) {
-        container.innerHTML = `<div style="text-align:center; padding:36px; color:var(--text-dim); background:var(--card-bg); border-radius:var(--radius-md); border:1px solid var(--border);">Новых нарушений пока нет. Сервер под защитой античита.</div>`;
+        delete container.streamMarkup;
+        container.innerHTML = `<div style="text-align:center; padding:36px; color:var(--text-dim); background:var(--card-bg); border-radius:var(--radius-md); border:1px solid var(--border);">Новых срабатываний пока нет.</div>`;
         return;
       }
-      const markup = filtered
-        .map((v) => {
-          const name = v.playerName || v.name || "Игрок";
-          const check = v.checkName || v.check || v.type || "Movement";
-          const vl = v.vl ?? v.vlScore ?? 0;
-          return `
-                        <div class="violation-card">
-                            <div class="violation-info">
-                                <img src="https://mc-heads.net/avatar/${encodeURIComponent(name)}/32" class="player-avatar-sm" style="width:32px; height:32px;" alt="">
-                                <div class="violation-meta">
-                                    <h4>${esc(name)} <span class="badge red">${esc(check)}</span></h4>
-                                    <div class="violation-details">
-                                        Нарушение: <b>${esc(check)}</b> • Уверенность VL: <b style="color:var(--yellow);">${vl}</b> • ${fmtTime(v.timestamp || Date.now() / 1000)}
-                                    </div>
-                                </div>
-                            </div>
-                            <div style="display:flex; gap:8px;">
-                                <button type="button" class="secondary btn-sm" onclick="window.openObservationView('${esc(name)}', '${esc(v.playerUuid || v.uuid || "")}')">НАБЛЮДЕНИЕ</button>
-                                <button type="button" class="danger btn-sm" onclick="window.openQuickBanModal('${esc(name)}', 'Читы')">ЗАБАНИТЬ</button>
-                                <button type="button" class="secondary btn-sm" onclick="window.viewPlayerProfile('${esc(name)}')">ДОСЬЕ</button>
-                            </div>
-                        </div>`;
-        })
-        .join("");
-      if (container.streamMarkup !== markup) {
-        container.streamMarkup = markup;
-        container.innerHTML = markup;
-      }
+      drawViolations(container, filtered, () => renderStream(container));
     } catch (e) {
       if (!container.isConnected) return;
       delete container.streamMarkup;

@@ -98,7 +98,7 @@ public class ApiVesuvioHandler extends ApiHandlerSupport {
           req,
           resp,
           () -> {
-            Object result = bridge.call("getRecentViolations", new Class<?>[] {int.class}, limit);
+            Object result = violationEvents(limit);
             if (filterLower != null && result instanceof List<?> list) {
               return list.stream().filter(item -> matchesPlayer(item, filterLower)).toList();
             }
@@ -139,6 +139,17 @@ public class ApiVesuvioHandler extends ApiHandlerSupport {
         sendError(resp, 404, "Не найдено");
     }
 
+    private Object violationEvents(int limit) {
+      try {
+        Object capabilities=bridge.call("getCapabilities");
+        if(capabilities instanceof java.util.Collection<?> list && list.contains("violation-reviews"))
+          return bridge.call("getReviewableViolations",new Class<?>[]{int.class},limit);
+      } catch(VesuvioBridge.VesuvioUnavailableException legacy) {
+        // Older providers remain readable; the interface shows unavailable review controls.
+      }
+      return bridge.call("getRecentViolations",new Class<?>[]{int.class},limit);
+    }
+
     private boolean matchesPlayer(Object item, String queryLower) {
         if (item instanceof Map<?, ?> map) {
             Object name = map.get("name");
@@ -177,6 +188,28 @@ public class ApiVesuvioHandler extends ApiHandlerSupport {
     @Override
     protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws IOException {
         String pathInfo = req.getPathInfo();
+        if (pathInfo != null && (pathInfo.matches("/violation/[0-9]+/review") || pathInfo.matches("/sample/[A-Za-z0-9_-]{1,80}/review"))) {
+          var session=requirePermission(req,resp,Permission.MANAGE_VESUVIO);
+          if(session.isEmpty())return;
+          if(!hasPermission(session.get(),Permission.VIEW_VESUVIO_ADVANCED)){sendError(resp,403,"Нужно право просмотра срабатываний");return;}
+          var body=readJsonBody(req);String verdict=java.util.Objects.toString(body.get("verdict"),"");
+          if(!java.util.Set.of("cheat","legit").contains(verdict)){sendError(resp,400,"Выберите Чит или Не чит");return;}
+          String key=pathInfo.split("/")[2];
+          try {
+            Object result;
+            String reason="";
+            if(pathInfo.startsWith("/violation/")){
+              reason=java.util.Objects.toString(body.get("reason"),"").trim();
+              Object revision=body.get("revision");
+              if(reason.length()<5||reason.length()>2000||!(revision instanceof Number n)||!Double.isFinite(n.doubleValue())||n.doubleValue()!=n.longValue()||n.longValue()<0){sendError(resp,400,"Укажите обоснование и актуальную версию записи");return;}
+              result=bridge.call("submitViolationReview",new Class<?>[]{long.class,String.class,String.class,String.class,long.class},Long.parseLong(key),verdict,session.get().adminUsername(),reason,((Number)revision).longValue());
+            } else result=bridge.call("submitReview",new Class<?>[]{String.class,String.class,String.class},key,verdict,session.get().adminUsername());
+            if(!Boolean.TRUE.equals(result)){sendError(resp,409,"Запись уже изменена или образец больше недоступен. Обновите список");return;}
+            plugin.getLogManager().logWebAction(session.get().adminUsername(),"Разбор античита: "+pathInfo+" · "+verdict+(reason.isEmpty()?"":" · "+reason));
+            sendSuccess(resp,Map.of("saved",true));
+          } catch(VesuvioBridge.VesuvioUnavailableException error){sendError(resp,503,error.getMessage());}
+          return;
+        }
     if("/wave".equals(pathInfo)) {
       var session=requirePermission(req,resp,Permission.MANAGE_VESUVIO);if(session.isEmpty())return;
       if(!hasPermission(session.get(),Permission.MANAGE_BANS)){
