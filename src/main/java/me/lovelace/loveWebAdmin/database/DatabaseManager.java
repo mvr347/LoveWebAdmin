@@ -49,6 +49,8 @@ public class DatabaseManager implements me.lovelace.loveWebAdmin.web.SessionRepo
 
     private final LoveWebAdmin plugin;
     private Connection connection;
+    private BanReviews banReviews;
+    public synchronized BanReviews banReviews() { return banReviews; }
   private final File folder;
   private final java.util.logging.Logger logger;
   private final String ownerGroup;
@@ -445,6 +447,7 @@ public class DatabaseManager implements me.lovelace.loveWebAdmin.web.SessionRepo
             migrateWebSessions();
             migrateWebBans();
             migratePlayerReports();
+            banReviews = new BanReviews(connection, this);
             initializePresetRoles();
       if (plugin != null) bootstrapDefaultAdminIfEmpty();
 

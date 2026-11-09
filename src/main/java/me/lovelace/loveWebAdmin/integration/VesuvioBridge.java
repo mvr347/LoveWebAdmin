@@ -112,6 +112,7 @@ public final class VesuvioBridge implements org.bukkit.event.Listener, AutoClose
           throw new VesuvioUnavailableException("Запрос прерван", interrupted);
         } catch (java.util.concurrent.ExecutionException
             | java.util.concurrent.TimeoutException error) {
+          if(error instanceof java.util.concurrent.ExecutionException && error.getCause() instanceof IllegalArgumentException invalid) throw invalid;
           throw new VesuvioUnavailableException(
               "Операция Vesuvio не завершена: " + error.getClass().getSimpleName(), error);
         }

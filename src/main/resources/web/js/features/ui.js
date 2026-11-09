@@ -1,3 +1,4 @@
+import { formatEventTime } from "../core/event-time.js";
 import { secondFactorDialog } from "../core/dialogs.js";
 import {esc,hasPerm} from "../core/access.js";
 export {esc,hasPerm};
@@ -70,7 +71,7 @@ export function renderSvgIcon(name, colorType = "gray", size = 16) {
 // ---------- Helpers ----------
 export function fmtTime(ts) {
   if (!ts || ts <= 0) return "Никогда";
-  return new Date(ts * 1000).toLocaleString("ru-RU");
+  return formatEventTime(ts);
 }
 export function fmtDuration(sec) {
   if (sec < 0) return "Бессрочно";
