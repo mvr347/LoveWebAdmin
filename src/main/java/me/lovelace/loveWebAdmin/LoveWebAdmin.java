@@ -118,6 +118,7 @@ public class LoveWebAdmin extends JavaPlugin {
   private me.lovelace.loveWebAdmin.managers.LockdownManager lockdownManager;
   private me.lovelace.loveWebAdmin.managers.StaffAuditManager staffAuditManager;
   private me.lovelace.loveWebAdmin.integration.LoveEconomyBridge loveEconomyBridge;
+  private me.lovelace.loveWebAdmin.integration.ChatFilterBridge chatFilterBridge;
   private me.lovelace.loveWebAdmin.integration.LoveCoreDiscordBridge discordBridge;
   private me.lovelace.loveWebAdmin.managers.LoveEconomyTracker loveEconomyTracker;
   private me.lovelace.loveWebAdmin.managers.ApiKeyManager apiKeyManager;
@@ -246,6 +247,17 @@ public class LoveWebAdmin extends JavaPlugin {
     this.vesuvioBridge = new VesuvioBridge(this);
     this.trainingReviewSync = new me.lovelace.loveWebAdmin.integration.TrainingReviewSync(this);
     this.loveEconomyBridge = new me.lovelace.loveWebAdmin.integration.LoveEconomyBridge(this);
+    this.chatFilterBridge =
+        new me.lovelace.loveWebAdmin.integration.ChatFilterBridge(
+            task -> {
+              try {
+                return main().call(task).join();
+              } catch (java.util.concurrent.CompletionException failed) {
+                // The refusal text of LoveChatFilter is meant for the administrator: pass it on unwrapped.
+                if (failed.getCause() instanceof RuntimeException runtime) throw runtime;
+                throw failed;
+              }
+            });
     try {
       this.workflows = me.lovelace.loveWebAdmin.workflow.CaseWorkflowEngine.live(this);
     } catch (Exception error) {
@@ -556,6 +568,10 @@ public class LoveWebAdmin extends JavaPlugin {
 
   public me.lovelace.loveWebAdmin.managers.StaffAuditManager getStaffAuditManager() {
     return staffAuditManager;
+  }
+
+  public me.lovelace.loveWebAdmin.integration.ChatFilterBridge getChatFilterBridge() {
+    return chatFilterBridge;
   }
 
   public me.lovelace.loveWebAdmin.integration.LoveEconomyBridge getLoveEconomyBridge() {

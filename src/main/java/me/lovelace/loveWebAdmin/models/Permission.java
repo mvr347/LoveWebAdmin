@@ -46,6 +46,10 @@ public enum Permission {
     // Vesuvio AntiCheat (Античит): управляющие действия — сброс VL, пометка/снятие подозрения.
     MANAGE_VESUVIO,
 
+    // Фильтр чата (LoveChatFilter): просмотр слов, проверка текста и статистика / изменение слов и настроек фильтров.
+    VIEW_CHATFILTER,
+    MANAGE_CHATFILTER,
+
     // Режим ЧС («Красная кнопка» / Emergency Lockdown)
     MANAGE_LOCKDOWN,
 

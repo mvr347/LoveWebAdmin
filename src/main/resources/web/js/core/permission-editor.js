@@ -19,6 +19,7 @@ const dependencies = {
   KICK_PLAYERS: "VIEW_PLAYERS",
   FREEZE_PLAYERS: "VIEW_PLAYERS",
   MANAGE_ECONOMY: "VIEW_ECONOMY",
+  MANAGE_CHATFILTER: "VIEW_CHATFILTER",
 };
 function group(p) {
   if (
@@ -27,6 +28,7 @@ function group(p) {
     )
   )
     return "Опасные возможности";
+  if (/CHATFILTER/.test(p)) return "Фильтр чата";
   if (/VESUVIO/.test(p)) return "Античит";
   if (/REPORTS|APPEALS/.test(p)) return "Обращения";
   if (/BANS|MUTES|FREEZE|KICK|KILL/.test(p)) return "Наказания";

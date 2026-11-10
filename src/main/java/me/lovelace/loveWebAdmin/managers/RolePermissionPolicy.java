@@ -45,7 +45,8 @@ public final class RolePermissionPolicy {
             Map.entry(Permission.MANAGE_LOVEAUTH, Permission.VIEW_PLAYERS),
             Map.entry(Permission.KICK_PLAYERS, Permission.VIEW_PLAYERS),
             Map.entry(Permission.FREEZE_PLAYERS, Permission.VIEW_PLAYERS),
-            Map.entry(Permission.MANAGE_ECONOMY, Permission.VIEW_ECONOMY));
+            Map.entry(Permission.MANAGE_ECONOMY, Permission.VIEW_ECONOMY),
+            Map.entry(Permission.MANAGE_CHATFILTER, Permission.VIEW_CHATFILTER));
     var newlyRequired = new HashSet<>(requested);
     newlyRequired.removeAll(previous);
     boolean changed;

@@ -28,6 +28,7 @@ import { renderJournalView } from "./journal.js";
 import { renderAnticheatView } from "./vesuvio.js";
 import { renderServerView } from "./server.js";
 import { renderAuthView } from "./loveauth.js";
+import { renderChatFilterView } from "./chatfilter.js";
 import { renderStaffView } from "./staff.js";
 import { renderRestrictions } from "./restrictions.js";
 import { renderSettingsHome } from "./settings-home.js";
@@ -412,6 +413,9 @@ export async function navigateTo(sectionId, recordHistory = true) {
       break;
     case "anticheat":
       await renderAnticheatView();
+      break;
+    case "chat-filter":
+      await renderChatFilterView();
       break;
     case "server":
       await renderServerView();
