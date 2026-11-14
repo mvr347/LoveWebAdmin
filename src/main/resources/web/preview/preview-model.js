@@ -10,6 +10,7 @@
     throw Object.assign(new Error(message), { status });
   };
   const permissions = [
+    "VIEW_CONTENT", "MANAGE_CONTENT", "PUBLISH_CONTENT",
     "VIEW_SERVER_LOGS",
     "VIEW_WEB_LOGS",
     "VIEW_STATS",
@@ -963,6 +964,33 @@
         parts = p.split("/").filter(Boolean),
         n = parts[2],
         action = parts[3];
+      if (p === "/api/content" || p.startsWith("/api/content/")) {
+        const read=method==='GET';
+        requirePermission(read?'VIEW_CONTENT':p.endsWith('/publish')?'PUBLISH_CONTENT':'MANAGE_CONTENT');
+        state.content ||= {revision:'preview-1',catalogs:{contracts:{supply:{'display-name':'Заказ караула',description:'Добудьте 16 камня',difficulty:'EASY',type:'REPEATING',enabled:true,condition:{type:'MineMaterial',material:'STONE',count:16},rewards:{money:100}}},stories:{},achievements:{helper:{name:'Помощник караула',description:'Помогите караулу',category:'play',rarity:'COMMON',trigger:{type:'manual'}}},marks:{helper_mark:{display:'<gold>Помощник',rarity:'COMMON',cost:0,achievement:'helper',lore:['Награда за помощь']}},joinquit:{helper_style:{name:'Помощник',join:'<green><player> пришёл на помощь',quit:'<gray><player> ушёл в путь',achievement:'helper'}}},history:[],draft:{}};
+        const c=state.content;
+        const snapshot=()=>({revision:c.revision,catalogs:clone(c.catalogs),available:Object.fromEntries(Object.keys(c.catalogs).map(k=>[k,true])),links:[]});
+        if(read&&['/api/content','/api/content/catalogs'].includes(p))return snapshot();
+        if(read&&p.endsWith('/draft'))return c.draft;
+        if(read&&p.endsWith('/history'))return c.history.map(({catalogs,...h})=>h);
+        if(method==='POST'&&p.endsWith('/validate'))return {errors:[],links:[]};
+        if(method==='POST'&&p.endsWith('/draft')){
+          if(c.draft.draftVersion&&body.draftVersion!==c.draft.draftVersion)fail(409,'Черновик изменился');
+          c.draft={...clone(body),draftVersion:'draft-'+id(),actor:viewer().username,savedAt:new Date(clock()*1000).toISOString(),errors:[]};return c.draft;
+        }
+        if(method==='POST'&&p.endsWith('/restore')){
+          const old=c.history.find(h=>h.id===body.id);if(!old)fail(404,'Версия не найдена');
+          if(c.draft.draftVersion&&body.draftVersion!==c.draft.draftVersion)fail(409,'Черновик изменился');
+          c.draft={revision:c.revision,catalogs:clone(old.catalogs),draftVersion:'draft-'+id(),actor:viewer().username};return c.draft;
+        }
+        if(method==='POST'&&p.endsWith('/publish')){
+          if(c.draft.draftVersion&&body.draftVersion!==c.draft.draftVersion)fail(409,'Черновик изменился');
+          if(body.revision!==c.revision)fail(409,'Каталоги изменились');
+          c.history.unshift({id:'preview-'+id(),createdAt:new Date(clock()*1000).toISOString(),actor:viewer().username,catalogs:clone(c.catalogs)});
+          c.catalogs=clone(body.catalogs);c.revision='preview-'+id();c.draft={};return snapshot();
+        }
+        fail(404,'Неизвестный маршрут содержимого');
+      }
       for (const b of state.bans)
         if (b.status === "ACTIVE" && b.expiresAt > 0 && b.expiresAt <= clock())
           b.status = "EXPIRED";

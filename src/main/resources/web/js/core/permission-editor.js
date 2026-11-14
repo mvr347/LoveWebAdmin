@@ -8,6 +8,8 @@ const retired = new Set([
   "MANAGE_VESUVIO_MODELS",
 ]);
 const dependencies = {
+  MANAGE_CONTENT: "VIEW_CONTENT",
+  PUBLISH_CONTENT: "MANAGE_CONTENT",
   MANAGE_BANS: "VIEW_BANS",
   MANAGE_REPORTS: "VIEW_REPORTS",
   MANAGE_APPEALS: "VIEW_APPEALS",
@@ -28,6 +30,7 @@ function group(p) {
     )
   )
     return "Опасные возможности";
+  if (/CONTENT/.test(p)) return "Игровое содержимое";
   if (/CHATFILTER/.test(p)) return "Фильтр чата";
   if (/VESUVIO/.test(p)) return "Античит";
   if (/REPORTS|APPEALS/.test(p)) return "Обращения";

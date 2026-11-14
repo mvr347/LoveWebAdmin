@@ -1,6 +1,10 @@
 package me.lovelace.loveWebAdmin.models;
 
 public enum Permission {
+    VIEW_CONTENT,
+    MANAGE_CONTENT,
+    PUBLISH_CONTENT,
+
     // Просмотр
     VIEW_SERVER_LOGS,
     VIEW_WEB_LOGS,
