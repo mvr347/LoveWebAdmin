@@ -32,6 +32,7 @@ import { renderChatFilterView } from "./chatfilter.js";
 import { renderStaffView } from "./staff.js";
 import { renderRestrictions } from "./restrictions.js";
 import { renderSettingsHome } from "./settings-home.js";
+import { renderContentEditor } from "./content-editor.js";
 import { renderDatabaseView } from "./database.js";
 // ---------- Main Application Layout (Sidebar + Viewport) ----------
 
@@ -436,6 +437,9 @@ export async function navigateTo(sectionId, recordHistory = true) {
       break;
     case "settings":
       renderSettingsHome();
+      break;
+    case "content":
+      await renderContentEditor();
       break;
     case "database":
       await renderDatabaseView();

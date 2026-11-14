@@ -14,8 +14,9 @@ test('theme survives reload and login screen',async({page})=>{
 });
 test('permissions have groups, search and automatic read dependencies',async({page})=>{
  await ready(page);await page.locator('[data-nav=staff]').click();await page.locator('#staff-sub-tabs [data-sub=roles]').click();await page.locator('#btn-create-role').click();
- await expect(page.locator('.permission-group')).toHaveCount(8);await expect(page.locator('.permission-card[data-permission=VIEW_PLAYER_INVENTORY]')).toHaveCount(0);
+ await expect(page.locator('.permission-group')).toHaveCount(9);await expect(page.locator('.permission-group summary')).toContainText(['Игровое содержимое']);await expect(page.locator('.permission-card[data-permission=VIEW_PLAYER_INVENTORY]')).toHaveCount(0);
  await page.locator('.role-perm-cb[value=MANAGE_REPORTS]').check();await expect(page.locator('.role-perm-cb[value=VIEW_REPORTS]')).toBeChecked();
+ await page.locator('.role-perm-cb[value=PUBLISH_CONTENT]').check();await expect(page.locator('.role-perm-cb[value=MANAGE_CONTENT]')).toBeChecked();await expect(page.locator('.role-perm-cb[value=VIEW_CONTENT]')).toBeChecked();
  await page.locator('.permission-tools input[type=search]').fill('жалоб');await expect(page.locator('.permission-card[data-permission=MANAGE_REPORTS]')).toBeVisible();await expect(page.locator('.permission-card[data-permission=EXECUTE_COMMANDS]')).toBeHidden();
 });
 test('account search suggests a player without submitting the whole nickname',async({page})=>{
