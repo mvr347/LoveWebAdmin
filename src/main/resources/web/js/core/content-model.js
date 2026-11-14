@@ -1,4 +1,4 @@
-export const CONTENT_KINDS = {contracts:"Контракты", stories:"Цепочки", achievements:"Ачивки", marks:"Пометки", joinquit:"Вход и выход"};
+export const CONTENT_KINDS = {contracts:"Контракты", stories:"Цепочки заданий", achievements:"Достижения", marks:"Пометки", joinquit:"Вход и выход"};
 const forbidden = new Set(["__proto__", "constructor", "prototype"]);
 export const cloneContent = value => structuredClone(value);
 export const contentName = (id, d) => String(d?.["display-name"] || d?.name || d?.display || id).replace(/<[^>]*>/g, "");

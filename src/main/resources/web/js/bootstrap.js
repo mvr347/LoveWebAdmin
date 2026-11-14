@@ -245,7 +245,7 @@ export function startApplication() {
       perm: "VIEW_CHATFILTER",
     },
     { ...base("server"), num: 9, group: "Сервер" },
-    { id: "content", label: "Игровое содержимое", icon: messageIcon, group: "Сервер", perm: "VIEW_CONTENT" },
+    { id: "content", label: "Контракты и награды", icon: messageIcon, group: "Сервер", perm: "VIEW_CONTENT" },
     {
       id: "game-auth",
       label: "Безопасность аккаунтов",

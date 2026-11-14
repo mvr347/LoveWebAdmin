@@ -25,6 +25,9 @@ public final class ContentCatalogs {
   private final LoveWebAdmin plugin;
   private final Path storage;
   public ContentCatalogs(LoveWebAdmin plugin) { this.plugin=plugin;storage=plugin.getDataFolder().toPath().resolve("content-editor"); }
+  private Plugin installed(Target t) {
+    return plugin.main().call(() -> Bukkit.getPluginManager().getPlugin(t.owner())).join();
+  }
   private Plugin owner(Target t) {
     return plugin.main().call(() -> {
       var p=Bukkit.getPluginManager().getPlugin(t.owner());
@@ -46,11 +49,23 @@ public final class ContentCatalogs {
   }
   private YamlConfiguration read(Path path) throws Exception { var yaml=new YamlConfiguration();yaml.load(path.toFile());return yaml; }
   public synchronized Map<String,Object> snapshot() throws Exception {
-    Map<String,Object> catalogs=new LinkedHashMap<>(),status=new LinkedHashMap<>();
+    Map<String,Object> catalogs=new LinkedHashMap<>(),status=new LinkedHashMap<>(),details=new LinkedHashMap<>();
     var digest=MessageDigest.getInstance("SHA-256");
     for(Target t:TARGETS){
-      var p=owner(t);status.put(t.kind(),p!=null);
-      if(p==null){catalogs.put(t.kind(),Map.of());digest.update((t.kind()+":unavailable").getBytes(StandardCharsets.UTF_8));continue;}
+      var p=installed(t);
+      boolean enabled=p!=null&&plugin.main().call(p::isEnabled).join();
+      boolean writable=enabled&&owner(t)!=null;
+      status.put(t.kind(),writable);
+      String version=p==null?"":p.getDescription().getVersion();
+      var diagnostic=CatalogAvailability.describe(t.owner(),version,p!=null,enabled,writable);
+      details.put(t.kind(),diagnostic);
+      digest.update((t.kind()+":"+diagnostic.get("state")+":"+version).getBytes(StandardCharsets.UTF_8));
+      if(!enabled){catalogs.put(t.kind(),Map.of());continue;}
+      if(!Files.isRegularFile(p.getDataFolder().toPath().resolve(t.file()))) {
+        catalogs.put(t.kind(),Map.of());status.put(t.kind(),false);
+        details.put(t.kind(),Map.of("owner",t.owner(),"version",version,"state","missing_file","message","В "+t.owner()+" ещё нет файла "+t.file()+". Запустите плагин и проверьте его загрузку.","writable",false));
+        continue;
+      }
       Path file=path(t,p);digest.update(t.kind().getBytes(StandardCharsets.UTF_8));digest.update(Files.readAllBytes(file));
       var yaml=read(file);Map<String,Object> items=new LinkedHashMap<>();
       if(t.kind().equals("marks")&&yaml.getBoolean("tags-defaults",true))try(var in=p.getResource("tags-default.yml")){
@@ -59,7 +74,7 @@ public final class ContentCatalogs {
       var section=yaml.getConfigurationSection(t.section());if(section!=null)items.putAll(ContentSchema.map(plain(section)));
       catalogs.put(t.kind(),items);
     }
-    return Map.of("revision",HexFormat.of().formatHex(digest.digest()),"catalogs",catalogs,"available",status,"links",ContentSchema.links(catalogs));
+    return Map.of("revision",HexFormat.of().formatHex(digest.digest()),"catalogs",catalogs,"available",status,"availability",details,"links",ContentSchema.links(catalogs));
   }
   private static void atomic(Path file,String content) throws Exception { CatalogFileTransaction.write(file,content); }
   public synchronized Map<String,Object> draft() throws Exception {
