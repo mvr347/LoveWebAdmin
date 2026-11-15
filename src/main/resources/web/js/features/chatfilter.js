@@ -9,6 +9,8 @@ const KINDS = [
   ["safe", "Безопасные слова", "Невинные слова, которые никогда не считаются матом, даже если содержат запрещённый кусок. «*» в конце - любое окончание."],
   ["ad", "Реклама", "Домен, адрес или название сервера, которые нельзя писать в чате."],
 ];
+let viewLoad = 0;
+let wordLoad = 0;
 const TYPES = [
   ["profanity", "Мат"],
   ["spam", "Спам"],
@@ -17,6 +19,8 @@ const TYPES = [
 ];
 
 export async function renderChatFilterView() {
+  const visit = ++viewLoad;
+  ++wordLoad;
   const area = document.getElementById("content-area");
   area.innerHTML = `
     <div class="view-header">
@@ -41,6 +45,7 @@ export async function renderChatFilterView() {
     content.innerHTML = `<p class="error">${esc(error.message)}</p>`;
     return;
   }
+  if (visit !== viewLoad || !area.querySelector("#cf-content")) return;
   if (!status.available) {
     area.querySelector("#cf-tabs").hidden = true;
     content.innerHTML = `<div class="stat-card"><div class="stat-label">LoveChatFilter недоступен</div><p>Плагин не установлен или ещё не загрузился. Установите LoveChatFilter и откройте раздел снова.</p></div>`;
@@ -48,6 +53,7 @@ export async function renderChatFilterView() {
   }
   const tabs = { words: wordsTab, check: checkTab, settings: settingsTab, stats: statsTab };
   const open = async (name) => {
+    ++wordLoad;
     area.querySelectorAll("#cf-tabs .sub-tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
     content.innerHTML = "";
     try {
@@ -62,60 +68,75 @@ export async function renderChatFilterView() {
 
 // ---------------------------------------------------------------- слова
 
-async function wordsTab(content, canManage, kind = "bad") {
-  const rows = await api("GET", "/api/chatfilter/words?kind=" + encodeURIComponent(kind));
+async function wordsTab(content, canManage, kind = "bad", query = "") {
+  const load = ++wordLoad;
+  const current = () => load === wordLoad && content.isConnected;
   const info = KINDS.find((k) => k[0] === kind);
+  let rows = [], page = 0;
+  const pageSize = 50;
   content.innerHTML = `
     <div class="sub-tabs-bar" id="cf-kinds">
       ${KINDS.map((k) => `<button type="button" class="sub-tab-btn ${k[0] === kind ? "active" : ""}" data-kind="${k[0]}">${esc(k[1])}</button>`).join("")}
     </div>
-    <p class="muted">${esc(info[2])}</p>
-    ${canManage ? `<form class="row" id="cf-add"><input type="text" name="word" maxlength="100" placeholder="Новое слово" required><button class="primary" type="submit">Добавить</button></form>` : ""}
-    <div class="row"><input type="search" id="cf-filter" maxlength="64" placeholder="Поиск по списку"></div>
-    <div class="table-wrap"><table><thead><tr><th>Слово</th><th>Источник</th><th>Добавил</th><th></th></tr></thead><tbody id="cf-rows"></tbody></table></div>`;
+    <p class="muted">${esc(info[2])} Исключения safe относятся к мату; ограничения спама, капса и рекламы действуют отдельно.</p>
+    ${canManage ? `<form class="row" id="cf-add"><input type="text" name="word" maxlength="100" placeholder="Новое слово" aria-label="Новое слово" required><button class="primary" type="submit">Добавить</button></form>` : ""}
+    <div class="row"><input type="search" id="cf-filter" maxlength="64" placeholder="Поиск по всему списку" aria-label="Поиск по списку" value="${esc(query)}"><button type="button" class="secondary" id="cf-refresh">Обновить список</button></div>
+    <p id="cf-list-status" role="status">Загрузка слов…</p>
+    <div class="table-wrap"><table><thead><tr><th>Слово</th><th>Источник</th><th>Добавил</th><th></th></tr></thead><tbody id="cf-rows"></tbody></table></div>
+    <div class="row" id="cf-pages"><button type="button" class="secondary" id="cf-prev">Назад</button><span id="cf-page"></span><button type="button" class="secondary" id="cf-next">Далее</button></div>`;
   const body = content.querySelector("#cf-rows");
+  const sourceName = {game: "Из игры и панели", config: "config.yml", bundled: "Встроенный словарь"};
   const draw = () => {
-    const needle = content.querySelector("#cf-filter").value.trim().toLowerCase();
-    const shown = rows.filter((r) => !needle || r.word.toLowerCase().includes(needle));
-    body.innerHTML = shown.length
-      ? shown
-          .map(
-            (r, i) => `<tr>
-              <td class="font-mono">${esc(r.word)}</td>
-              <td><span class="badge ${r.source === "game" ? "purple" : "gray"}">${r.source === "game" ? "из игры и панели" : "config.yml"}</span></td>
-              <td>${r.source === "game" ? `${esc(r.addedBy || "")} · ${fmtTime(r.addedAt)}` : "—"}</td>
-              <td>${canManage && r.source === "game" ? `<button type="button" class="danger btn-sm" data-remove="${i}">Убрать</button>` : ""}</td>
-            </tr>`,
-          )
-          .join("")
-      : `<tr><td colspan="4" class="muted">Слов нет</td></tr>`;
-    body.querySelectorAll("[data-remove]").forEach((button) =>
-      button.addEventListener("click", async () => {
-        const word = shown[Number(button.dataset.remove)].word;
-        try {
-          await api("POST", "/api/chatfilter/words/remove", { kind, word });
-          showToast("Слово убрано", word, "success");
-          await wordsTab(content, canManage, kind);
-        } catch (error) {
-          showToast("Не удалось убрать", error.message, "error");
-        }
-      }),
-    );
+    if (!current()) return;
+    const needle = content.querySelector("#cf-filter").value.trim().toLowerCase().replaceAll('ё', 'е');
+    const matches = rows.filter(r => !needle || r.word.toLowerCase().replaceAll('ё', 'е').includes(needle));
+    const pages = Math.max(1, Math.ceil(matches.length / pageSize));
+    page = Math.min(page, pages - 1);
+    const shown = matches.slice(page * pageSize, (page + 1) * pageSize);
+    body.innerHTML = shown.map((r, i) => `<tr>
+      <td class="font-mono">${esc(r.word)}</td>
+      <td><span class="badge ${r.source === "game" ? "purple" : "gray"}">${esc(sourceName[r.source] || r.source || "Неизвестен")}</span></td>
+      <td>${r.source === "game" ? `${esc(r.addedBy || "")} · ${fmtTime(r.addedAt)}` : "—"}</td>
+      <td>${canManage && r.source === "game" ? `<button type="button" class="danger btn-sm" data-remove="${i}">Убрать</button>` : ""}</td>
+    </tr>`).join("") || `<tr><td colspan="4" class="muted">${needle ? "По запросу ничего не найдено" : "В этом списке пока нет слов"}</td></tr>`;
+    content.querySelector("#cf-list-status").textContent = `Всего: ${rows.length}. Найдено: ${matches.length}. Показано: ${shown.length}.`;
+    content.querySelector("#cf-page").textContent = `Страница ${page + 1} из ${pages}`;
+    content.querySelector("#cf-prev").disabled = page === 0;
+    content.querySelector("#cf-next").disabled = page + 1 >= pages;
+    body.querySelectorAll("[data-remove]").forEach(button => button.addEventListener("click", async () => {
+      const word = shown[Number(button.dataset.remove)].word;
+      try {
+        await api("POST", "/api/chatfilter/words/remove", {kind, word});
+        showToast("Слово убрано", word, "success");
+        if (current()) await wordsTab(content, canManage, kind, content.querySelector("#cf-filter").value);
+      } catch (error) { showToast("Не удалось убрать", error.message, "error"); }
+    }));
   };
-  draw();
-  content.querySelector("#cf-filter").addEventListener("input", draw);
-  content.querySelectorAll("#cf-kinds [data-kind]").forEach((b) => b.addEventListener("click", () => wordsTab(content, canManage, b.dataset.kind)));
-  content.querySelector("#cf-add")?.addEventListener("submit", async (event) => {
+  content.querySelector("#cf-filter").addEventListener("input", () => {page = 0;draw();});
+  content.querySelector("#cf-refresh").addEventListener("click", () => wordsTab(content, canManage, kind, content.querySelector("#cf-filter").value));
+  content.querySelector("#cf-prev").addEventListener("click", () => {page--;draw();});
+  content.querySelector("#cf-next").addEventListener("click", () => {page++;draw();});
+  content.querySelectorAll("#cf-kinds [data-kind]").forEach(b => b.addEventListener("click", () => wordsTab(content, canManage, b.dataset.kind)));
+  content.querySelector("#cf-add")?.addEventListener("submit", async event => {
     event.preventDefault();
     const input = event.target.elements.word;
     try {
-      const result = await api("POST", "/api/chatfilter/words", { kind, word: input.value });
-      showToast("Слово добавлено", result.word + " - работает сразу", "success");
-      await wordsTab(content, canManage, kind);
-    } catch (error) {
-      showToast("Не удалось добавить", error.message, "error");
-    }
+      const result = await api("POST", "/api/chatfilter/words", {kind, word: input.value});
+      showToast("Слово добавлено", result.word + " — применяется к новым сообщениям", "success");
+      if (current()) await wordsTab(content, canManage, kind, result.word);
+    } catch (error) { showToast("Не удалось добавить", error.message, "error"); }
   });
+  try {
+    const result = await api("GET", "/api/chatfilter/words?kind=" + encodeURIComponent(kind));
+    if (!current()) return;
+    if (!Array.isArray(result)) throw Error("Сервер вернул неверный формат списка слов");
+    rows = result;draw();
+  } catch (error) {
+    if (!current()) return;
+    content.querySelector("#cf-list-status").textContent = "Не удалось загрузить список: " + error.message;
+    content.querySelector("#cf-prev").disabled = true;
+    content.querySelector("#cf-next").disabled = true;
+  }
 }
 
 // ---------------------------------------------------------------- проверка текста
