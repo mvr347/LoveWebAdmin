@@ -69,10 +69,12 @@ async function wordsTab(content, canManage, kind = "bad") {
     <div class="sub-tabs-bar" id="cf-kinds">
       ${KINDS.map((k) => `<button type="button" class="sub-tab-btn ${k[0] === kind ? "active" : ""}" data-kind="${k[0]}">${esc(k[1])}</button>`).join("")}
     </div>
-    <p class="muted">${esc(info[2])}</p>
-    ${canManage ? `<form class="row" id="cf-add"><input type="text" name="word" maxlength="100" placeholder="Новое слово" required><button class="primary" type="submit">Добавить</button></form>` : ""}
-    <div class="row"><input type="search" id="cf-filter" maxlength="64" placeholder="Поиск по списку"></div>
-    <div class="table-wrap"><table><thead><tr><th>Слово</th><th>Источник</th><th>Добавил</th><th></th></tr></thead><tbody id="cf-rows"></tbody></table></div>`;
+    <p class="muted" style="color:var(--text-muted);font-size:12.5px;line-height:1.5;margin:0 0 14px;">${esc(info[2])}</p>
+    <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-bottom:16px;">
+      ${canManage ? `<form id="cf-add" style="display:flex;gap:8px;flex:1 1 300px;align-items:center;"><input type="text" name="word" maxlength="100" placeholder="Новое слово" required style="flex:1;min-width:0;width:auto;"><button class="primary" type="submit" style="flex-shrink:0;white-space:nowrap;">Добавить</button></form>` : ""}
+      <input type="search" id="cf-filter" maxlength="64" placeholder="Поиск по списку" style="flex:0 1 260px;min-width:200px;width:100%;">
+    </div>
+    <div class="table-wrap"><table><thead><tr><th>Слово</th><th>Источник</th><th>Добавил</th><th style="width:1%;white-space:nowrap;"></th></tr></thead><tbody id="cf-rows"></tbody></table></div>`;
   const body = content.querySelector("#cf-rows");
   const draw = () => {
     const needle = content.querySelector("#cf-filter").value.trim().toLowerCase();
@@ -82,13 +84,13 @@ async function wordsTab(content, canManage, kind = "bad") {
           .map(
             (r, i) => `<tr>
               <td class="font-mono">${esc(r.word)}</td>
-              <td><span class="badge ${r.source === "game" ? "purple" : "gray"}">${r.source === "game" ? "из игры и панели" : "config.yml"}</span></td>
+              <td style="white-space:nowrap;"><span class="badge ${r.source === "game" ? "purple" : "gray"}">${r.source === "game" ? "из игры и панели" : "config.yml"}</span></td>
               <td>${r.source === "game" ? `${esc(r.addedBy || "")} · ${fmtTime(r.addedAt)}` : "—"}</td>
-              <td>${canManage && r.source === "game" ? `<button type="button" class="danger btn-sm" data-remove="${i}">Убрать</button>` : ""}</td>
+              <td style="text-align:right;white-space:nowrap;">${canManage && r.source === "game" ? `<button type="button" class="danger btn-sm" data-remove="${i}">Убрать</button>` : ""}</td>
             </tr>`,
           )
           .join("")
-      : `<tr><td colspan="4" class="muted">Слов нет</td></tr>`;
+      : `<tr><td colspan="4" class="muted" style="color:var(--text-muted);">Слов нет</td></tr>`;
     body.querySelectorAll("[data-remove]").forEach((button) =>
       button.addEventListener("click", async () => {
         const word = shown[Number(button.dataset.remove)].word;
@@ -122,9 +124,9 @@ async function wordsTab(content, canManage, kind = "bad") {
 
 async function checkTab(content, canManage) {
   content.innerHTML = `
-    <p class="muted">Проверка ничего не отправляет в чат: показывается, что сделает фильтр с текстом.</p>
+    <p class="muted" style="color:var(--text-muted);font-size:12.5px;line-height:1.5;margin:0 0 12px;">Проверка ничего не отправляет в чат: показывается, что сделает фильтр с текстом.</p>
     <div class="form-group"><textarea id="cf-text" rows="4" maxlength="500" placeholder="Введите фразу для проверки"></textarea></div>
-    <div class="row"><button class="primary" type="button" id="cf-run">Проверить</button></div>
+    <div style="margin-bottom:16px;"><button class="primary" type="button" id="cf-run">Проверить</button></div>
     <div id="cf-result"></div>`;
   const text = content.querySelector("#cf-text");
   const result = content.querySelector("#cf-result");
@@ -137,18 +139,18 @@ async function checkTab(content, canManage) {
       if (r.ads) found.push("реклама");
       if (r.caps) found.push("капс");
       result.innerHTML = `
-        <div class="stat-card">
+        <div class="stat-card" style="margin-bottom:14px;">
           <div class="stat-label">${r.clean ? `<span class="badge green">Чисто</span>` : `<span class="badge red">Найдено: ${esc(found.join(", "))}</span>`}</div>
-          <p>Так увидят в чате: <span class="font-mono">${esc(r.text)}</span></p>
+          <p style="margin:4px 0 0;">Так увидят в чате: <span class="font-mono">${esc(r.text)}</span></p>
         </div>
         ${
           canManage
-            ? `<form class="row" id="cf-quick">
-                 <input type="text" name="word" maxlength="100" placeholder="Слово или кусок текста" required>
-                 <select name="kind">${KINDS.map((k) => `<option value="${k[0]}">${esc(k[1])}</option>`).join("")}</select>
-                 <button class="secondary" type="submit">Добавить в список</button>
+            ? `<form id="cf-quick" style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:8px;">
+                 <input type="text" name="word" maxlength="100" placeholder="Слово или кусок текста" required style="flex:2 1 220px;min-width:0;width:auto;">
+                 <select name="kind" style="flex:1 1 180px;min-width:0;width:auto;">${KINDS.map((k) => `<option value="${k[0]}">${esc(k[1])}</option>`).join("")}</select>
+                 <button class="secondary" type="submit" style="flex-shrink:0;white-space:nowrap;">Добавить в список</button>
                </form>
-               <p class="muted">Выделите слово в тексте выше и нажмите «Добавить в список»: оно подставится само. Если мат не нашёлся, добавьте его в «Запрещённые», если слово зря закрасилось, добавьте в «Безопасные».</p>`
+               <p class="muted" style="color:var(--text-muted);font-size:12.5px;line-height:1.5;margin:0;">Выделите слово в тексте выше и нажмите «Добавить в список»: оно подставится само. Если мат не нашёлся, добавьте его в «Запрещённые», если слово зря закрасилось, добавьте в «Безопасные».</p>`
             : ""
         }`;
       const quick = result.querySelector("#cf-quick");
@@ -181,13 +183,13 @@ async function settingsTab(content, canManage) {
   const rows = await api("GET", "/api/chatfilter/settings");
   const groups = [...new Set(rows.map((r) => r.group))];
   content.innerHTML = `
-    <p class="muted">Значения, изменённые здесь, хранятся поверх config.yml (сам файл не переписывается). «Вернуть» возвращает значение из файла.</p>
+    <p class="muted" style="color:var(--text-muted);font-size:12.5px;line-height:1.5;margin:0 0 16px;">Значения, изменённые здесь, хранятся поверх config.yml (сам файл не переписывается). «Вернуть» возвращает значение из файла.</p>
     ${groups
       .map(
-        (group) => `<h3>${esc(group)}</h3><div class="table-wrap"><table><tbody>
+        (group, idx) => `<h3 style="margin:${idx === 0 ? "0" : "20px"} 0 10px;font-size:14px;font-weight:700;">${esc(group)}</h3><div class="table-wrap"><table><tbody>
           ${rows
             .filter((r) => r.group === group)
-            .map((r) => `<tr data-key="${esc(r.key)}"><td>${esc(r.label)}${r.overridden ? ` <span class="badge purple">из панели</span>` : ""}<br><span class="muted font-mono">${esc(r.key)}</span></td><td>${control(r, canManage)}</td></tr>`)
+            .map((r) => `<tr data-key="${esc(r.key)}"><td>${esc(r.label)}${r.overridden ? ` <span class="badge purple">из панели</span>` : ""}<br><span class="muted font-mono" style="color:var(--text-muted);font-size:11.5px;display:inline-block;margin-top:3px;">${esc(r.key)}</span></td><td style="width:360px;max-width:50%;">${control(r, canManage)}</td></tr>`)
             .join("")}
         </tbody></table></div>`,
       )
@@ -220,11 +222,11 @@ async function settingsTab(content, canManage) {
 
 function control(row, canManage) {
   const disabled = canManage ? "" : "disabled";
-  const reset = canManage && row.overridden ? ` <button type="button" class="secondary btn-sm" data-reset>Вернуть</button>` : "";
+  const reset = canManage && row.overridden ? `<button type="button" class="secondary btn-sm" style="flex-shrink:0;white-space:nowrap;" data-reset>Вернуть</button>` : "";
   if (row.type === "bool")
-    return `<select data-value ${disabled}><option value="true" ${row.value === true ? "selected" : ""}>Включено</option><option value="false" ${row.value === false ? "selected" : ""}>Выключено</option></select>${reset}`;
+    return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end;"><select data-value ${disabled} style="flex:1 1 140px;min-width:120px;max-width:220px;width:auto;"><option value="true" ${row.value === true ? "selected" : ""}>Включено</option><option value="false" ${row.value === false ? "selected" : ""}>Выключено</option></select>${reset}</div>`;
   const attrs = row.type === "int" ? `type="number" min="${Number(row.min)}" max="${Number(row.max)}"` : `type="text" maxlength="${Number(row.max)}"`;
-  return `<input data-value ${attrs} value="${esc(String(row.value ?? ""))}" ${disabled}>${canManage ? ` <button type="button" class="primary btn-sm" data-save>Сохранить</button>` : ""}${reset}`;
+  return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end;"><input data-value ${attrs} value="${esc(String(row.value ?? ""))}" ${disabled} style="flex:1 1 140px;min-width:100px;max-width:220px;width:auto;">${canManage ? `<button type="button" class="primary btn-sm" style="flex-shrink:0;white-space:nowrap;" data-save>Сохранить</button>` : ""}${reset}</div>`;
 }
 
 // ---------------------------------------------------------------- статистика
@@ -233,9 +235,9 @@ async function statsTab(content, canManage, days = 30) {
   const data = await api("GET", "/api/chatfilter/stats?days=" + days);
   const peak = Math.max(1, ...data.perDay.map((d) => d.total));
   content.innerHTML = `
-    <div class="row"><label>За период <select id="cf-days">${[7, 14, 30, 90].map((d) => `<option value="${d}" ${d === days ? "selected" : ""}>${d} дн.</option>`).join("")}</select></label></div>
-    <div class="row">${TYPES.map(([key, label]) => `<div class="stat-card"><div class="stat-label">${esc(label)}</div><div class="stat-value">${Number(data.totals[key] || 0)}</div><div class="stat-sub">за ${Number(data.days)} дн.</div></div>`).join("")}</div>
-    <div class="table-wrap"><table><thead><tr><th>День</th>${TYPES.map(([, label]) => `<th>${esc(label)}</th>`).join("")}<th>Всего</th><th></th></tr></thead><tbody>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;"><label for="cf-days" style="margin:0;white-space:nowrap;">За период</label><select id="cf-days" style="width:auto;min-width:110px;">${[7, 14, 30, 90].map((d) => `<option value="${d}" ${d === days ? "selected" : ""}>${d} дн.</option>`).join("")}</select></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:18px;">${TYPES.map(([key, label]) => `<div class="stat-card"><div class="stat-label">${esc(label)}</div><div class="stat-value">${Number(data.totals[key] || 0)}</div><div class="stat-sub">за ${Number(data.days)} дн.</div></div>`).join("")}</div>
+    <div class="table-wrap"><table><thead><tr><th>День</th>${TYPES.map(([, label]) => `<th>${esc(label)}</th>`).join("")}<th>Всего</th><th style="width:140px;"></th></tr></thead><tbody>
       ${[...data.perDay]
         .reverse()
         .map(
@@ -243,6 +245,6 @@ async function statsTab(content, canManage, days = 30) {
         )
         .join("")}
     </tbody></table></div>
-    <p class="muted">Счётчики ведутся плагином и сохраняются между перезапусками; в статистику попадает каждое сработавшее нарушение.</p>`;
+    <p class="muted" style="color:var(--text-muted);font-size:12.5px;line-height:1.5;margin:12px 0 0;">Счётчики ведутся плагином и сохраняются между перезапусками; в статистику попадает каждое сработавшее нарушение.</p>`;
   content.querySelector("#cf-days").addEventListener("change", (event) => statsTab(content, canManage, Number(event.target.value)));
 }
