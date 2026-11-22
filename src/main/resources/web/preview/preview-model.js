@@ -1243,7 +1243,7 @@
           players: clone(state.players.filter((p) => p.online)),
           onlinePlayers: state.players.filter((p) => p.online).length,
           maxPlayers: 100,
-          serverVersion: "Paper 26.2 · ПРЕВЬЮ",
+          serverVersion: "Paper 26.3 · ПРЕВЬЮ",
           uptime: 3600,
         };
       }

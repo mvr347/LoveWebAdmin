@@ -28,7 +28,7 @@ final class PreviewFeatures {
         "maxPlayers",
         100,
         "serverVersion",
-        "Paper 26.2 · ПРЕВЬЮ",
+        "Paper 26.3 · ПРЕВЬЮ",
         "uptime",
         3600);
   }
